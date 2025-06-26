@@ -1,3 +1,5 @@
+import numpy as np
+
 def make_beta_schedule(T, beta_start=1e-4, beta_end=0.02):
     return np.linspace(beta_start, beta_end, T)
 
