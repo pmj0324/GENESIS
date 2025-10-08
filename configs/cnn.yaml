@@ -1,19 +1,22 @@
-# Default configuration for GENESIS IceCube diffusion model
+# CNN architecture configuration for GENESIS
 
-experiment_name: "icecube_diffusion_default"
-description: "Default configuration for IceCube muon neutrino event diffusion model"
+experiment_name: "icecube_diffusion_cnn"
+description: "CNN-based architecture for IceCube muon neutrino event diffusion model"
 
 # Model configuration
 model:
+  architecture: "cnn"
   seq_len: 5160
-  hidden: 512
-  depth: 8
-  heads: 8
+  hidden: 256
+  depth: 6
+  heads: 8  # Not used in CNN but kept for compatibility
   dropout: 0.1
-  fusion: "FiLM"  # "SUM" or "FiLM"
+  fusion: "FiLM"  # Not used in CNN but kept for compatibility
   label_dim: 6
   t_embed_dim: 128
-  mlp_ratio: 4.0
+  mlp_ratio: 4.0  # Not used in CNN but kept for compatibility
+  kernel_size: 3
+  kernel_sizes: [3, 5, 7, 9]  # Multi-scale kernels
   affine_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
   affine_scales: [1.0, 100000.0, 1.0, 1.0, 1.0]
 
@@ -22,14 +25,14 @@ diffusion:
   timesteps: 1000
   beta_start: 0.0001
   beta_end: 0.02
-  objective: "eps"  # "eps" or "x0"
+  objective: "eps"
 
 # Data configuration
 data:
   h5_path: "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
   replace_time_inf_with: 0.0
   channel_first: true
-  batch_size: 8
+  batch_size: 16  # Larger batch size for CNN
   num_workers: 4
   pin_memory: true
   shuffle: true
@@ -39,27 +42,13 @@ data:
 
 # Training configuration
 training:
-  num_epochs: 100
+  num_epochs: 50
   learning_rate: 0.0002
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
   scheduler: null
   warmup_steps: 1000
-  
-  # Scheduler-specific parameters
-  cosine_t_max: null
-  plateau_patience: 10
-  plateau_factor: 0.5
-  plateau_min_lr: 1e-6
-  plateau_mode: "min"
-  plateau_threshold: 1e-4
-  plateau_cooldown: 0
-  step_size: 30
-  step_gamma: 0.1
-  linear_start_factor: 1.0
-  linear_end_factor: 0.0
-  
   log_interval: 50
   save_interval: 1000
   eval_interval: 500

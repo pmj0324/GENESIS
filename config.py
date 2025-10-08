@@ -14,16 +14,19 @@ import os
 
 @dataclass
 class ModelConfig:
-    """Configuration for PMTDit model architecture."""
+    """Configuration for model architecture."""
+    
+    # Architecture selection
+    architecture: str = "dit"  # "dit", "cnn", "mlp", "hybrid", "resnet"
     
     # Model architecture
     seq_len: int = 5160  # Number of PMTs
     hidden: int = 512    # Hidden dimension
-    depth: int = 8       # Number of transformer blocks
-    heads: int = 8       # Number of attention heads
+    depth: int = 8       # Number of blocks/layers
+    heads: int = 8       # Number of attention heads (for dit/hybrid)
     dropout: float = 0.1 # Dropout rate
     
-    # Fusion strategy
+    # Fusion strategy (for dit)
     fusion: str = "FiLM"  # "SUM" or "FiLM"
     
     # Conditioning
@@ -32,6 +35,10 @@ class ModelConfig:
     
     # MLP configuration
     mlp_ratio: float = 4.0  # MLP expansion ratio
+    
+    # CNN/Conv configuration
+    kernel_size: int = 3    # Base kernel size
+    kernel_sizes: Tuple[int, ...] = (3, 5, 7, 9)  # Multi-scale kernels (for cnn)
     
     # Affine normalization (per-channel)
     affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)  # [npe, time, xpmt, ypmt, zpmt]
@@ -83,8 +90,28 @@ class TrainingConfig:
     
     # Optimization
     optimizer: str = "AdamW"  # "AdamW", "Adam", "SGD"
-    scheduler: Optional[str] = None  # "cosine", "linear", "step"
+    scheduler: Optional[str] = None  # "cosine", "linear", "step", "plateau"
     warmup_steps: int = 1000
+    
+    # Scheduler-specific parameters
+    # Cosine annealing
+    cosine_t_max: Optional[int] = None  # If None, uses num_epochs
+    
+    # Plateau scheduler
+    plateau_patience: int = 10
+    plateau_factor: float = 0.5
+    plateau_min_lr: float = 1e-6
+    plateau_mode: str = "min"  # "min" or "max"
+    plateau_threshold: float = 1e-4
+    plateau_cooldown: int = 0
+    
+    # Step scheduler
+    step_size: int = 30
+    step_gamma: float = 0.1
+    
+    # Linear scheduler
+    linear_start_factor: float = 1.0
+    linear_end_factor: float = 0.0
     
     # Logging and checkpointing
     log_interval: int = 50
@@ -215,6 +242,52 @@ def get_debug_config() -> ExperimentConfig:
     config.data.batch_size = 2
     config.training.debug_mode = True
     config.training.detect_anomaly = True
+    return config
+
+
+def get_cnn_config() -> ExperimentConfig:
+    """Configuration for CNN architecture."""
+    config = get_default_config()
+    config.model.architecture = "cnn"
+    config.model.hidden = 256
+    config.model.depth = 6
+    config.model.kernel_sizes = (3, 5, 7, 9)
+    config.training.num_epochs = 50
+    config.data.batch_size = 16
+    return config
+
+
+def get_mlp_config() -> ExperimentConfig:
+    """Configuration for MLP architecture."""
+    config = get_default_config()
+    config.model.architecture = "mlp"
+    config.model.hidden = 512
+    config.model.depth = 6
+    config.training.num_epochs = 50
+    config.data.batch_size = 16
+    return config
+
+
+def get_hybrid_config() -> ExperimentConfig:
+    """Configuration for Hybrid architecture."""
+    config = get_default_config()
+    config.model.architecture = "hybrid"
+    config.model.hidden = 384
+    config.model.depth = 6
+    config.model.heads = 6
+    config.training.num_epochs = 50
+    config.data.batch_size = 12
+    return config
+
+
+def get_resnet_config() -> ExperimentConfig:
+    """Configuration for ResNet architecture."""
+    config = get_default_config()
+    config.model.architecture = "resnet"
+    config.model.hidden = 256
+    config.model.depth = 8
+    config.training.num_epochs = 50
+    config.data.batch_size = 16
     return config
 
 

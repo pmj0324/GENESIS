@@ -18,9 +18,11 @@ import matplotlib.pyplot as plt
 import h5py
 
 # Project imports
-from models.pmt_dit import PMTDit, GaussianDiffusion, DiffusionConfig
+from models.factory import ModelFactory, create_model, create_diffusion_model
+from models.pmt_dit import GaussianDiffusion, DiffusionConfig
 from dataloader.pmt_dataloader import make_dataloader
-from config import ExperimentConfig, load_config_from_file
+from config import ExperimentConfig, load_config_from_file, ModelConfig, DiffusionConfig as ConfigDiffusionConfig
+from utils.visualization import EventVisualizer, create_event_visualizer
 
 
 class EventSampler:
@@ -46,35 +48,15 @@ class EventSampler:
         else:
             self.config = ExperimentConfig(**checkpoint['config'])
         
-        # Initialize model
-        self.model = PMTDit(
-            seq_len=self.config.model.seq_len,
-            hidden=self.config.model.hidden,
-            depth=self.config.model.depth,
-            heads=self.config.model.heads,
-            dropout=self.config.model.dropout,
-            fusion=self.config.model.fusion,
-            label_dim=self.config.model.label_dim,
-            t_embed_dim=self.config.model.t_embed_dim,
-            mlp_ratio=self.config.model.mlp_ratio,
-            affine_offsets=self.config.model.affine_offsets,
-            affine_scales=self.config.model.affine_scales,
-        ).to(self.device)
+        # Initialize model using factory
+        self.model = ModelFactory.create_model_from_config(self.config.model).to(self.device)
         
         # Load model weights
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
         
-        # Initialize diffusion wrapper
-        self.diffusion = GaussianDiffusion(
-            self.model,
-            DiffusionConfig(
-                timesteps=self.config.diffusion.timesteps,
-                beta_start=self.config.diffusion.beta_start,
-                beta_end=self.config.diffusion.beta_end,
-                objective=self.config.diffusion.objective,
-            )
-        ).to(self.device)
+        # Initialize diffusion wrapper using factory
+        self.diffusion = ModelFactory.create_diffusion_wrapper(self.model, self.config.diffusion).to(self.device)
         
         print(f"Model loaded successfully on {self.device}")
         print(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
@@ -218,61 +200,74 @@ class EventSampler:
     def visualize_event(
         self,
         event_signals: torch.Tensor,
-        pmt_geometry: torch.Tensor,
         event_conditions: torch.Tensor,
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        detector_geometry_path: Optional[str] = None,
+        title_prefix: str = "Generated Event - "
     ):
-        """Visualize a single generated event."""
-        if event_signals.dim() == 3:
-            event_signals = event_signals[0]  # Take first event
-        if pmt_geometry.dim() == 3:
-            pmt_geometry = pmt_geometry[0]
-        if event_conditions.dim() == 2:
-            event_conditions = event_conditions[0]
+        """Visualize a single generated event using npz-show-event format."""
+        # Create visualizer
+        visualizer = create_event_visualizer(detector_geometry_path)
         
-        npe = event_signals[0].cpu().numpy()
-        time = event_signals[1].cpu().numpy()
+        # Visualize event
+        fig, ax = visualizer.visualize_event(
+            event_signals,
+            event_conditions,
+            output_path=output_path,
+            title_prefix=title_prefix
+        )
         
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        return fig, ax
+    
+    def visualize_batch(
+        self,
+        pmt_signals: torch.Tensor,
+        event_conditions: torch.Tensor,
+        output_dir: str,
+        max_events: int = 4,
+        prefix: str = "generated_event",
+        detector_geometry_path: Optional[str] = None
+    ) -> List[str]:
+        """Visualize a batch of generated events."""
+        # Create visualizer
+        visualizer = create_event_visualizer(detector_geometry_path)
         
-        # NPE distribution
-        axes[0, 0].hist(npe, bins=50, alpha=0.7)
-        axes[0, 0].set_xlabel('NPE')
-        axes[0, 0].set_ylabel('Count')
-        axes[0, 0].set_title('NPE Distribution')
+        # Visualize batch
+        output_paths = visualizer.visualize_batch(
+            pmt_signals,
+            event_conditions,
+            output_dir,
+            max_events,
+            prefix
+        )
         
-        # Time distribution
-        finite_time = time[np.isfinite(time)]
-        if len(finite_time) > 0:
-            axes[0, 1].hist(finite_time, bins=50, alpha=0.7)
-        axes[0, 1].set_xlabel('Time')
-        axes[0, 1].set_ylabel('Count')
-        axes[0, 1].set_title('Time Distribution')
+        return output_paths
+    
+    def compare_with_real(
+        self,
+        real_signals: torch.Tensor,
+        real_conditions: torch.Tensor,
+        generated_signals: torch.Tensor,
+        generated_conditions: torch.Tensor,
+        output_path: Optional[str] = None,
+        max_events: int = 4,
+        detector_geometry_path: Optional[str] = None
+    ):
+        """Compare real and generated events side by side."""
+        # Create visualizer
+        visualizer = create_event_visualizer(detector_geometry_path)
         
-        # 3D PMT positions colored by NPE
-        x, y, z = pmt_geometry.cpu().numpy()
-        scatter = axes[1, 0].scatter(x, y, c=npe, s=1, alpha=0.6)
-        axes[1, 0].set_xlabel('X')
-        axes[1, 0].set_ylabel('Y')
-        axes[1, 0].set_title('PMT Positions (colored by NPE)')
-        plt.colorbar(scatter, ax=axes[1, 0])
+        # Create comparison
+        fig = visualizer.compare_events(
+            real_signals,
+            real_conditions,
+            generated_signals,
+            generated_conditions,
+            output_path,
+            max_events
+        )
         
-        # Event conditions
-        condition_names = ['Energy', 'Zenith', 'Azimuth', 'X', 'Y', 'Z']
-        condition_values = event_conditions.cpu().numpy()
-        axes[1, 1].bar(condition_names, condition_values)
-        axes[1, 1].set_title('Event Conditions')
-        axes[1, 1].tick_params(axis='x', rotation=45)
-        
-        plt.tight_layout()
-        
-        if output_path:
-            plt.savefig(output_path, dpi=150, bbox_inches='tight')
-            print(f"Visualization saved to {output_path}")
-        else:
-            plt.show()
-        
-        plt.close()
+        return fig
 
 
 def main():
@@ -286,6 +281,9 @@ def main():
     parser.add_argument("--conditions", help="Path to file with event conditions")
     parser.add_argument("--seed", type=int, help="Random seed")
     parser.add_argument("--visualize", action="store_true", help="Create visualization")
+    parser.add_argument("--visualize-batch", action="store_true", help="Create batch visualizations")
+    parser.add_argument("--max-visualize", type=int, default=4, help="Maximum events to visualize")
+    parser.add_argument("--detector-geometry", help="Path to detector geometry CSV file")
     
     args = parser.parse_args()
     
@@ -323,15 +321,28 @@ def main():
     
     sampler.save_samples(samples, event_conditions, args.output, metadata)
     
-    # Create visualization if requested
-    if args.visualize:
-        viz_path = args.output.replace('.h5', '_visualization.png')
-        sampler.visualize_event(
-            samples[:1],  # First event
-            pmt_geometry,
-            event_conditions[:1],
-            viz_path
-        )
+    # Create visualizations if requested
+    if args.visualize or args.visualize_batch:
+        if args.visualize:
+            # Single event visualization
+            viz_path = args.output.replace('.h5', '_visualization.png')
+            sampler.visualize_event(
+                samples[:1],  # First event
+                event_conditions[:1],
+                output_path=viz_path,
+                detector_geometry_path=args.detector_geometry
+            )
+        
+        if args.visualize_batch:
+            # Batch visualization
+            viz_dir = args.output.replace('.h5', '_visualizations')
+            sampler.visualize_batch(
+                samples,
+                event_conditions,
+                output_dir=viz_dir,
+                max_events=args.max_visualize,
+                detector_geometry_path=args.detector_geometry
+            )
     
     print("Sampling completed successfully!")
 
