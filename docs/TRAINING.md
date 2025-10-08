@@ -78,6 +78,102 @@ The repository includes several pre-configured training setups:
 - **Parameters**: 128 hidden, 2 layers, 2 heads
 - **Training**: 2 epochs, batch size 2
 
+### Early Stopping
+
+GENESIS supports early stopping to prevent overfitting and save training time. Early stopping monitors a metric (e.g., validation loss) and stops training when it stops improving.
+
+#### Basic Usage
+
+**Enable via CLI:**
+```bash
+python train.py \
+  --data-path data.h5 \
+  --early-stopping \
+  --early-stopping-patience 20
+```
+
+**Enable via Config:**
+```yaml
+training:
+  early_stopping: true
+  early_stopping_patience: 20        # Stop after 20 epochs without improvement
+  early_stopping_min_delta: 1e-4     # Minimum change to qualify as improvement
+  early_stopping_mode: "min"         # "min" for loss, "max" for accuracy
+  early_stopping_restore_best: true  # Restore best weights when stopping
+  early_stopping_verbose: true       # Print early stopping messages
+```
+
+#### Early Stopping Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `early_stopping` | bool | `false` | Enable/disable early stopping |
+| `early_stopping_patience` | int | `20` | Epochs to wait without improvement |
+| `early_stopping_min_delta` | float | `1e-4` | Minimum change to qualify as improvement |
+| `early_stopping_mode` | str | `"min"` | `"min"` or `"max"` for metric direction |
+| `early_stopping_baseline` | float | `null` | Baseline value for the metric |
+| `early_stopping_restore_best` | bool | `true` | Restore best weights on stop |
+| `early_stopping_verbose` | bool | `true` | Print early stopping status |
+
+#### Example Configurations
+
+**1. Conservative Early Stopping (Long Patience):**
+```yaml
+training:
+  num_epochs: 200
+  scheduler: "cosine"
+  early_stopping: true
+  early_stopping_patience: 30  # Wait longer before stopping
+  early_stopping_min_delta: 1e-5
+```
+
+**2. Aggressive Early Stopping (Short Patience):**
+```yaml
+training:
+  num_epochs: 100
+  early_stopping: true
+  early_stopping_patience: 10  # Stop quickly
+  early_stopping_min_delta: 1e-3  # Larger improvement threshold
+```
+
+**3. Early Stopping with Plateau Scheduler:**
+```yaml
+training:
+  num_epochs: 300
+  scheduler: "plateau"
+  plateau_patience: 15
+  early_stopping: true
+  early_stopping_patience: 30  # 2x plateau patience
+  early_stopping_min_delta: 1e-5
+```
+
+**4. Disable Best Weight Restoration:**
+```bash
+python train.py \
+  --early-stopping \
+  --early-stopping-patience 15 \
+  --no-restore-best-weights  # Keep final weights instead of best
+```
+
+#### Training Output with Early Stopping
+
+```
+Epoch 45 completed: loss=0.0123
+EarlyStopping: No improvement for 1/20 epochs
+
+Epoch 46 completed: loss=0.0121
+EarlyStopping: Metric improved to 0.012100
+
+...
+
+Epoch 65 completed: loss=0.0118
+EarlyStopping: No improvement for 20/20 epochs
+
+🛑 Early stopping triggered at epoch 65
+Best score: 0.011500 at epoch 45
+✅ Restored best model weights
+```
+
 ### Learning Rate Schedulers
 
 The repository supports multiple learning rate schedulers:

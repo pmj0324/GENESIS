@@ -113,6 +113,15 @@ class TrainingConfig:
     linear_start_factor: float = 1.0
     linear_end_factor: float = 0.0
     
+    # Early stopping
+    early_stopping: bool = False
+    early_stopping_patience: int = 20
+    early_stopping_min_delta: float = 1e-4
+    early_stopping_mode: str = "min"  # "min" or "max"
+    early_stopping_baseline: Optional[float] = None
+    early_stopping_restore_best: bool = True
+    early_stopping_verbose: bool = True
+    
     # Logging and checkpointing
     log_interval: int = 50
     save_interval: int = 1000

@@ -51,6 +51,15 @@ training:
   warmup_steps: 1000
   cosine_t_max: 200  # Explicit T_max for cosine annealing
   
+  # Early stopping
+  early_stopping: true
+  early_stopping_patience: 25
+  early_stopping_min_delta: 1e-4
+  early_stopping_mode: "min"
+  early_stopping_baseline: null
+  early_stopping_restore_best: true
+  early_stopping_verbose: true
+  
   # Logging and checkpointing
   log_interval: 50
   save_interval: 1000

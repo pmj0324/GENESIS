@@ -15,6 +15,7 @@ This repository implements a conditional diffusion model for generating IceCube 
 - **Geometry Integration**: Incorporates PMT detector geometry as non-noisy conditioning
 - **Flexible Fusion**: Supports both SUM and FiLM fusion strategies for signal and geometry embeddings
 - **Learning Rate Schedulers**: Cosine annealing, plateau, step, linear, exponential, and polynomial schedulers
+- **Early Stopping**: Automatic training termination when validation loss stops improving
 - **Training Package**: Comprehensive training utilities with advanced features
 - **3D Visualization**: Integrated npz-show-event.py style visualization for generated events
 - **Architecture Comparison**: Built-in benchmarking tools for comparing different architectures
@@ -361,6 +362,22 @@ python train.py --data-path your_data.h5 --scheduler step --step-size 30 --step-
 
 # Linear scheduler
 python train.py --data-path your_data.h5 --scheduler linear
+```
+
+### Training with Early Stopping
+
+```bash
+# Basic early stopping
+python train.py --data-path your_data.h5 --early-stopping --early-stopping-patience 20
+
+# Early stopping with scheduler
+python train.py --data-path your_data.h5 --scheduler cosine --early-stopping --early-stopping-patience 25
+
+# Conservative early stopping (long patience)
+python train.py --data-path your_data.h5 --early-stopping --early-stopping-patience 30 --early-stopping-min-delta 1e-5
+
+# Aggressive early stopping (short patience)
+python train.py --data-path your_data.h5 --early-stopping --early-stopping-patience 10 --early-stopping-min-delta 1e-3
 ```
 
 ### Advanced Training

@@ -54,6 +54,15 @@ training:
   step_size: 50
   step_gamma: 0.1
   
+  # Early stopping
+  early_stopping: true
+  early_stopping_patience: 20
+  early_stopping_min_delta: 1e-4
+  early_stopping_mode: "min"
+  early_stopping_baseline: null
+  early_stopping_restore_best: true
+  early_stopping_verbose: true
+  
   # Logging and checkpointing
   log_interval: 50
   save_interval: 1000

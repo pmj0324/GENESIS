@@ -30,6 +30,7 @@ from config import ExperimentConfig, load_config_from_file
 from .schedulers import create_scheduler
 from .logging import setup_logging, LoggingConfig
 from .checkpointing import CheckpointManager
+from .utils import EarlyStopping
 
 # Optional imports
 try:
@@ -125,7 +126,19 @@ class Trainer:
         self.start_epoch = 0
         self.global_step = 0
         self.best_loss = float('inf')
-        self.early_stopping_counter = 0
+        
+        # Early stopping
+        if config.training.early_stopping:
+            self.early_stopping = EarlyStopping(
+                patience=config.training.early_stopping_patience,
+                min_delta=config.training.early_stopping_min_delta,
+                mode=config.training.early_stopping_mode,
+                baseline=config.training.early_stopping_baseline,
+                restore_best_weights=config.training.early_stopping_restore_best,
+                verbose=config.training.early_stopping_verbose
+            )
+        else:
+            self.early_stopping = None
         
         # Mixed precision
         self.scaler = GradScaler() if AMP_AVAILABLE and config.training.use_amp else None
@@ -243,9 +256,14 @@ class Trainer:
         if self.scheduler and 'scheduler_state_dict' in checkpoint:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         
+        # Restore early stopping state if available
+        if self.early_stopping is not None and 'early_stopping_state_dict' in checkpoint:
+            self.early_stopping.load_state_dict(checkpoint['early_stopping_state_dict'])
+            print(f"Restored early stopping state (counter: {self.early_stopping.counter}/{self.early_stopping.patience})")
+        
         print(f"Resumed from epoch {self.start_epoch}, step {self.global_step}")
     
-    def _save_checkpoint(self, epoch: int, metrics: Dict[str, float], is_best: bool = False):
+    def _save_checkpoint(self, epoch: int, metrics: Dict[str, float], is_best: bool = False, suffix: str = ''):
         """Save model checkpoint."""
         checkpoint = {
             'epoch': epoch,
@@ -260,7 +278,15 @@ class Trainer:
         if self.scheduler:
             checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
         
-        self.checkpoint_manager.save_checkpoint(checkpoint, epoch, is_best)
+        # Save early stopping state if enabled
+        if self.early_stopping is not None:
+            checkpoint['early_stopping_state_dict'] = self.early_stopping.state_dict()
+        
+        # Add suffix to checkpoint name if provided
+        if suffix:
+            checkpoint['suffix'] = suffix
+        
+        self.checkpoint_manager.save_checkpoint(checkpoint, epoch, is_best, suffix=suffix)
     
     def _log_metrics(self, metrics: Dict[str, float], step: int):
         """Log metrics to TensorBoard and Wandb."""
@@ -393,27 +419,44 @@ class Trainer:
             if (epoch + 1) % self.config.training.eval_interval == 0:
                 eval_metrics = self.evaluate()
                 self._log_metrics(eval_metrics, epoch)
+                current_loss = eval_metrics.get('eval/loss', epoch_metrics['train/epoch_loss'])
+            else:
+                current_loss = epoch_metrics['train/epoch_loss']
             
             # Save checkpoint
-            is_best = epoch_metrics['train/epoch_loss'] < self.best_loss
+            is_best = current_loss < self.best_loss
             if is_best:
-                self.best_loss = epoch_metrics['train/epoch_loss']
-                self.early_stopping_counter = 0
-            else:
-                self.early_stopping_counter += 1
+                self.best_loss = current_loss
             
             if (epoch + 1) % 10 == 0:  # Save every 10 epochs
                 self._save_checkpoint(epoch, epoch_metrics, is_best)
             
-            print(f"Epoch {epoch+1} completed: loss={epoch_metrics['train/epoch_loss']:.6f}")
+            # Early stopping check
+            if self.early_stopping is not None:
+                should_stop = self.early_stopping(
+                    current_score=current_loss,
+                    model=self.model,
+                    epoch=epoch
+                )
+                
+                if should_stop:
+                    print(f"\n🛑 Early stopping triggered at epoch {epoch}")
+                    print(f"Best score: {self.early_stopping.best_score:.6f} at epoch {self.early_stopping.best_epoch}")
+                    
+                    # Restore best weights if configured
+                    if self.config.training.early_stopping_restore_best:
+                        self.early_stopping.restore_weights(self.model)
+                        print("✅ Restored best model weights")
+                    
+                    # Save final checkpoint
+                    self._save_checkpoint(epoch, epoch_metrics, is_best=False, suffix='early_stop')
+                    break
             
-            # Early stopping
-            if self.early_stopping_counter >= self.config.training.early_stopping_patience:
-                print(f"Early stopping triggered after {epoch+1} epochs")
-                break
+            print(f"Epoch {epoch+1} completed: loss={epoch_metrics['train/epoch_loss']:.6f}")
         
-        # Save final checkpoint
-        self._save_checkpoint(self.config.training.num_epochs - 1, epoch_metrics, is_best)
+        # Save final checkpoint if training completed normally
+        if epoch + 1 == self.config.training.num_epochs:
+            self._save_checkpoint(epoch, epoch_metrics, is_best, suffix='final')
         
         # Close logging
         self.writer.close()

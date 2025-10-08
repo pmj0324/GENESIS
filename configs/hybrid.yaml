@@ -49,6 +49,16 @@ training:
   optimizer: "AdamW"
   scheduler: null
   warmup_steps: 1000
+  
+  # Early stopping
+  early_stopping: false
+  early_stopping_patience: 15
+  early_stopping_min_delta: 1e-4
+  early_stopping_mode: "min"
+  early_stopping_baseline: null
+  early_stopping_restore_best: true
+  early_stopping_verbose: true
+  
   log_interval: 50
   save_interval: 1000
   eval_interval: 500

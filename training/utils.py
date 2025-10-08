@@ -437,6 +437,162 @@ def estimate_training_time(
     }
 
 
+class EarlyStopping:
+    """
+    Early stopping to stop training when a monitored metric stops improving.
+    
+    Args:
+        patience: Number of epochs with no improvement to wait before stopping
+        min_delta: Minimum change in monitored value to qualify as improvement
+        mode: One of 'min' or 'max'. In 'min' mode, training stops when metric stops decreasing;
+              in 'max' mode it stops when metric stops increasing
+        baseline: Baseline value for the monitored metric. Training will stop if metric doesn't
+                  improve beyond baseline after patience epochs
+        restore_best_weights: Whether to restore model weights from the epoch with best value
+        verbose: If True, prints a message for each validation improvement
+        
+    Attributes:
+        counter: Number of epochs without improvement
+        best_score: Best monitored metric value observed
+        early_stop: Whether early stopping condition has been met
+        best_epoch: Epoch number with best metric value
+    """
+    
+    def __init__(
+        self,
+        patience: int = 10,
+        min_delta: float = 0.0,
+        mode: str = 'min',
+        baseline: Optional[float] = None,
+        restore_best_weights: bool = True,
+        verbose: bool = True
+    ):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.baseline = baseline
+        self.restore_best_weights = restore_best_weights
+        self.verbose = verbose
+        
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.best_epoch = 0
+        self.best_weights = None
+        
+        # Set comparison operators based on mode
+        if mode == 'min':
+            self.monitor_op = np.less
+            self.min_delta *= -1
+        elif mode == 'max':
+            self.monitor_op = np.greater
+            self.min_delta *= 1
+        else:
+            raise ValueError(f"Mode must be 'min' or 'max', got {mode}")
+        
+        # Initialize best score with baseline if provided
+        if baseline is not None:
+            self.best_score = baseline
+    
+    def __call__(
+        self, 
+        current_score: float, 
+        model: Optional[torch.nn.Module] = None,
+        epoch: int = 0
+    ) -> bool:
+        """
+        Check if training should be stopped.
+        
+        Args:
+            current_score: Current value of monitored metric
+            model: Model to save weights from (if restore_best_weights=True)
+            epoch: Current epoch number
+            
+        Returns:
+            True if training should stop, False otherwise
+        """
+        # Initialize best score on first call
+        if self.best_score is None:
+            self.best_score = current_score
+            self.best_epoch = epoch
+            if model is not None and self.restore_best_weights:
+                self.best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            if self.verbose:
+                print(f"EarlyStopping: Initial best score: {current_score:.6f}")
+            return False
+        
+        # Check if current score is better than best
+        if self.monitor_op(current_score - self.min_delta, self.best_score):
+            self.best_score = current_score
+            self.best_epoch = epoch
+            self.counter = 0
+            if model is not None and self.restore_best_weights:
+                self.best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            if self.verbose:
+                print(f"EarlyStopping: Metric improved to {current_score:.6f}")
+            return False
+        else:
+            self.counter += 1
+            if self.verbose:
+                print(f"EarlyStopping: No improvement for {self.counter}/{self.patience} epochs")
+            
+            if self.counter >= self.patience:
+                self.early_stop = True
+                if self.verbose:
+                    print(f"EarlyStopping: Stopping training at epoch {epoch}")
+                    print(f"EarlyStopping: Best score {self.best_score:.6f} at epoch {self.best_epoch}")
+                return True
+        
+        return False
+    
+    def restore_weights(self, model: torch.nn.Module) -> None:
+        """
+        Restore best weights to model.
+        
+        Args:
+            model: Model to restore weights to
+        """
+        if self.best_weights is not None:
+            model.load_state_dict({k: v.to(model.device if hasattr(model, 'device') else 'cpu') 
+                                   for k, v in self.best_weights.items()})
+            if self.verbose:
+                print(f"EarlyStopping: Restored best weights from epoch {self.best_epoch}")
+    
+    def reset(self):
+        """Reset early stopping state."""
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.best_epoch = 0
+        self.best_weights = None
+    
+    def state_dict(self) -> Dict[str, Any]:
+        """Get state dictionary for checkpointing."""
+        return {
+            'counter': self.counter,
+            'best_score': self.best_score,
+            'early_stop': self.early_stop,
+            'best_epoch': self.best_epoch,
+            'best_weights': self.best_weights,
+            'patience': self.patience,
+            'min_delta': self.min_delta,
+            'mode': self.mode,
+            'baseline': self.baseline,
+        }
+    
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Load state dictionary from checkpoint."""
+        self.counter = state_dict['counter']
+        self.best_score = state_dict['best_score']
+        self.early_stop = state_dict['early_stop']
+        self.best_epoch = state_dict['best_epoch']
+        self.best_weights = state_dict['best_weights']
+        self.patience = state_dict.get('patience', self.patience)
+        self.min_delta = state_dict.get('min_delta', self.min_delta)
+        self.mode = state_dict.get('mode', self.mode)
+        self.baseline = state_dict.get('baseline', self.baseline)
+
+
 if __name__ == "__main__":
     # Test utilities
     from config import get_default_config
@@ -462,4 +618,16 @@ if __name__ == "__main__":
     time_estimate = estimate_training_time(config)
     print("Time estimate:", json.dumps(time_estimate, indent=2))
     
-    print("Training utilities test completed!")
+    # Test early stopping
+    print("\nTesting EarlyStopping:")
+    early_stopping = EarlyStopping(patience=3, mode='min', verbose=True)
+    
+    # Simulate training with improving loss
+    test_losses = [1.0, 0.9, 0.8, 0.85, 0.84, 0.83, 0.82]
+    for i, loss in enumerate(test_losses):
+        should_stop = early_stopping(loss, epoch=i)
+        if should_stop:
+            print(f"Would stop at epoch {i}")
+            break
+    
+    print("\nTraining utilities test completed!")

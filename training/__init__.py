@@ -20,7 +20,8 @@ from .utils import (
     setup_training_environment,
     get_training_summary,
     validate_training_config,
-    create_training_script
+    create_training_script,
+    EarlyStopping
 )
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "get_training_summary",
     "validate_training_config",
     "create_training_script",
+    "EarlyStopping",
 ]
 
 __version__ = "1.0.0"

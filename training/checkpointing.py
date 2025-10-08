@@ -61,7 +61,8 @@ class CheckpointManager:
         checkpoint_data: Dict[str, Any],
         epoch: int,
         is_best: bool = False,
-        metric_value: Optional[float] = None
+        metric_value: Optional[float] = None,
+        suffix: str = ''
     ) -> str:
         """
         Save a checkpoint.
@@ -71,6 +72,7 @@ class CheckpointManager:
             epoch: Current epoch number
             is_best: Whether this is the best checkpoint so far
             metric_value: Metric value for this checkpoint
+            suffix: Optional suffix for checkpoint filename (e.g., 'early_stop', 'final')
             
         Returns:
             Path to saved checkpoint
@@ -78,6 +80,8 @@ class CheckpointManager:
         # Determine checkpoint filename
         if is_best:
             checkpoint_filename = f"{self.experiment_name}_best.pt"
+        elif suffix:
+            checkpoint_filename = f"{self.experiment_name}_epoch_{epoch:04d}_{suffix}.pt"
         else:
             checkpoint_filename = f"{self.experiment_name}_epoch_{epoch:04d}.pt"
         

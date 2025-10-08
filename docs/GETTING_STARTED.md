@@ -366,6 +366,12 @@ python train.py \
     --use-amp \
     --batch-size 16
 
+# Use early stopping to prevent overfitting
+python train.py \
+    --data-path /path/to/your/data.h5 \
+    --early-stopping \
+    --early-stopping-patience 20
+
 # Use Weights & Biases for experiment tracking
 python train.py \
     --data-path /path/to/your/data.h5 \

@@ -48,6 +48,13 @@ def main():
     parser.add_argument("--step-size", type=int, help="Step size for step scheduler")
     parser.add_argument("--step-gamma", type=float, help="Gamma for step scheduler")
     
+    # Early stopping parameters
+    parser.add_argument("--early-stopping", action="store_true", help="Enable early stopping")
+    parser.add_argument("--early-stopping-patience", type=int, default=20, help="Early stopping patience (epochs)")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=1e-4, help="Minimum change to qualify as improvement")
+    parser.add_argument("--early-stopping-mode", type=str, choices=["min", "max"], default="min", help="Minimizing or maximizing metric")
+    parser.add_argument("--no-restore-best-weights", action="store_true", help="Don't restore best weights on early stop")
+    
     # Output configuration
     parser.add_argument("--experiment-name", type=str, help="Experiment name")
     parser.add_argument("--output-dir", type=str, help="Output directory")
@@ -111,6 +118,18 @@ def main():
         config.training.step_size = args.step_size
     if args.step_gamma:
         config.training.step_gamma = args.step_gamma
+    
+    # Early stopping parameters
+    if args.early_stopping:
+        config.training.early_stopping = True
+    if args.early_stopping_patience:
+        config.training.early_stopping_patience = args.early_stopping_patience
+    if args.early_stopping_min_delta:
+        config.training.early_stopping_min_delta = args.early_stopping_min_delta
+    if args.early_stopping_mode:
+        config.training.early_stopping_mode = args.early_stopping_mode
+    if args.no_restore_best_weights:
+        config.training.early_stopping_restore_best = False
     
     if args.experiment_name:
         config.experiment_name = args.experiment_name
