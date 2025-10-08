@@ -10,7 +10,7 @@ model:
   depth: 2
   heads: 2
   dropout: 0.1
-  fusion: "FiLM"
+  fusion: "SUM"  # Changed to SUM for simplicity, "FiLM" is the default
   label_dim: 6
   t_embed_dim: 32
   mlp_ratio: 4.0
