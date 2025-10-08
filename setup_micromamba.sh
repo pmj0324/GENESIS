@@ -15,9 +15,9 @@ fi
 
 echo "✅ micromamba found: $(micromamba --version)"
 
-# Create environment from environment.yml (Python 3.10 + CUDA 12.4)
+# Create environment from environment.yml (Python 3.10 + CUDA 11.8)
 echo "📦 Creating environment from environment.yml..."
-echo "   Python 3.10 + CUDA 12.4"
+echo "   Python 3.10 + CUDA 11.8"
 micromamba env create -f environment.yml
 
 # Activate environment

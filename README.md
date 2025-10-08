@@ -95,6 +95,13 @@ Run our getting started script to verify everything is working:
 python getting_started.py
 ```
 
+**Note:** If you need CUDA support, the script will offer to install PyTorch with CUDA automatically, or you can install it manually:
+
+```bash
+pip uninstall torch torchvision torchaudio
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
 This will:
 - Check your installation
 - Create sample data

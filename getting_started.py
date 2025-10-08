@@ -61,9 +61,45 @@ def check_cuda():
             return True
         else:
             print("  ⚠️  CUDA not available (will use CPU)")
+            print("  💡 To enable CUDA, reinstall PyTorch with CUDA support:")
+            print("     pip uninstall torch torchvision torchaudio")
+            print("     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
             return False
     except ImportError:
         print("  ❌ PyTorch not installed")
+        return False
+
+
+def install_cuda_pytorch():
+    """Install PyTorch with CUDA support."""
+    print("\n🔧 Installing PyTorch with CUDA support...")
+    
+    try:
+        import subprocess
+        
+        # Uninstall current PyTorch
+        print("  📦 Uninstalling current PyTorch...")
+        subprocess.run([
+            sys.executable, "-m", "pip", "uninstall", 
+            "torch", "torchvision", "torchaudio", "-y"
+        ], check=True)
+        
+        # Install CUDA version
+        print("  📦 Installing PyTorch with CUDA 11.8...")
+        subprocess.run([
+            sys.executable, "-m", "pip", "install", 
+            "torch", "torchvision", "torchaudio",
+            "--index-url", "https://download.pytorch.org/whl/cu118"
+        ], check=True)
+        
+        print("  ✅ PyTorch with CUDA installed successfully!")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"  ❌ Failed to install PyTorch with CUDA: {e}")
+        return False
+    except Exception as e:
+        print(f"  ❌ Unexpected error: {e}")
         return False
 
 def create_sample_data():
@@ -223,6 +259,20 @@ def main():
     
     # Check CUDA
     cuda_available = check_cuda()
+    
+    # Offer CUDA installation if not available
+    if not cuda_available:
+        print("\n❓ Would you like to install PyTorch with CUDA support? (y/n): ", end="")
+        try:
+            response = input().lower().strip()
+            if response in ['y', 'yes']:
+                if install_cuda_pytorch():
+                    print("\n🔄 Rechecking CUDA availability...")
+                    cuda_available = check_cuda()
+                else:
+                    print("⚠️  CUDA installation failed. Continuing with CPU mode.")
+        except KeyboardInterrupt:
+            print("\n⚠️  Skipping CUDA installation. Continuing with CPU mode.")
     
     # Run quick test
     if not args.skip_test:

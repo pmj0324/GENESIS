@@ -59,9 +59,13 @@ cd GENESIS
 
 #### Option A: Using Micromamba (Recommended)
 ```bash
-# Create environment from environment.yml (Python 3.10 + CUDA 12.4)
+# Create environment from environment.yml (Python 3.10 + CUDA 11.8)
 micromamba env create -f environment.yml
 micromamba activate genesis
+
+# For CUDA support, reinstall PyTorch with CUDA
+pip uninstall torch torchvision torchaudio
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Or use the setup script
 ./setup_micromamba.sh
@@ -92,11 +96,11 @@ pip install -e .
 #### If using conda or venv:
 ```bash
 # Install PyTorch (choose the appropriate version for your system)
-# For CUDA 12.4:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-
-# For CUDA 11.8:
+# For CUDA 11.8 (Recommended - most stable):
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# For CUDA 12.1:
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # For CPU only:
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -108,7 +112,27 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 4. Verify Installation
+### 4. CUDA Support
+
+If you need GPU acceleration, make sure you have:
+
+1. **NVIDIA GPU** with CUDA support
+2. **CUDA drivers** installed (check with `nvidia-smi`)
+3. **PyTorch with CUDA** (see installation options above)
+
+**Verify CUDA installation:**
+```bash
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+**If CUDA is not available:**
+```bash
+# Reinstall PyTorch with CUDA support
+pip uninstall torch torchvision torchaudio
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+### 5. Verify Installation
 
 ```bash
 python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
