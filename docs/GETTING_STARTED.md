@@ -57,18 +57,39 @@ cd GENESIS
 
 ### 2. Create a Virtual Environment
 
+#### Option A: Using Micromamba (Recommended)
 ```bash
-# Using conda (recommended)
+# Create environment from environment.yml
+micromamba env create -f environment.yml
+micromamba activate genesis
+
+# Or use the setup script
+./setup_micromamba.sh
+```
+
+#### Option B: Using Conda
+```bash
+# Using conda
 conda create -n genesis python=3.9
 conda activate genesis
+```
 
-# Or using venv
+#### Option C: Using venv
+```bash
+# Using venv
 python -m venv genesis_env
 source genesis_env/bin/activate  # On Windows: genesis_env\Scripts\activate
 ```
 
 ### 3. Install Dependencies
 
+#### If using micromamba (environment.yml already includes most dependencies):
+```bash
+# Install the package in development mode
+pip install -e .
+```
+
+#### If using conda or venv:
 ```bash
 # Install PyTorch (choose the appropriate version for your system)
 # For CUDA 11.8:

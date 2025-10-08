@@ -12,7 +12,7 @@ This package provides comprehensive training functionality including:
 - Multi-GPU support
 """
 
-from .trainer import Trainer, TrainingConfig
+from .trainer import Trainer, TrainingConfig, create_trainer
 from .schedulers import create_scheduler, get_scheduler_info
 from .logging import setup_logging, LoggingConfig
 from .checkpointing import CheckpointManager
@@ -25,7 +25,8 @@ from .utils import (
 
 __all__ = [
     "Trainer",
-    "TrainingConfig", 
+    "TrainingConfig",
+    "create_trainer",
     "create_scheduler",
     "get_scheduler_info",
     "setup_logging",

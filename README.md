@@ -74,6 +74,8 @@ GENESIS/
 ├── evaluate.py          # Evaluation script
 ├── compare_architectures.py # Architecture comparison tool
 ├── getting_started.py   # Getting started script
+├── setup_micromamba.sh  # Micromamba setup script
+├── environment.yml      # Micromamba environment file
 ├── config.py            # Configuration management
 ├── requirements.txt     # Python dependencies
 ├── setup.py             # Package setup
@@ -101,6 +103,22 @@ This will:
 
 ## Installation
 
+### Quick Setup with Micromamba (Recommended)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd GENESIS
+
+# Create environment and install dependencies
+./setup_micromamba.sh
+
+# Activate environment
+micromamba activate genesis
+```
+
+### Manual Setup
+
 1. Clone the repository:
 ```bash
 git clone <repository-url>
@@ -109,6 +127,15 @@ cd GENESIS
 
 2. Create a virtual environment:
 ```bash
+# Using micromamba (recommended)
+micromamba env create -f environment.yml
+micromamba activate genesis
+
+# Or using conda
+conda create -n genesis python=3.9
+conda activate genesis
+
+# Or using venv
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
@@ -116,6 +143,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 3. Install dependencies:
 ```bash
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Data Format

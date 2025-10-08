@@ -36,7 +36,14 @@ def check_installation():
     
     if missing_packages:
         print(f"\n❌ Missing packages: {', '.join(missing_packages)}")
-        print("Please install them with: pip install -r requirements.txt")
+        print("\n📦 To install missing packages:")
+        print("  Option 1 (Micromamba - Recommended):")
+        print("    micromamba env create -f environment.yml")
+        print("    micromamba activate genesis")
+        print("  Option 2 (Pip):")
+        print("    pip install -r requirements.txt")
+        print("  Option 3 (Quick setup):")
+        print("    ./setup_micromamba.sh")
         return False
     
     print("✅ All required packages are installed!")
