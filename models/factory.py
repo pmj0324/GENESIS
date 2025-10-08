@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 import torch
 import torch.nn as nn
 
-from .architectures import create_model, ArchitectureConfig, get_architecture_info
+from .architectures import create_model as _create_arch_model, ArchitectureConfig, get_architecture_info
 from .pmt_dit import GaussianDiffusion, DiffusionConfig
 from config import ModelConfig, DiffusionConfig as ConfigDiffusionConfig
 
@@ -40,7 +40,7 @@ class ModelFactory:
             affine_offsets=model_config.affine_offsets,
             affine_scales=model_config.affine_scales,
         )
-        return create_model(arch_config)
+        return _create_arch_model(arch_config)
     
     @staticmethod
     def create_diffusion_wrapper(
