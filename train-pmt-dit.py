@@ -16,8 +16,8 @@ import torch
 import torch.nn as nn
 
 # === 프로젝트 모듈 import ===
-from dataloader import make_dataloader
-from models import PMTDit, GaussianDiffusion, DiffusionConfig
+from dataloader.pmt_dataloader import make_dataloader
+from models.pmt_dit import PMTDit, GaussianDiffusion, DiffusionConfig
 
 
 # =========================

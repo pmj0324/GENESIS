@@ -334,7 +334,7 @@ class GaussianDiffusion(nn.Module):
     DDPM-style trainer/sampler for p(x|c) with geometry.
     Model predicts ε̂(x_sig_t, t, label, geom) → (B,2,L)
     """
-    def __init__(self, model: CondDiTPMT, cfg: DiffusionConfig):
+    def __init__(self, model: PMTDit, cfg: DiffusionConfig):
         super().__init__()
         self.model = model
         self.cfg = cfg

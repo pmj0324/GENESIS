@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Configuration system for GENESIS IceCube diffusion model.
+
+Provides centralized configuration management for model hyperparameters,
+training settings, and data processing options.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional, Tuple, List
+import os
+
+
+@dataclass
+class ModelConfig:
+    """Configuration for PMTDit model architecture."""
+    
+    # Model architecture
+    seq_len: int = 5160  # Number of PMTs
+    hidden: int = 512    # Hidden dimension
+    depth: int = 8       # Number of transformer blocks
+    heads: int = 8       # Number of attention heads
+    dropout: float = 0.1 # Dropout rate
+    
+    # Fusion strategy
+    fusion: str = "FiLM"  # "SUM" or "FiLM"
+    
+    # Conditioning
+    label_dim: int = 6      # Event condition dimension [E, zenith, azimuth, X, Y, Z]
+    t_embed_dim: int = 128  # Timestep embedding dimension
+    
+    # MLP configuration
+    mlp_ratio: float = 4.0  # MLP expansion ratio
+    
+    # Affine normalization (per-channel)
+    affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)  # [npe, time, xpmt, ypmt, zpmt]
+    affine_scales: Tuple[float, ...] = (1.0, 100000.0, 1.0, 1.0, 1.0)
+
+
+@dataclass
+class DiffusionConfig:
+    """Configuration for diffusion process."""
+    
+    timesteps: int = 1000      # Number of diffusion timesteps
+    beta_start: float = 1e-4   # Starting noise schedule
+    beta_end: float = 2e-2     # Ending noise schedule
+    objective: str = "eps"     # Training objective: "eps" or "x0"
+
+
+@dataclass
+class DataConfig:
+    """Configuration for data loading and preprocessing."""
+    
+    # Data paths
+    h5_path: str = "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
+    
+    # Data preprocessing
+    replace_time_inf_with: Optional[float] = 0.0  # Replace inf time values
+    channel_first: bool = True  # Return data in (C, L) format
+    
+    # Data loading
+    batch_size: int = 8
+    num_workers: int = 4
+    pin_memory: bool = True
+    shuffle: bool = True
+    
+    # Data splitting
+    train_ratio: float = 0.8
+    val_ratio: float = 0.1
+    test_ratio: float = 0.1
+
+
+@dataclass
+class TrainingConfig:
+    """Configuration for training process."""
+    
+    # Training parameters
+    num_epochs: int = 100
+    learning_rate: float = 2e-4
+    weight_decay: float = 0.01
+    grad_clip_norm: float = 1.0
+    
+    # Optimization
+    optimizer: str = "AdamW"  # "AdamW", "Adam", "SGD"
+    scheduler: Optional[str] = None  # "cosine", "linear", "step"
+    warmup_steps: int = 1000
+    
+    # Logging and checkpointing
+    log_interval: int = 50
+    save_interval: int = 1000
+    eval_interval: int = 500
+    
+    # Output directories
+    output_dir: str = "./outputs"
+    checkpoint_dir: str = "./checkpoints"
+    log_dir: str = "./logs"
+    
+    # Resume training
+    resume_from_checkpoint: Optional[str] = None
+    
+    # Mixed precision
+    use_amp: bool = True  # Automatic Mixed Precision
+    
+    # Debugging
+    debug_mode: bool = False
+    detect_anomaly: bool = False
+
+
+@dataclass
+class ExperimentConfig:
+    """Complete experiment configuration."""
+    
+    # Experiment metadata
+    experiment_name: str = "icecube_diffusion"
+    description: str = "IceCube muon neutrino event diffusion model"
+    
+    # Component configurations
+    model: ModelConfig = field(default_factory=ModelConfig)
+    diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)
+    data: DataConfig = field(default_factory=DataConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    
+    # System settings
+    device: str = "auto"  # "auto", "cuda", "cpu"
+    seed: int = 42
+    
+    # Logging
+    use_wandb: bool = False
+    wandb_project: str = "icecube-diffusion"
+    wandb_entity: Optional[str] = None
+    
+    def __post_init__(self):
+        """Post-initialization setup."""
+        # Auto-detect device
+        if self.device == "auto":
+            import torch
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Create output directories
+        os.makedirs(self.training.output_dir, exist_ok=True)
+        os.makedirs(self.training.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.training.log_dir, exist_ok=True)
+
+
+def get_default_config() -> ExperimentConfig:
+    """Get default configuration."""
+    return ExperimentConfig()
+
+
+def load_config_from_file(config_path: str) -> ExperimentConfig:
+    """Load configuration from YAML file."""
+    import yaml
+    
+    with open(config_path, 'r') as f:
+        config_dict = yaml.safe_load(f)
+    
+    # Convert nested dictionaries to config objects
+    if 'model' in config_dict:
+        config_dict['model'] = ModelConfig(**config_dict['model'])
+    if 'diffusion' in config_dict:
+        config_dict['diffusion'] = DiffusionConfig(**config_dict['diffusion'])
+    if 'data' in config_dict:
+        config_dict['data'] = DataConfig(**config_dict['data'])
+    if 'training' in config_dict:
+        config_dict['training'] = TrainingConfig(**config_dict['training'])
+    
+    return ExperimentConfig(**config_dict)
+
+
+def save_config_to_file(config: ExperimentConfig, config_path: str):
+    """Save configuration to YAML file."""
+    import yaml
+    from dataclasses import asdict
+    
+    config_dict = asdict(config)
+    
+    with open(config_path, 'w') as f:
+        yaml.dump(config_dict, f, default_flow_style=False, indent=2)
+
+
+# Predefined configurations for common use cases
+def get_small_model_config() -> ExperimentConfig:
+    """Configuration for small model (faster training/testing)."""
+    config = get_default_config()
+    config.model.hidden = 256
+    config.model.depth = 4
+    config.model.heads = 4
+    config.diffusion.timesteps = 100
+    config.training.num_epochs = 10
+    config.data.batch_size = 16
+    return config
+
+
+def get_large_model_config() -> ExperimentConfig:
+    """Configuration for large model (better quality)."""
+    config = get_default_config()
+    config.model.hidden = 768
+    config.model.depth = 12
+    config.model.heads = 12
+    config.diffusion.timesteps = 2000
+    config.training.num_epochs = 200
+    config.data.batch_size = 4
+    return config
+
+
+def get_debug_config() -> ExperimentConfig:
+    """Configuration for debugging."""
+    config = get_default_config()
+    config.model.hidden = 128
+    config.model.depth = 2
+    config.model.heads = 2
+    config.diffusion.timesteps = 10
+    config.training.num_epochs = 2
+    config.data.batch_size = 2
+    config.training.debug_mode = True
+    config.training.detect_anomaly = True
+    return config
+
+
+if __name__ == "__main__":
+    # Example usage
+    config = get_default_config()
+    print("Default configuration:")
+    print(f"Model: {config.model.hidden}D, {config.model.depth} layers")
+    print(f"Diffusion: {config.diffusion.timesteps} timesteps")
+    print(f"Training: {config.training.num_epochs} epochs, lr={config.training.learning_rate}")
+    
+    # Save example config
+    save_config_to_file(config, "example_config.yaml")
+    print("Saved example configuration to example_config.yaml")
