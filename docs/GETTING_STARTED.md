@@ -59,7 +59,7 @@ cd GENESIS
 
 #### Option A: Using Micromamba (Recommended)
 ```bash
-# Create environment from environment.yml
+# Create environment from environment.yml (Python 3.10 + CUDA 12.4)
 micromamba env create -f environment.yml
 micromamba activate genesis
 
@@ -69,8 +69,8 @@ micromamba activate genesis
 
 #### Option B: Using Conda
 ```bash
-# Using conda
-conda create -n genesis python=3.9
+# Using conda (Python 3.10)
+conda create -n genesis python=3.10
 conda activate genesis
 ```
 
@@ -92,6 +92,9 @@ pip install -e .
 #### If using conda or venv:
 ```bash
 # Install PyTorch (choose the appropriate version for your system)
+# For CUDA 12.4:
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
 # For CUDA 11.8:
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
