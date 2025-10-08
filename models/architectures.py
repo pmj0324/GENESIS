@@ -72,8 +72,11 @@ class FiLM(nn.Module):
         nn.init.zeros_(self.beta.bias)
 
     def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
-        gamma = self.gamma(c)
-        beta = self.beta(c)
+        gamma = self.gamma(c)  # (B, feature_dim)
+        beta = self.beta(c)    # (B, feature_dim)
+        # x is (B, feature_dim, L), need to add dimension for broadcasting
+        gamma = gamma.unsqueeze(-1)  # (B, feature_dim, 1)
+        beta = beta.unsqueeze(-1)    # (B, feature_dim, 1)
         return x * (1 + gamma) + beta
 
 
