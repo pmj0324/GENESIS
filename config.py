@@ -126,6 +126,7 @@ class TrainingConfig:
     log_interval: int = 50
     save_interval: int = 1000
     eval_interval: int = 500
+    save_best_only: bool = False
     
     # Output directories
     output_dir: str = "./outputs"
@@ -137,6 +138,10 @@ class TrainingConfig:
     
     # Mixed precision
     use_amp: bool = True  # Automatic Mixed Precision
+    
+    # Advanced features
+    gradient_accumulation_steps: int = 1
+    max_grad_norm: float = 1.0
     
     # Debugging
     debug_mode: bool = False
