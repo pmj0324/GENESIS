@@ -10,7 +10,7 @@ model:
   depth: 4
   heads: 4
   dropout: 0.1
-  fusion: "FiLM"
+  fusion: "SUM"
   label_dim: 6
   t_embed_dim: 64
   mlp_ratio: 4.0

@@ -6,7 +6,7 @@ description: "Default configuration for IceCube muon neutrino event diffusion mo
 # Model configuration
 model:
   seq_len: 5160
-  hidden: 512
+  hidden: 16 #512
   depth: 8
   heads: 8
   dropout: 0.1
@@ -29,7 +29,7 @@ data:
   h5_path: "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
   replace_time_inf_with: 0.0
   channel_first: true
-  batch_size: 8
+  batch_size: 128
   num_workers: 4
   pin_memory: true
   shuffle: true
@@ -61,8 +61,8 @@ training:
   linear_end_factor: 0.0
   
   # Early stopping
-  early_stopping: false
-  early_stopping_patience: 20
+  early_stopping: true
+  early_stopping_patience: 5
   early_stopping_min_delta: 1e-4
   early_stopping_mode: "min"
   early_stopping_baseline: null
