@@ -15,6 +15,7 @@ dependencies:
   - h5py
   - pyyaml
   - tqdm
+  - psutil
   - pip
   - pip:
     - tensorboard

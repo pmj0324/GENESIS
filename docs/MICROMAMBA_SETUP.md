@@ -36,8 +36,8 @@ micromamba --version
 ### 1. Create the Environment
 
 ```bash
-# Create a new environment with Python 3.9
-micromamba create -n genesis python=3.9
+# Create a new environment with Python 3.10
+micromamba create -n genesis python=3.10
 
 # Activate the environment
 micromamba activate genesis
@@ -47,14 +47,14 @@ micromamba activate genesis
 
 Choose the appropriate PyTorch installation based on your system:
 
+#### For CUDA 12.4 (Recommended):
+```bash
+micromamba install pytorch torchvision torchaudio pytorch-cuda=12.4 -c pytorch -c nvidia
+```
+
 #### For CUDA 11.8:
 ```bash
 micromamba install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
-```
-
-#### For CUDA 12.1:
-```bash
-micromamba install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 ```
 
 #### For CPU only:
@@ -99,15 +99,15 @@ Here's a complete script to set up the environment:
 
 # Create environment
 echo "Creating micromamba environment..."
-micromamba create -n genesis python=3.9 -y
+micromamba create -n genesis python=3.10 -y
 
 # Activate environment
 echo "Activating environment..."
 micromamba activate genesis
 
-# Install PyTorch (adjust CUDA version as needed)
+# Install PyTorch (CUDA 12.4)
 echo "Installing PyTorch..."
-micromamba install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia -y
+micromamba install pytorch torchvision torchaudio pytorch-cuda=12.4 -c pytorch -c nvidia -y
 
 # Install other dependencies
 echo "Installing dependencies..."

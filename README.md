@@ -127,12 +127,12 @@ cd GENESIS
 
 2. Create a virtual environment:
 ```bash
-# Using micromamba (recommended)
+# Using micromamba (recommended) - Python 3.10 + CUDA 12.4
 micromamba env create -f environment.yml
 micromamba activate genesis
 
 # Or using conda
-conda create -n genesis python=3.9
+conda create -n genesis python=3.10
 conda activate genesis
 
 # Or using venv
