@@ -223,6 +223,10 @@ def plot_hist_pair(
         if range_time is None:
             range_time = _percentile_range(dset, 1, chunk, sample_chunks=8,
                                            p_low=pclip[0], p_high=pclip[1])
+            
+        # 임계값이 있으면 범위 조정
+        if min_time_threshold is not None and range_time[0] < min_time_threshold:
+            range_time = (min_time_threshold, range_time[1])
 
         # 스트리밍 히스토그램 및 통계 수집
         x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk, exclude_zero, None)
@@ -231,9 +235,17 @@ def plot_hist_pair(
     # Charge 히스토그램
     fig, ax = plt.subplots(figsize=figsize)
     
-    # 히스토그램 플롯
-    ax.plot(x_c, y_c, drawstyle="steps-mid", linewidth=2, color='blue', alpha=0.8)
-    ax.fill_between(x_c, y_c, step="mid", alpha=0.3, color='blue')
+    # 히스토그램 플롯 (더 명확하게)
+    if len(x_c) > 0 and np.sum(y_c) > 0:
+        # 막대 히스토그램으로 변경
+        ax.hist(x_c, bins=bins, weights=y_c, alpha=0.7, color='blue', 
+                edgecolor='darkblue', linewidth=0.5)
+        
+        # 라인도 추가 (선택적)
+        ax.plot(x_c, y_c, drawstyle="steps-mid", linewidth=2, color='darkblue', alpha=0.8)
+    else:
+        ax.text(0.5, 0.5, 'No data in this range', transform=ax.transAxes, 
+                ha='center', va='center', fontsize=14, color='red')
     
     # 통계선 추가
     if show_stats:
@@ -275,6 +287,13 @@ def plot_hist_pair(
         ax.set_xscale("log")
         ax.set_xlabel("Charge (NPE, log scale)", fontsize=12)
     
+    # X축 범위 자동 조정 (데이터에 맞게)
+    if len(x_c) > 0 and np.max(y_c) > 0:
+        data_min = np.min(x_c[y_c > 0])
+        data_max = np.max(x_c[y_c > 0])
+        margin = (data_max - data_min) * 0.05  # 5% 마진
+        ax.set_xlim(max(0, data_min - margin), data_max + margin)
+    
     # 범례
     if show_stats or show_percentiles:
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
@@ -303,9 +322,17 @@ P90: {stats_c['p90']:.3f}"""
     # Time 히스토그램
     fig, ax = plt.subplots(figsize=figsize)
     
-    # 히스토그램 플롯
-    ax.plot(x_t, y_t, drawstyle="steps-mid", linewidth=2, color='green', alpha=0.8)
-    ax.fill_between(x_t, y_t, step="mid", alpha=0.3, color='green')
+    # 히스토그램 플롯 (더 명확하게)
+    if len(x_t) > 0 and np.sum(y_t) > 0:
+        # 막대 히스토그램으로 변경
+        ax.hist(x_t, bins=bins, weights=y_t, alpha=0.7, color='green', 
+                edgecolor='darkgreen', linewidth=0.5)
+        
+        # 라인도 추가 (선택적)
+        ax.plot(x_t, y_t, drawstyle="steps-mid", linewidth=2, color='darkgreen', alpha=0.8)
+    else:
+        ax.text(0.5, 0.5, 'No data in this range', transform=ax.transAxes, 
+                ha='center', va='center', fontsize=14, color='red')
     
     # 통계선 추가
     if show_stats:
@@ -350,6 +377,13 @@ P90: {stats_c['p90']:.3f}"""
     if logx: 
         ax.set_xscale("log")
         ax.set_xlabel("Time (ns, log scale)", fontsize=12)
+    
+    # X축 범위 자동 조정 (데이터에 맞게)
+    if len(x_t) > 0 and np.max(y_t) > 0:
+        data_min = np.min(x_t[y_t > 0])
+        data_max = np.max(x_t[y_t > 0])
+        margin = (data_max - data_min) * 0.05  # 5% 마진
+        ax.set_xlim(max(0, data_min - margin), data_max + margin)
     
     # 범례
     if show_stats or show_percentiles:
