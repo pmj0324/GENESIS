@@ -7,7 +7,7 @@ description: "Default configuration for IceCube muon neutrino event diffusion mo
 model:
   seq_len: 5160
   hidden: 16 #512
-  depth: 8
+  depth: 3
   heads: 8
   dropout: 0.1
   fusion: "SUM"  # Changed to SUM for stability
