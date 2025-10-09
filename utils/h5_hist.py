@@ -43,7 +43,10 @@ Features:
 8. 모든 값과 0 제외 값 모두 플롯:
    python utils/h5_hist.py -p /path/to/data.h5 --plot-both
 
-9. 완전 커스텀 설정:
+9. Time 임계값 적용 (1000ns 이상만):
+   python utils/h5_hist.py -p /path/to/data.h5 --min-time 1000
+
+10. 완전 커스텀 설정:
    python utils/h5_hist.py -p /path/to/data.h5 \
      --bins 300 --logy --logx --figsize 14 8 \
      --range-charge 0 50 --range-time 0 20000 \
@@ -64,6 +67,7 @@ CLI Options:
 --figsize           : 그림 크기 (예: 12 8)
 --exclude-zero      : 0 값을 제외한 히스토그램만 생성
 --plot-both         : 모든 값과 0 제외 값 모두 플롯
+--min-time          : Time 최소 임계값 (ns) - 이 값 이상의 time만 플롯
 --pclip             : 자동 범위 퍼센타일 (기본: 0.5 99.5)
 
 출력:
@@ -72,7 +76,8 @@ CLI Options:
 - {out_prefix}_time.png   : Time 분포 히스토그램
 - {out_prefix}_charge_nonzero.png : Charge 분포 히스토그램 (0 제외)
 - {out_prefix}_time_nonzero.png   : Time 분포 히스토그램 (0 제외)
-- 콘솔에 상세 통계 정보 출력 (0 개수 및 비율 포함)
+- {out_prefix}_time_min{threshold}.png : Time 분포 히스토그램 (임계값 적용)
+- 콘솔에 상세 통계 정보 출력 (0 개수, 비율, 임계값 정보 포함)
 
 예시 출력 통계:
 📊 Charge Statistics:
@@ -117,7 +122,7 @@ def _percentile_range(
 
 def _hist_stream(
     dset, ch: int, bins: int, v_range: Tuple[float, float], chunk: int, 
-    exclude_zero: bool = False
+    exclude_zero: bool = False, min_threshold: Optional[float] = None
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
     """스트리밍으로 전체 히스토그램 계산 및 통계 수집."""
     edges = np.linspace(v_range[0], v_range[1], bins + 1)
@@ -141,6 +146,10 @@ def _hist_stream(
         # 0 제외 옵션
         if exclude_zero:
             x = x[x != 0]
+        
+        # 최소 임계값 적용
+        if min_threshold is not None:
+            x = x[x >= min_threshold]
         
         # 통계용 데이터 수집 (샘플링으로 메모리 절약)
         if len(all_values) < 100000:  # 최대 10만개 샘플
@@ -169,14 +178,16 @@ def _hist_stream(
             'count': len(all_values),
             'zero_count': zero_count,
             'total_count': total_count,
-            'zero_fraction': zero_count / total_count if total_count > 0 else 0
+            'zero_fraction': zero_count / total_count if total_count > 0 else 0,
+            'min_threshold': min_threshold
         }
     else:
         stats_dict = {
             'mean': 0, 'std': 0, 'median': 0, 'min': 0, 'max': 0,
             'p10': 0, 'p90': 0, 'p25': 0, 'p75': 0, 'count': 0,
             'zero_count': zero_count, 'total_count': total_count,
-            'zero_fraction': zero_count / total_count if total_count > 0 else 0
+            'zero_fraction': zero_count / total_count if total_count > 0 else 0,
+            'min_threshold': min_threshold
         }
     
     return centers, counts, stats_dict
@@ -196,6 +207,7 @@ def plot_hist_pair(
     figsize: Tuple[int, int] = (12, 8),
     exclude_zero: bool = False,
     plot_both: bool = False,
+    min_time_threshold: Optional[float] = None,
 ):
     """고급 히스토그램 플롯 함수."""
     
@@ -213,8 +225,8 @@ def plot_hist_pair(
                                            p_low=pclip[0], p_high=pclip[1])
 
         # 스트리밍 히스토그램 및 통계 수집
-        x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk, exclude_zero)
-        x_t, y_t, stats_t = _hist_stream(dset, 1, bins, range_time, chunk, exclude_zero)
+        x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk, exclude_zero, None)
+        x_t, y_t, stats_t = _hist_stream(dset, 1, bins, range_time, chunk, exclude_zero, min_time_threshold)
 
     # Charge 히스토그램
     fig, ax = plt.subplots(figsize=figsize)
@@ -325,7 +337,11 @@ P90: {stats_c['p90']:.3f}"""
     # 축 설정
     ax.set_xlabel("Time (ns)", fontsize=12)
     ax.set_ylabel("Count", fontsize=12)
-    title = "Time Distribution (Non-zero only)" if exclude_zero else "Time Distribution"
+    title = "Time Distribution"
+    if exclude_zero:
+        title += " (Non-zero only)"
+    if min_time_threshold is not None:
+        title += f" (≥{min_time_threshold:.1f}ns)"
     ax.set_title(title, fontsize=14, fontweight='bold')
     
     if logy: 
@@ -341,9 +357,11 @@ P90: {stats_c['p90']:.3f}"""
     
     # 통계 텍스트 박스
     zero_info = f"Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})" if not exclude_zero else ""
+    threshold_info = f"Threshold: ≥{stats_t['min_threshold']:.1f}ns" if stats_t['min_threshold'] is not None else ""
     stats_text = f"""Statistics:
 Count: {stats_t['count']:,}
 {zero_info}
+{threshold_info}
 Min: {stats_t['min']:.1f}
 Max: {stats_t['max']:.1f}
 Mean: {stats_t['mean']:.1f} ± {stats_t['std']:.1f}
@@ -357,11 +375,14 @@ P90: {stats_t['p90']:.1f}"""
     
     plt.tight_layout()
     suffix = "_nonzero" if exclude_zero else ""
+    if min_time_threshold is not None:
+        suffix += f"_min{min_time_threshold:.0f}"
     plt.savefig(f"{out_prefix}_time{suffix}.png", dpi=150, bbox_inches='tight')
     plt.close()
     
     # 통계 정보 출력
     zero_suffix = " (Non-zero only)" if exclude_zero else ""
+    threshold_suffix = f" (≥{min_time_threshold:.1f}ns)" if min_time_threshold is not None else ""
     print(f"\n📊 Charge Statistics{zero_suffix}:")
     print(f"  Range: [{stats_c['min']:.3f}, {stats_c['max']:.3f}]")
     print(f"  Mean ± Std: {stats_c['mean']:.3f} ± {stats_c['std']:.3f}")
@@ -370,13 +391,15 @@ P90: {stats_t['p90']:.1f}"""
     if not exclude_zero:
         print(f"  Zeros: {stats_c['zero_count']:,} ({stats_c['zero_fraction']:.1%})")
     
-    print(f"\n⏱️  Time Statistics{zero_suffix}:")
+    print(f"\n⏱️  Time Statistics{zero_suffix}{threshold_suffix}:")
     print(f"  Range: [{stats_t['min']:.1f}, {stats_t['max']:.1f}]")
     print(f"  Mean ± Std: {stats_t['mean']:.1f} ± {stats_t['std']:.1f}")
     print(f"  Median: {stats_t['median']:.1f}")
     print(f"  Percentiles: P10={stats_t['p10']:.1f}, P90={stats_t['p90']:.1f}")
     if not exclude_zero:
         print(f"  Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})")
+    if min_time_threshold is not None:
+        print(f"  Min Threshold: {min_time_threshold:.1f}ns")
 
 def main():
     ap = argparse.ArgumentParser(description="Plot advanced histograms for input charge/time from HDF5")
@@ -396,6 +419,7 @@ def main():
                     help="Figure size (width, height)")
     ap.add_argument("--exclude-zero", action="store_true", help="Exclude zero values from histogram")
     ap.add_argument("--plot-both", action="store_true", help="Plot both all values and non-zero only")
+    ap.add_argument("--min-time", type=float, help="Minimum time threshold (ns) - only plot time values above this")
     ap.add_argument("--pclip", type=float, nargs=2, default=(0.5, 99.5),
                     metavar=("LOW","HIGH"),
                     help="Percentiles for auto-range when range not given")
@@ -417,6 +441,7 @@ def main():
             figsize=tuple(args.figsize),
             exclude_zero=False,
             plot_both=args.plot_both,
+            min_time_threshold=args.min_time,
             pclip=tuple(args.pclip),
         )
     
@@ -436,16 +461,21 @@ def main():
             figsize=tuple(args.figsize),
             exclude_zero=True,
             plot_both=args.plot_both,
+            min_time_threshold=args.min_time,
             pclip=tuple(args.pclip),
         )
     
     # 출력 파일 목록
+    time_suffix = ""
+    if args.min_time is not None:
+        time_suffix = f"_min{args.min_time:.0f}"
+    
     if args.plot_both:
-        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time.png, {args.out}_charge_nonzero.png, {args.out}_time_nonzero.png")
+        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time{time_suffix}.png, {args.out}_charge_nonzero.png, {args.out}_time_nonzero{time_suffix}.png")
     elif args.exclude_zero:
-        print(f"\n✅ Saved: {args.out}_charge_nonzero.png, {args.out}_time_nonzero.png")
+        print(f"\n✅ Saved: {args.out}_charge_nonzero.png, {args.out}_time_nonzero{time_suffix}.png")
     else:
-        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time.png")
+        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time{time_suffix}.png")
 
 if __name__ == "__main__":
     main()
