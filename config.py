@@ -43,6 +43,10 @@ class ModelConfig:
     # Affine normalization (per-channel)
     affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)  # [npe, time, xpmt, ypmt, zpmt]
     affine_scales: Tuple[float, ...] = (1.0, 100000.0, 1.0, 1.0, 1.0)
+    
+    # Label affine normalization (per-label)
+    label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
+    label_scales: Tuple[float, ...] = (1e-7, 1.0, 1.0, 0.01, 0.01, 0.01)  # [Energy, Zenith, Azimuth, X, Y, Z]
 
 
 @dataclass

@@ -133,16 +133,23 @@ class PMTEmbedding(nn.Module):
         if self.fusion == "FILM":
             self.film = FiLM(label_dim, hidden)
 
-    def forward(self, signal: torch.Tensor, geom: torch.Tensor, label: Optional[torch.Tensor]) -> torch.Tensor:
-        h_sig = self.signal_net(signal)
-        h_pos = self.geom_net(geom)
+    def forward(self, signal: torch.Tensor, geom: torch.Tensor, label: Optional[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            h_combined: Combined embedding (B, L, hidden)
+            h_geo: Geometry embedding to be added after transformer (B, L, hidden)
+        """
+        h_sig = self.signal_net(signal)  # (B, L, hidden)
+        h_geo = self.geom_net(geom)      # (B, L, hidden)
 
         if self.fusion == "SUM":
-            return h_sig + h_pos
+            h_combined = h_sig + h_geo
         else:
             assert label is not None, "fusion='FiLM' requires label"
             h_sig = self.film(h_sig, label)
-            return h_sig + h_pos
+            h_combined = h_sig + h_geo
+        
+        return h_combined, h_geo
 
 
 class PMTDit(nn.Module):
@@ -161,6 +168,8 @@ class PMTDit(nn.Module):
         mlp_ratio: float = 4.0,
         affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0),
         affine_scales: Tuple[float, ...] = (1.0, 100000.0, 1.0, 1.0, 1.0),
+        label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        label_scales: Tuple[float, ...] = (1e-7, 1.0, 1.0, 0.01, 0.01, 0.01),
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -191,28 +200,39 @@ class PMTDit(nn.Module):
         self.ln_out = nn.LayerNorm(hidden)
         self.out_proj = nn.Linear(hidden, 2)
 
-        # Affine normalization
+        # Affine normalization for signals and geometry
         off = torch.tensor(affine_offsets, dtype=torch.float32).reshape(5, 1)
         scl = torch.tensor(affine_scales, dtype=torch.float32).reshape(5, 1)
         self.register_buffer("affine_offset", off)
         self.register_buffer("affine_scale", scl)
+        
+        # Affine normalization for labels
+        label_off = torch.tensor(label_offsets, dtype=torch.float32).reshape(6)
+        label_scl = torch.tensor(label_scales, dtype=torch.float32).reshape(6)
+        self.register_buffer("label_offset", label_off)
+        self.register_buffer("label_scale", label_scl)
 
     def forward(self, x_sig_t: torch.Tensor, geom: torch.Tensor, t: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
         B, Csig, L = x_sig_t.shape
         assert Csig == 2 and L == self.seq_len
 
-        # Affine normalization
-        x5 = torch.cat([x_sig_t, geom], dim=1)
+        # Affine normalization for signals and geometry
+        x5 = torch.cat([x_sig_t, geom], dim=1)  # (B, 5, L)
         off = self.affine_offset.view(1, 5, 1)
         scl = self.affine_scale.view(1, 5, 1)
         x5 = (x5 + off) * scl
-        x_sig_t = x5[:, 0:2, :]
-        geom = x5[:, 2:5, :]
+        x_sig_t = x5[:, 0:2, :]  # (B, 2, L)
+        geom = x5[:, 2:5, :]      # (B, 3, L)
+        
+        # Affine normalization for labels
+        label_off = self.label_offset.view(1, 6)
+        label_scl = self.label_scale.view(1, 6)
+        label = (label + label_off) * label_scl  # (B, 6)
 
         # Tokenization
-        sig = x_sig_t.transpose(1, 2)
-        geo = geom.transpose(1, 2)
-        tokens = self.embedder(sig, geo, label)
+        sig = x_sig_t.transpose(1, 2)  # (B, L, 2)
+        geo = geom.transpose(1, 2)      # (B, L, 3)
+        tokens, h_geo = self.embedder(sig, geo, label)  # Get both combined and geo embeddings
         tokens = tokens + self.pos
 
         # Conditioning
@@ -225,8 +245,12 @@ class PMTDit(nn.Module):
         h = tokens
         for blk in self.blocks:
             h = blk(h, cond)
+        
+        # Add geometry embedding again after transformer
+        h = h + h_geo  # (B, L, hidden) + (B, L, hidden)
+        
         h = self.ln_out(h)
-        eps = self.out_proj(h).transpose(1, 2)
+        eps = self.out_proj(h).transpose(1, 2)  # (B, L, 2) -> (B, 2, L)
         return eps
 
 
