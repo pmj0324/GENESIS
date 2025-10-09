@@ -113,7 +113,7 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
             
             # Add noise
             t_tensor = torch.tensor([t_value], dtype=torch.long)
-            x_sig_t = diffusion.diffusion.q_sample(x0_sig_single, t_tensor)
+            x_sig_t = diffusion.q_sample(x0_sig_single, t_tensor)
             
             # Denormalize noisy signal for display
             x_sig_t_denorm = denormalize_signal(x_sig_t, config.model.affine_offsets, config.model.affine_scales)
