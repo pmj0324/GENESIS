@@ -37,7 +37,13 @@ Features:
 6. 고해상도 + 많은 빈:
    python utils/h5_hist.py -p /path/to/data.h5 --bins 500 --chunk 2048
 
-7. 완전 커스텀 설정:
+7. 0 제외 히스토그램:
+   python utils/h5_hist.py -p /path/to/data.h5 --exclude-zero
+
+8. 모든 값과 0 제외 값 모두 플롯:
+   python utils/h5_hist.py -p /path/to/data.h5 --plot-both
+
+9. 완전 커스텀 설정:
    python utils/h5_hist.py -p /path/to/data.h5 \
      --bins 300 --logy --logx --figsize 14 8 \
      --range-charge 0 50 --range-time 0 20000 \
@@ -56,13 +62,17 @@ CLI Options:
 --no-stats          : 통계선 숨김 (평균, 중앙값, 표준편차)
 --no-percentiles    : 퍼센타일선 숨김 (P10, P90, P25, P75)
 --figsize           : 그림 크기 (예: 12 8)
+--exclude-zero      : 0 값을 제외한 히스토그램만 생성
+--plot-both         : 모든 값과 0 제외 값 모두 플롯
 --pclip             : 자동 범위 퍼센타일 (기본: 0.5 99.5)
 
 출력:
 ================================================================
 - {out_prefix}_charge.png : Charge 분포 히스토그램
 - {out_prefix}_time.png   : Time 분포 히스토그램
-- 콘솔에 상세 통계 정보 출력
+- {out_prefix}_charge_nonzero.png : Charge 분포 히스토그램 (0 제외)
+- {out_prefix}_time_nonzero.png   : Time 분포 히스토그램 (0 제외)
+- 콘솔에 상세 통계 정보 출력 (0 개수 및 비율 포함)
 
 예시 출력 통계:
 📊 Charge Statistics:
@@ -106,7 +116,8 @@ def _percentile_range(
     return float(lo), float(hi)
 
 def _hist_stream(
-    dset, ch: int, bins: int, v_range: Tuple[float, float], chunk: int
+    dset, ch: int, bins: int, v_range: Tuple[float, float], chunk: int, 
+    exclude_zero: bool = False
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
     """스트리밍으로 전체 히스토그램 계산 및 통계 수집."""
     edges = np.linspace(v_range[0], v_range[1], bins + 1)
@@ -114,6 +125,8 @@ def _hist_stream(
     
     # 통계 수집을 위한 배열
     all_values = []
+    zero_count = 0
+    total_count = 0
     N = dset.shape[0]
     
     for i in range(0, N, chunk):
@@ -121,13 +134,22 @@ def _hist_stream(
         x = np.asarray(dset[sl, ch, :], dtype=np.float64).ravel()
         x = x[~np.isnan(x)]
         
+        # 0 카운팅
+        total_count += len(x)
+        zero_count += np.sum(x == 0)
+        
+        # 0 제외 옵션
+        if exclude_zero:
+            x = x[x != 0]
+        
         # 통계용 데이터 수집 (샘플링으로 메모리 절약)
         if len(all_values) < 100000:  # 최대 10만개 샘플
             all_values.extend(x.tolist())
         
-        x = np.clip(x, edges[0], edges[-1])
-        c, _ = np.histogram(x, bins=edges)
-        counts += c
+        if len(x) > 0:
+            x = np.clip(x, edges[0], edges[-1])
+            c, _ = np.histogram(x, bins=edges)
+            counts += c
     
     centers = 0.5 * (edges[:-1] + edges[1:])
     
@@ -144,12 +166,17 @@ def _hist_stream(
             'p90': np.percentile(all_values, 90),
             'p25': np.percentile(all_values, 25),
             'p75': np.percentile(all_values, 75),
-            'count': len(all_values)
+            'count': len(all_values),
+            'zero_count': zero_count,
+            'total_count': total_count,
+            'zero_fraction': zero_count / total_count if total_count > 0 else 0
         }
     else:
         stats_dict = {
             'mean': 0, 'std': 0, 'median': 0, 'min': 0, 'max': 0,
-            'p10': 0, 'p90': 0, 'p25': 0, 'p75': 0, 'count': 0
+            'p10': 0, 'p90': 0, 'p25': 0, 'p75': 0, 'count': 0,
+            'zero_count': zero_count, 'total_count': total_count,
+            'zero_fraction': zero_count / total_count if total_count > 0 else 0
         }
     
     return centers, counts, stats_dict
@@ -167,6 +194,8 @@ def plot_hist_pair(
     show_stats: bool = True,
     show_percentiles: bool = True,
     figsize: Tuple[int, int] = (12, 8),
+    exclude_zero: bool = False,
+    plot_both: bool = False,
 ):
     """고급 히스토그램 플롯 함수."""
     
@@ -184,8 +213,8 @@ def plot_hist_pair(
                                            p_low=pclip[0], p_high=pclip[1])
 
         # 스트리밍 히스토그램 및 통계 수집
-        x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk)
-        x_t, y_t, stats_t = _hist_stream(dset, 1, bins, range_time, chunk)
+        x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk, exclude_zero)
+        x_t, y_t, stats_t = _hist_stream(dset, 1, bins, range_time, chunk, exclude_zero)
 
     # Charge 히스토그램
     fig, ax = plt.subplots(figsize=figsize)
@@ -224,7 +253,8 @@ def plot_hist_pair(
     # 축 설정
     ax.set_xlabel("Charge (NPE)", fontsize=12)
     ax.set_ylabel("Count", fontsize=12)
-    ax.set_title("Charge Distribution", fontsize=14, fontweight='bold')
+    title = "Charge Distribution (Non-zero only)" if exclude_zero else "Charge Distribution"
+    ax.set_title(title, fontsize=14, fontweight='bold')
     
     if logy: 
         ax.set_yscale("log")
@@ -238,8 +268,10 @@ def plot_hist_pair(
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
     
     # 통계 텍스트 박스
+    zero_info = f"Zeros: {stats_c['zero_count']:,} ({stats_c['zero_fraction']:.1%})" if not exclude_zero else ""
     stats_text = f"""Statistics:
 Count: {stats_c['count']:,}
+{zero_info}
 Min: {stats_c['min']:.3f}
 Max: {stats_c['max']:.3f}
 Mean: {stats_c['mean']:.3f} ± {stats_c['std']:.3f}
@@ -252,7 +284,8 @@ P90: {stats_c['p90']:.3f}"""
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
-    plt.savefig(f"{out_prefix}_charge.png", dpi=150, bbox_inches='tight')
+    suffix = "_nonzero" if exclude_zero else ""
+    plt.savefig(f"{out_prefix}_charge{suffix}.png", dpi=150, bbox_inches='tight')
     plt.close()
 
     # Time 히스토그램
@@ -292,7 +325,8 @@ P90: {stats_c['p90']:.3f}"""
     # 축 설정
     ax.set_xlabel("Time (ns)", fontsize=12)
     ax.set_ylabel("Count", fontsize=12)
-    ax.set_title("Time Distribution", fontsize=14, fontweight='bold')
+    title = "Time Distribution (Non-zero only)" if exclude_zero else "Time Distribution"
+    ax.set_title(title, fontsize=14, fontweight='bold')
     
     if logy: 
         ax.set_yscale("log")
@@ -306,8 +340,10 @@ P90: {stats_c['p90']:.3f}"""
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
     
     # 통계 텍스트 박스
+    zero_info = f"Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})" if not exclude_zero else ""
     stats_text = f"""Statistics:
 Count: {stats_t['count']:,}
+{zero_info}
 Min: {stats_t['min']:.1f}
 Max: {stats_t['max']:.1f}
 Mean: {stats_t['mean']:.1f} ± {stats_t['std']:.1f}
@@ -320,21 +356,27 @@ P90: {stats_t['p90']:.1f}"""
             bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
     
     plt.tight_layout()
-    plt.savefig(f"{out_prefix}_time.png", dpi=150, bbox_inches='tight')
+    suffix = "_nonzero" if exclude_zero else ""
+    plt.savefig(f"{out_prefix}_time{suffix}.png", dpi=150, bbox_inches='tight')
     plt.close()
     
     # 통계 정보 출력
-    print(f"\n📊 Charge Statistics:")
+    zero_suffix = " (Non-zero only)" if exclude_zero else ""
+    print(f"\n📊 Charge Statistics{zero_suffix}:")
     print(f"  Range: [{stats_c['min']:.3f}, {stats_c['max']:.3f}]")
     print(f"  Mean ± Std: {stats_c['mean']:.3f} ± {stats_c['std']:.3f}")
     print(f"  Median: {stats_c['median']:.3f}")
     print(f"  Percentiles: P10={stats_c['p10']:.3f}, P90={stats_c['p90']:.3f}")
+    if not exclude_zero:
+        print(f"  Zeros: {stats_c['zero_count']:,} ({stats_c['zero_fraction']:.1%})")
     
-    print(f"\n⏱️  Time Statistics:")
+    print(f"\n⏱️  Time Statistics{zero_suffix}:")
     print(f"  Range: [{stats_t['min']:.1f}, {stats_t['max']:.1f}]")
     print(f"  Mean ± Std: {stats_t['mean']:.1f} ± {stats_t['std']:.1f}")
     print(f"  Median: {stats_t['median']:.1f}")
     print(f"  Percentiles: P10={stats_t['p10']:.1f}, P90={stats_t['p90']:.1f}")
+    if not exclude_zero:
+        print(f"  Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})")
 
 def main():
     ap = argparse.ArgumentParser(description="Plot advanced histograms for input charge/time from HDF5")
@@ -352,26 +394,58 @@ def main():
     ap.add_argument("--no-percentiles", action="store_true", help="Hide percentile lines (P10, P90, P25, P75)")
     ap.add_argument("--figsize", type=int, nargs=2, default=(12, 8), metavar=("WIDTH", "HEIGHT"),
                     help="Figure size (width, height)")
+    ap.add_argument("--exclude-zero", action="store_true", help="Exclude zero values from histogram")
+    ap.add_argument("--plot-both", action="store_true", help="Plot both all values and non-zero only")
     ap.add_argument("--pclip", type=float, nargs=2, default=(0.5, 99.5),
                     metavar=("LOW","HIGH"),
                     help="Percentiles for auto-range when range not given")
     args = ap.parse_args()
 
-    plot_hist_pair(
-        h5_path=args.path,
-        bins=args.bins,
-        chunk=args.chunk,
-        range_charge=tuple(args.range_charge) if args.range_charge else None,
-        range_time=tuple(args.range_time) if args.range_time else None,
-        out_prefix=args.out,
-        logy=args.logy,
-        logx=args.logx,
-        show_stats=not args.no_stats,
-        show_percentiles=not args.no_percentiles,
-        figsize=tuple(args.figsize),
-        pclip=tuple(args.pclip),
-    )
-    print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time.png")
+    # 기본 플롯 (모든 값 포함)
+    if not args.exclude_zero or args.plot_both:
+        plot_hist_pair(
+            h5_path=args.path,
+            bins=args.bins,
+            chunk=args.chunk,
+            range_charge=tuple(args.range_charge) if args.range_charge else None,
+            range_time=tuple(args.range_time) if args.range_time else None,
+            out_prefix=args.out,
+            logy=args.logy,
+            logx=args.logx,
+            show_stats=not args.no_stats,
+            show_percentiles=not args.no_percentiles,
+            figsize=tuple(args.figsize),
+            exclude_zero=False,
+            plot_both=args.plot_both,
+            pclip=tuple(args.pclip),
+        )
+    
+    # 0 제외 플롯
+    if args.exclude_zero or args.plot_both:
+        plot_hist_pair(
+            h5_path=args.path,
+            bins=args.bins,
+            chunk=args.chunk,
+            range_charge=tuple(args.range_charge) if args.range_charge else None,
+            range_time=tuple(args.range_time) if args.range_time else None,
+            out_prefix=args.out,
+            logy=args.logy,
+            logx=args.logx,
+            show_stats=not args.no_stats,
+            show_percentiles=not args.no_percentiles,
+            figsize=tuple(args.figsize),
+            exclude_zero=True,
+            plot_both=args.plot_both,
+            pclip=tuple(args.pclip),
+        )
+    
+    # 출력 파일 목록
+    if args.plot_both:
+        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time.png, {args.out}_charge_nonzero.png, {args.out}_time_nonzero.png")
+    elif args.exclude_zero:
+        print(f"\n✅ Saved: {args.out}_charge_nonzero.png, {args.out}_time_nonzero.png")
+    else:
+        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time.png")
 
 if __name__ == "__main__":
     main()
