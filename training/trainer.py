@@ -23,7 +23,7 @@ import numpy as np
 from tqdm import tqdm
 
 # Project imports
-from dataloader.pmt_dataloader import make_dataloader
+from dataloader.pmt_dataloader import make_dataloader, check_dataset_health
 from models.factory import ModelFactory
 from models.pmt_dit import GaussianDiffusion, DiffusionConfig
 from config import ExperimentConfig, load_config_from_file
@@ -396,6 +396,13 @@ class Trainer:
         print(f"Device: {self.device}")
         print(f"Mixed precision: {self.scaler is not None}")
         print(f"Gradient accumulation: {self.config.training.gradient_accumulation_steps}")
+        
+        # Data health check on first epoch
+        if self.start_epoch == 0:
+            print("\n" + "="*70)
+            print("🔍 Running data health check before training...")
+            print("="*70)
+            check_dataset_health(self.train_loader, num_batches=5, verbose=True)
         
         for epoch in range(self.start_epoch, self.config.training.num_epochs):
             # Train epoch

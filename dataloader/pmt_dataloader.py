@@ -74,13 +74,28 @@ class PMTSignalsH5(Dataset):
         """input(2,L), label(6,) numpy 반환 (원본 스케일)"""
         x_sig = np.asarray(f["input"][i, :, :], dtype=self.dtype)   # (2, L)
         y     = np.asarray(f["label"][i, :], dtype=self.dtype)      # (6,)
-        # time inf 처리 옵션
-        if self.replace_time_inf_with is not None:
-            t = x_sig[1, :]  # time
-            mask_inf = ~np.isfinite(t)  # (inf, -inf, nan)
-            if mask_inf.any():
-                t[mask_inf] = self.replace_time_inf_with
-                x_sig[1, :] = t
+        
+        # Handle inf/nan in both npe and time
+        # NPE (channel 0)
+        npe = x_sig[0, :]
+        mask_invalid_npe = ~np.isfinite(npe)
+        if mask_invalid_npe.any():
+            npe[mask_invalid_npe] = 0.0  # Replace inf/nan in npe with 0
+            x_sig[0, :] = npe
+        
+        # Time (channel 1)
+        t = x_sig[1, :]
+        mask_invalid_time = ~np.isfinite(t)
+        if mask_invalid_time.any():
+            replacement_val = self.replace_time_inf_with if self.replace_time_inf_with is not None else 0.0
+            t[mask_invalid_time] = replacement_val
+            x_sig[1, :] = t
+        
+        # Handle inf/nan in labels
+        mask_invalid_label = ~np.isfinite(y)
+        if mask_invalid_label.any():
+            y[mask_invalid_label] = 0.0
+        
         return x_sig, y
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, Tensor, int]:
@@ -101,6 +116,133 @@ class PMTSignalsH5(Dataset):
         y     = torch.from_numpy(y_np)         # (6,)
 
         return x_sig, geom, y, real_i
+
+
+def validate_data_batch(x_sig: Tensor, geom: Tensor, label: Tensor, batch_idx: int = 0) -> dict:
+    """
+    Validate a batch of data and return statistics.
+    
+    Args:
+        x_sig: (B, 2, L) signal tensor
+        geom: (B, 3, L) or (3, L) geometry tensor
+        label: (B, 6) label tensor
+        batch_idx: Batch index for logging
+        
+    Returns:
+        Dictionary with validation statistics
+    """
+    stats = {
+        'batch_idx': batch_idx,
+        'batch_size': x_sig.shape[0],
+        'has_nan': False,
+        'has_inf': False,
+        'warnings': []
+    }
+    
+    # Check x_sig (signals)
+    if torch.isnan(x_sig).any():
+        stats['has_nan'] = True
+        nan_count = torch.isnan(x_sig).sum().item()
+        stats['warnings'].append(f"x_sig contains {nan_count} NaN values")
+    
+    if torch.isinf(x_sig).any():
+        stats['has_inf'] = True
+        inf_count = torch.isinf(x_sig).sum().item()
+        stats['warnings'].append(f"x_sig contains {inf_count} inf values")
+    
+    # Check label
+    if torch.isnan(label).any():
+        stats['has_nan'] = True
+        nan_count = torch.isnan(label).sum().item()
+        stats['warnings'].append(f"label contains {nan_count} NaN values")
+    
+    if torch.isinf(label).any():
+        stats['has_inf'] = True
+        inf_count = torch.isinf(label).sum().item()
+        stats['warnings'].append(f"label contains {inf_count} inf values")
+    
+    # Statistics
+    stats['x_sig_min'] = x_sig.min().item()
+    stats['x_sig_max'] = x_sig.max().item()
+    stats['x_sig_mean'] = x_sig.mean().item()
+    stats['x_sig_std'] = x_sig.std().item()
+    
+    stats['label_min'] = label.min().item()
+    stats['label_max'] = label.max().item()
+    stats['label_mean'] = label.mean().item()
+    stats['label_std'] = label.std().item()
+    
+    return stats
+
+
+def check_dataset_health(dataloader: DataLoader, num_batches: int = 10, verbose: bool = True) -> dict:
+    """
+    Check the health of the dataset by sampling a few batches.
+    
+    Args:
+        dataloader: DataLoader to check
+        num_batches: Number of batches to sample
+        verbose: Whether to print detailed statistics
+        
+    Returns:
+        Dictionary with overall statistics
+    """
+    print(f"\n{'='*70}")
+    print("📊 Dataset Health Check")
+    print(f"{'='*70}")
+    
+    total_stats = {
+        'total_batches_checked': 0,
+        'batches_with_nan': 0,
+        'batches_with_inf': 0,
+        'all_batch_stats': []
+    }
+    
+    for i, batch in enumerate(dataloader):
+        if i >= num_batches:
+            break
+        
+        x_sig, geom, label, idx = batch
+        
+        # Expand geom if needed
+        if geom.ndim == 2:
+            geom = geom.unsqueeze(0).expand(x_sig.size(0), -1, -1)
+        
+        stats = validate_data_batch(x_sig, geom, label, batch_idx=i)
+        total_stats['all_batch_stats'].append(stats)
+        total_stats['total_batches_checked'] += 1
+        
+        if stats['has_nan']:
+            total_stats['batches_with_nan'] += 1
+        if stats['has_inf']:
+            total_stats['batches_with_inf'] += 1
+        
+        if verbose and (stats['has_nan'] or stats['has_inf'] or i == 0):
+            print(f"\nBatch {i}:")
+            print(f"  Shape: x_sig={x_sig.shape}, label={label.shape}")
+            print(f"  x_sig range: [{stats['x_sig_min']:.4f}, {stats['x_sig_max']:.4f}]")
+            print(f"  x_sig mean±std: {stats['x_sig_mean']:.4f}±{stats['x_sig_std']:.4f}")
+            print(f"  label range: [{stats['label_min']:.4f}, {stats['label_max']:.4f}]")
+            print(f"  label mean±std: {stats['label_mean']:.4f}±{stats['label_std']:.4f}")
+            
+            if stats['warnings']:
+                print(f"  ⚠️  Warnings:")
+                for warning in stats['warnings']:
+                    print(f"    - {warning}")
+    
+    print(f"\n{'='*70}")
+    print("📋 Summary:")
+    print(f"  Total batches checked: {total_stats['total_batches_checked']}")
+    print(f"  Batches with NaN: {total_stats['batches_with_nan']}")
+    print(f"  Batches with inf: {total_stats['batches_with_inf']}")
+    
+    if total_stats['batches_with_nan'] == 0 and total_stats['batches_with_inf'] == 0:
+        print(f"  ✅ All checked batches are healthy!")
+    else:
+        print(f"  ⚠️  Some batches contain invalid values (NaN/inf)")
+    print(f"{'='*70}\n")
+    
+    return total_stats
 
 
 def make_dataloader(

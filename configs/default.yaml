@@ -10,7 +10,7 @@ model:
   depth: 8
   heads: 8
   dropout: 0.1
-  fusion: "FiLM"  # "SUM" or "FiLM"
+  fusion: "SUM"  # Changed to SUM for stability
   label_dim: 6
   t_embed_dim: 128
   mlp_ratio: 4.0
@@ -40,11 +40,11 @@ data:
 # Training configuration
 training:
   num_epochs: 100
-  learning_rate: 0.0002
+  learning_rate: 0.0001  # Reduced from 2e-4 to 1e-4
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
-  scheduler: null
+  scheduler: "cosine"  # Added scheduler for stability
   warmup_steps: 1000
   
   # Scheduler-specific parameters
