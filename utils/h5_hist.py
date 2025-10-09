@@ -156,9 +156,11 @@ def _hist_stream(
             all_values.extend(x.tolist())
         
         if len(x) > 0:
-            x = np.clip(x, edges[0], edges[-1])
-            c, _ = np.histogram(x, bins=edges)
-            counts += c
+            # 범위 확인 및 조정
+            if edges[0] < edges[-1]:  # 유효한 범위인지 확인
+                x = np.clip(x, edges[0], edges[-1])
+                c, _ = np.histogram(x, bins=edges)
+                counts += c
     
     centers = 0.5 * (edges[:-1] + edges[1:])
     
@@ -225,8 +227,8 @@ def plot_hist_pair(
                                            p_low=pclip[0], p_high=pclip[1])
             
         # 임계값이 있으면 범위 조정
-        if min_time_threshold is not None and range_time[0] < min_time_threshold:
-            range_time = (min_time_threshold, range_time[1])
+        if min_time_threshold is not None:
+            range_time = (min_time_threshold, max(range_time[1], min_time_threshold + 1))
 
         # 스트리밍 히스토그램 및 통계 수집
         x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk, exclude_zero, None)
@@ -237,12 +239,18 @@ def plot_hist_pair(
     
     # 히스토그램 플롯 (더 명확하게)
     if len(x_c) > 0 and np.sum(y_c) > 0:
-        # 막대 히스토그램으로 변경
-        ax.hist(x_c, bins=bins, weights=y_c, alpha=0.7, color='blue', 
-                edgecolor='darkblue', linewidth=0.5)
-        
-        # 라인도 추가 (선택적)
-        ax.plot(x_c, y_c, drawstyle="steps-mid", linewidth=2, color='darkblue', alpha=0.8)
+        # 범위 계산
+        x_min, x_max = np.min(x_c), np.max(x_c)
+        if x_min < x_max:  # 유효한 범위인지 확인
+            # 막대 히스토그램으로 변경
+            ax.hist(x_c, bins=bins, weights=y_c, alpha=0.7, color='blue', 
+                    edgecolor='darkblue', linewidth=0.5, range=(x_min, x_max))
+            
+            # 라인도 추가 (선택적)
+            ax.plot(x_c, y_c, drawstyle="steps-mid", linewidth=2, color='darkblue', alpha=0.8)
+        else:
+            ax.text(0.5, 0.5, 'Invalid data range', transform=ax.transAxes, 
+                    ha='center', va='center', fontsize=14, color='red')
     else:
         ax.text(0.5, 0.5, 'No data in this range', transform=ax.transAxes, 
                 ha='center', va='center', fontsize=14, color='red')
@@ -324,12 +332,18 @@ P90: {stats_c['p90']:.3f}"""
     
     # 히스토그램 플롯 (더 명확하게)
     if len(x_t) > 0 and np.sum(y_t) > 0:
-        # 막대 히스토그램으로 변경
-        ax.hist(x_t, bins=bins, weights=y_t, alpha=0.7, color='green', 
-                edgecolor='darkgreen', linewidth=0.5)
-        
-        # 라인도 추가 (선택적)
-        ax.plot(x_t, y_t, drawstyle="steps-mid", linewidth=2, color='darkgreen', alpha=0.8)
+        # 범위 계산
+        x_min, x_max = np.min(x_t), np.max(x_t)
+        if x_min < x_max:  # 유효한 범위인지 확인
+            # 막대 히스토그램으로 변경
+            ax.hist(x_t, bins=bins, weights=y_t, alpha=0.7, color='green', 
+                    edgecolor='darkgreen', linewidth=0.5, range=(x_min, x_max))
+            
+            # 라인도 추가 (선택적)
+            ax.plot(x_t, y_t, drawstyle="steps-mid", linewidth=2, color='darkgreen', alpha=0.8)
+        else:
+            ax.text(0.5, 0.5, 'Invalid data range', transform=ax.transAxes, 
+                    ha='center', va='center', fontsize=14, color='red')
     else:
         ax.text(0.5, 0.5, 'No data in this range', transform=ax.transAxes, 
                 ha='center', va='center', fontsize=14, color='red')
