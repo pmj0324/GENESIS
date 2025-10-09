@@ -80,6 +80,7 @@ Thumbs.db
 outputs/
 checkpoints/
 logs/
+dev-logs/
 *.h5
 *.npz
 *.png
