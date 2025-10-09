@@ -14,6 +14,25 @@ from dataloader.pmt_dataloader import make_dataloader
 from models.factory import ModelFactory
 
 
+def denormalize_signal(x_sig: torch.Tensor, offsets: tuple, scales: tuple) -> torch.Tensor:
+    """
+    Denormalize signal from normalized range back to original scale.
+    
+    Args:
+        x_sig: Normalized signal tensor (B, 2, L)
+        offsets: Offset values for denormalization
+        scales: Scale values for denormalization
+    
+    Returns:
+        Denormalized signal tensor in original scale
+    """
+    # Apply inverse normalization: x_original = (x_normalized * scale) + offset
+    off = torch.tensor(offsets[:2], dtype=torch.float32).view(1, 2, 1)  # Only charge and time
+    scl = torch.tensor(scales[:2], dtype=torch.float32).view(1, 2, 1)
+    
+    return (x_sig * scl) + off
+
+
 def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
     """
     Visualize original and noisy signals at different timesteps.
@@ -65,10 +84,13 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
         x0_sig_single = x_sig[sample_idx:sample_idx+1]  # (1, 2, L)
         label_single = label[sample_idx:sample_idx+1]    # (1, 6)
         
-        # Plot original signal
+        # Denormalize original signal for display
+        x0_denorm = denormalize_signal(x0_sig_single, config.model.affine_offsets, config.model.affine_scales)
+        
+        # Plot original signal (denormalized)
         ax = axes[sample_idx, 0]
-        charge = x0_sig_single[0, 0, :].numpy()
-        time = x0_sig_single[0, 1, :].numpy()
+        charge = x0_denorm[0, 0, :].numpy()
+        time = x0_denorm[0, 1, :].numpy()
         
         # Only plot non-zero charges
         mask = charge > 0
@@ -93,8 +115,11 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
             t_tensor = torch.tensor([t_value], dtype=torch.long)
             x_sig_t = diffusion.diffusion.q_sample(x0_sig_single, t_tensor)
             
-            charge_noisy = x_sig_t[0, 0, :].numpy()
-            time_noisy = x_sig_t[0, 1, :].numpy()
+            # Denormalize noisy signal for display
+            x_sig_t_denorm = denormalize_signal(x_sig_t, config.model.affine_offsets, config.model.affine_scales)
+            
+            charge_noisy = x_sig_t_denorm[0, 0, :].numpy()
+            time_noisy = x_sig_t_denorm[0, 1, :].numpy()
             
             # Plot
             ax.scatter(time_noisy[mask], charge_noisy[mask], s=1, alpha=0.5)
@@ -102,9 +127,9 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
             ax.set_xlabel('Time')
             ax.set_ylabel('Charge (NPE)')
             
-            # Show noise statistics
-            noise_std = (x_sig_t - x0_sig_single).std().item()
-            signal_std = x0_sig_single.std().item()
+            # Show noise statistics (in original scale)
+            noise_std = (x_sig_t_denorm - x0_denorm).std().item()
+            signal_std = x0_denorm.std().item()
             snr = signal_std / (noise_std + 1e-8)
             ax.text(0.02, 0.98, f'SNR={snr:.2f}\nσ_n={noise_std:.2f}', 
                     transform=ax.transAxes, va='top', fontsize=8,
@@ -122,20 +147,33 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
     # Show
     plt.show()
     
-    # Print statistics
+    # Print statistics (in original scale)
     print("\n" + "="*70)
-    print("📊 Signal Statistics:")
+    print("📊 Signal Statistics (Original Scale):")
     print("="*70)
-    print(f"Original signal:")
+    
+    # Denormalize all signals for statistics
+    x_sig_denorm = denormalize_signal(x_sig, config.model.affine_offsets, config.model.affine_scales)
+    
+    print(f"Original signal (denormalized):")
+    print(f"  Charge range: [{x_sig_denorm[:, 0, :].min():.4f}, {x_sig_denorm[:, 0, :].max():.4f}]")
+    print(f"  Charge mean±std: {x_sig_denorm[:, 0, :].mean():.4f}±{x_sig_denorm[:, 0, :].std():.4f}")
+    print(f"  Time range: [{x_sig_denorm[:, 1, :].min():.4f}, {x_sig_denorm[:, 1, :].max():.4f}]")
+    print(f"  Time mean±std: {x_sig_denorm[:, 1, :].mean():.4f}±{x_sig_denorm[:, 1, :].std():.4f}")
+    
+    print(f"\nNormalized signal (for training):")
     print(f"  Charge range: [{x_sig[:, 0, :].min():.4f}, {x_sig[:, 0, :].max():.4f}]")
-    print(f"  Charge mean±std: {x_sig[:, 0, :].mean():.4f}±{x_sig[:, 0, :].std():.4f}")
     print(f"  Time range: [{x_sig[:, 1, :].min():.4f}, {x_sig[:, 1, :].max():.4f}]")
-    print(f"  Time mean±std: {x_sig[:, 1, :].mean():.4f}±{x_sig[:, 1, :].std():.4f}")
     
     print(f"\nLabel statistics:")
     for i, name in enumerate(['Energy', 'Zenith', 'Azimuth', 'X', 'Y', 'Z']):
         vals = label[:, i]
         print(f"  {name:8s}: [{vals.min():.4f}, {vals.max():.4f}], mean={vals.mean():.4f}")
+    
+    print(f"\nNormalization parameters:")
+    print(f"  Charge: (x - {config.model.affine_offsets[0]}) / {config.model.affine_scales[0]}")
+    print(f"  Time:   (x - {config.model.affine_offsets[1]}) / {config.model.affine_scales[1]}")
+    print(f"  Positions: x / {config.model.affine_scales[2]}")
     
     print(f"\nDiffusion parameters:")
     print(f"  Timesteps: {config.diffusion.timesteps}")

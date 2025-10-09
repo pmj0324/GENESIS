@@ -220,14 +220,14 @@ class PMTDit(nn.Module):
         x5 = torch.cat([x_sig_t, geom], dim=1)  # (B, 5, L)
         off = self.affine_offset.view(1, 5, 1)
         scl = self.affine_scale.view(1, 5, 1)
-        x5 = (x5 + off) * scl
+        x5 = (x5 - off) / scl  # Subtract offset, then divide by scale
         x_sig_t = x5[:, 0:2, :]  # (B, 2, L)
         geom = x5[:, 2:5, :]      # (B, 3, L)
         
         # Affine normalization for labels
         label_off = self.label_offset.view(1, 6)
         label_scl = self.label_scale.view(1, 6)
-        label = (label + label_off) * label_scl  # (B, 6)
+        label = (label - label_off) / label_scl  # Subtract offset, then divide by scale
 
         # Tokenization
         sig = x_sig_t.transpose(1, 2)  # (B, L, 2)

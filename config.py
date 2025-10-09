@@ -41,8 +41,9 @@ class ModelConfig:
     kernel_sizes: Tuple[int, ...] = (3, 5, 7, 9)  # Multi-scale kernels (for cnn)
     
     # Affine normalization (per-channel)
-    affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)  # [npe, time, xpmt, ypmt, zpmt]
-    affine_scales: Tuple[float, ...] = (1.0, 100000.0, 1.0, 1.0, 1.0)
+    # Formula: (x - offset) / scale → charge/time[-2,2], pos[-1,1]
+    affine_offsets: Tuple[float, ...] = (112.5, 67616.0, 0.0, 0.0, 0.0)  # [npe, time, xpmt, ypmt, zpmt]
+    affine_scales: Tuple[float, ...] = (56.25, 33808.0, 500.0, 500.0, 500.0)  # Scale factors
     
     # Label affine normalization (per-label)
     label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
