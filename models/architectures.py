@@ -738,7 +738,9 @@ class ArchitectureConfig:
     kernel_size: int = 3
     kernel_sizes: Tuple[int, ...] = (3, 5, 7, 9)
     affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)
-    affine_scales: Tuple[float, ...] = (1.0, 100000.0, 1.0, 1.0, 1.0)
+    affine_scales: Tuple[float, ...] = (100.0, 10.0, 600.0, 550.0, 550.0)
+    label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    label_scales: Tuple[float, ...] = (50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0)
 
 
 def create_model(config: ArchitectureConfig) -> nn.Module:
@@ -758,6 +760,8 @@ def create_model(config: ArchitectureConfig) -> nn.Module:
             mlp_ratio=config.mlp_ratio,
             affine_offsets=config.affine_offsets,
             affine_scales=config.affine_scales,
+            label_offsets=config.label_offsets,
+            label_scales=config.label_scales,
         )
     elif arch_name == "cnn":
         return PMTCNN(

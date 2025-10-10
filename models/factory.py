@@ -39,6 +39,8 @@ class ModelFactory:
             kernel_sizes=model_config.kernel_sizes,
             affine_offsets=model_config.affine_offsets,
             affine_scales=model_config.affine_scales,
+            label_offsets=model_config.label_offsets,
+            label_scales=model_config.label_scales,
         )
         return _create_arch_model(arch_config)
     
@@ -53,6 +55,10 @@ class ModelFactory:
             beta_start=diffusion_config.beta_start,
             beta_end=diffusion_config.beta_end,
             objective=diffusion_config.objective,
+            schedule=getattr(diffusion_config, 'schedule', 'linear'),
+            use_cfg=getattr(diffusion_config, 'use_cfg', True),
+            cfg_scale=getattr(diffusion_config, 'cfg_scale', 2.0),
+            cfg_dropout=getattr(diffusion_config, 'cfg_dropout', 0.1),
         )
         return GaussianDiffusion(model, dit_config)
     
