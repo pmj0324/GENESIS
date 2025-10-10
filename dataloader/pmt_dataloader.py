@@ -244,14 +244,31 @@ def check_dataset_health(dataloader: DataLoader, num_batches: int = 10, verbose:
         
         if verbose and (stats['has_nan'] or stats['has_inf'] or i == 0):
             print(f"\nBatch {i}:")
-            print(f"  Shape: x_sig={x_sig.shape}, label={label.shape}")
-            print(f"  x_sig range: [{stats['x_sig_min']:.4f}, {stats['x_sig_max']:.4f}]")
-            print(f"  x_sig mean±std: {stats['x_sig_mean']:.4f}±{stats['x_sig_std']:.4f}")
-            print(f"  label range: [{stats['label_min']:.4f}, {stats['label_max']:.4f}]")
-            print(f"  label mean±std: {stats['label_mean']:.4f}±{stats['label_std']:.4f}")
+            print(f"  Shape: x_sig={x_sig.shape}, geom={geom.shape}, label={label.shape}")
+            
+            # Detailed channel-wise statistics
+            print(f"\n  📊 Signal Channels (Raw from dataloader):")
+            print(f"    Charge (ch 0): [{x_sig[:, 0, :].min():.6f}, {x_sig[:, 0, :].max():.6f}] "
+                  f"mean={x_sig[:, 0, :].mean():.6f} std={x_sig[:, 0, :].std():.6f}")
+            print(f"    Time   (ch 1): [{x_sig[:, 1, :].min():.6f}, {x_sig[:, 1, :].max():.6f}] "
+                  f"mean={x_sig[:, 1, :].mean():.6f} std={x_sig[:, 1, :].std():.6f}")
+            
+            print(f"\n  📍 Geometry Channels (Fixed):")
+            print(f"    X PMT  (ch 0): [{geom[:, 0, :].min():.6f}, {geom[:, 0, :].max():.6f}] "
+                  f"mean={geom[:, 0, :].mean():.6f} std={geom[:, 0, :].std():.6f}")
+            print(f"    Y PMT  (ch 1): [{geom[:, 1, :].min():.6f}, {geom[:, 1, :].max():.6f}] "
+                  f"mean={geom[:, 1, :].mean():.6f} std={geom[:, 1, :].std():.6f}")
+            print(f"    Z PMT  (ch 2): [{geom[:, 2, :].min():.6f}, {geom[:, 2, :].max():.6f}] "
+                  f"mean={geom[:, 2, :].mean():.6f} std={geom[:, 2, :].std():.6f}")
+            
+            print(f"\n  🏷️  Label Channels:")
+            label_names = ['Energy', 'Zenith', 'Azimuth', 'X', 'Y', 'Z']
+            for ch_idx, name in enumerate(label_names):
+                print(f"    {name:8s} (ch {ch_idx}): [{label[:, ch_idx].min():.6f}, {label[:, ch_idx].max():.6f}] "
+                      f"mean={label[:, ch_idx].mean():.6f} std={label[:, ch_idx].std():.6f}")
             
             if stats['warnings']:
-                print(f"  ⚠️  Warnings:")
+                print(f"\n  ⚠️  Warnings:")
                 for warning in stats['warnings']:
                     print(f"    - {warning}")
     
