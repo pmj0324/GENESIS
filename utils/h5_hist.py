@@ -351,9 +351,9 @@ def create_beautiful_histogram(x, y, stats, title, xlabel, colors,
     if stats['count'] > 0:
         info_lines = [
             f"Count: {stats['count']:,}",
-            f"Range: [{stats['min']:.2f}, {stats['max']:.2f}]",
-            f"Mean: {stats['mean']:.2f} ± {stats['std']:.2f}",
-            f"Median: {stats['median']:.2f}"
+            f"Range: [{stats['min']:.3f}, {stats['max']:.3f}]",
+            f"Mean: {stats['mean']:.3f} ± {stats['std']:.3f}",
+            f"Median: {stats['median']:.3f}"
         ]
         
         if stats['zero_fraction'] > 0:
@@ -384,7 +384,9 @@ def create_beautiful_histogram(x, y, stats, title, xlabel, colors,
         data_min = np.min(x[y > 0])
         data_max = np.max(x[y > 0])
         margin = (data_max - data_min) * 0.02  # 2% 마진
-        ax.set_xlim(max(0, data_min - margin), data_max + margin)
+        # 로그 변환된 경우 음수 방지
+        x_min = max(data_min - margin, data_min * 0.95) if data_min > 0 else data_min - margin
+        ax.set_xlim(x_min, data_max + margin)
     
     plt.tight_layout()
     return fig, ax
@@ -407,7 +409,7 @@ def plot_hist_pair(h5_path: str, bins: int = 200, chunk: int = 1024,
     with h5py.File(h5_path, "r") as f:
         if "input" not in f:
             raise KeyError("Dataset 'input' not found")
-        
+
         dset = f["input"]
 
         # 자동 범위 계산
@@ -419,6 +421,17 @@ def plot_hist_pair(h5_path: str, bins: int = 200, chunk: int = 1024,
         # 임계값이 있으면 범위 조정
         if min_time_threshold is not None:
             range_time = (min_time_threshold, max(range_time[1], min_time_threshold + 1))
+        
+        # 로그 변환이 적용될 경우 범위도 변환
+        original_range_time = range_time
+        if log_time_transform is not None:
+            if log_time_transform == "log10":
+                range_time = (np.log10(range_time[0] + 1e-10), np.log10(range_time[1] + 1e-10))
+            elif log_time_transform == "ln":
+                range_time = (np.log(range_time[0] + 1e-10), np.log(range_time[1] + 1e-10))
+            print(f"🔄 Time range transformation:")
+            print(f"   Original: [{original_range_time[0]:.1f}, {original_range_time[1]:.1f}]")
+            print(f"   {log_time_transform} transformed: [{range_time[0]:.3f}, {range_time[1]:.3f}]")
         
         # Charge 히스토그램
         x_c, y_c, stats_c = process_data_stream(dset, 0, bins, range_charge, chunk, 
