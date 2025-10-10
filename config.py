@@ -214,6 +214,9 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
     
+    # Remove benchmark-specific config (not part of ExperimentConfig)
+    config_dict.pop('benchmark', None)
+    
     # Convert nested dictionaries to config objects
     if 'model' in config_dict:
         config_dict['model'] = ModelConfig(**config_dict['model'])

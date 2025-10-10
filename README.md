@@ -1,9 +1,10 @@
 # GENESIS - IceCube Muon Neutrino Event Diffusion Model
 
-A comprehensive framework for generating realistic IceCube neutrino events using diffusion models with multiple architectures and advanced data processing capabilities.
+A comprehensive framework for generating realistic IceCube neutrino events using diffusion models with multiple architectures and **automatic GPU optimization**.
 
 ## 🌟 Features
 
+- **🤖 Automatic GPU Optimization** ⭐ - Finds optimal settings for your hardware automatically!
 - **Multiple Model Architectures**: DiT (Diffusion Transformer), CNN, MLP, Hybrid, ResNet
 - **Advanced Data Processing**: Log transformations (log10, ln), zero-value handling
 - **Beautiful Visualizations**: Modern, elegant, and classic styles with 3D event visualization
@@ -29,23 +30,31 @@ GENESIS/
 └── 📁 example/          # Example scripts and demos
 ```
 
-## 🚀 Quick Start
+## 🚀 Quick Start (2 Steps!)
 
-### 1. Installation
+### Step 1: GPU Benchmark (10 min, once) ⭐
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd GENESIS
+# Find optimal settings for YOUR hardware automatically!
+python scripts/analysis/benchmark_gpu.py \
+    --config configs/checking_gpu_optimization.yaml \
+    --data-path /path/to/your/data.h5
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Verify installation
-python scripts/setup/getting_started.py
+# → Creates configs/optimized_by_benchmark.yaml automatically!
 ```
 
-### 2. Basic Training
+### Step 2: Train with Optimal Settings
+
+```bash
+# Use the auto-generated optimal configuration
+python scripts/train.py \
+    --config configs/optimized_by_benchmark.yaml \
+    --data-path /path/to/your/data.h5
+
+# That's it! No manual tuning needed! 🎉
+```
+
+### Alternative: Manual Training
 
 ```bash
 # Train with default configuration
