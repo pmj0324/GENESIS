@@ -19,7 +19,16 @@ GENESIS/
 ├── 📁 dataloader/       # Data loading and preprocessing
 ├── 📁 training/         # Training pipeline and utilities
 ├── 📁 utils/            # Visualization and analysis tools
-├── 📁 configs/          # Configuration files
+├── 📁 configs/          # Configuration files (organized by function)
+│   ├── 📁 models/       # Model-specific configs
+│   ├── 📁 training/     # Training-specific configs
+│   ├── 📁 data/         # Data processing configs
+│   └── 📁 benchmark/    # Benchmark configs
+├── 📁 gpu_tools/        # GPU optimization and analysis tools
+│   ├── 📁 benchmark/    # GPU benchmarking
+│   ├── 📁 analysis/     # GPU analysis
+│   ├── 📁 optimization/ # GPU optimization
+│   └── 📁 utils/        # GPU utilities
 ├── 📁 docs/             # Documentation
 ├── 📁 scripts/          # All executable scripts
 │   ├── 📁 analysis/     # Model comparison and evaluation
@@ -32,12 +41,12 @@ GENESIS/
 
 ## 🚀 Quick Start (2 Steps!)
 
-### Step 1: GPU Benchmark (10 min, once) ⭐
+### Step 1: GPU Benchmark (3 min, once) ⭐
 
 ```bash
 # Find optimal settings for YOUR hardware automatically!
-python scripts/analysis/benchmark_gpu.py \
-    --config configs/checking_gpu_optimization.yaml \
+python gpu_tools/gpu_optimizer.py benchmark \
+    --quick \
     --data-path /path/to/your/data.h5
 
 # → Creates configs/optimized_by_benchmark.yaml automatically!

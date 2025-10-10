@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import torch
 from config import load_config_from_file, get_default_config
 from models.factory import ModelFactory
-from utils.gpu_utils import (
+from gpu_tools.utils.gpu_utils import (
     print_gpu_info,
     print_memory_analysis,
     auto_select_batch_size,

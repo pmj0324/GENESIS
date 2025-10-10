@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from config import load_config_from_file
 from dataloader.pmt_dataloader import make_dataloader
 from models.factory import ModelFactory
-from utils.gpu_utils import get_gpu_info
+from gpu_tools.utils.gpu_utils import get_gpu_info
 
 try:
     import pynvml
@@ -660,12 +660,15 @@ def main():
     # Run benchmarks
     all_results = []
     
+    # Adjust steps for quick mode
+    actual_steps = 1 if args.quick else args.steps
+    
     print(f"🧪 Starting benchmark...")
     print(f"   Batch sizes: {batch_sizes}")
     print(f"   Workers: {num_workers_list}")
-    print(f"   Steps per test: {args.steps}")
+    print(f"   Steps per test: {actual_steps}")
     if args.quick:
-        print(f"   ⚡ Quick mode: will stop early if performance degrades\n")
+        print(f"   ⚡ Quick mode: will stop early if performance degrades (1 step per test)\n")
     else:
         print()
     
@@ -680,7 +683,7 @@ def main():
                 batch_size=batch_size,
                 config=config,
                 data_path=args.data_path,
-                num_steps=args.steps,
+                num_steps=actual_steps,
                 device=device,
                 use_amp=True,
                 num_workers=num_workers,
