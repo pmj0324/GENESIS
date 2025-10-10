@@ -22,7 +22,7 @@ model:
   
   # Label affine normalization: [Energy, Zenith, Azimuth, X, Y, Z]
   label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  label_scales: [5e7, 1.0, 1.0, 600.0, 550.0, 550.0]  # Normalize Energy and positions
+  label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]  # Normalize Energy and positions
   
   # Time transformation
   time_transform: "ln"  # "log10", "ln", or null
