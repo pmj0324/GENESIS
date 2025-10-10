@@ -491,8 +491,14 @@ class EarlyStopping:
             raise ValueError(f"Mode must be 'min' or 'max', got {mode}")
         
         # Initialize best score with baseline if provided
-        if baseline is not None:
-            self.best_score = baseline
+        # Handle string "null", "None", or actual None
+        if baseline is not None and baseline not in ["null", "None", ""]:
+            try:
+                self.best_score = float(baseline)
+            except (ValueError, TypeError):
+                self.best_score = None
+        else:
+            self.best_score = None
     
     def __call__(
         self, 
@@ -511,6 +517,12 @@ class EarlyStopping:
         Returns:
             True if training should stop, False otherwise
         """
+        # Ensure current_score is a float
+        try:
+            current_score = float(current_score)
+        except (ValueError, TypeError) as e:
+            raise TypeError(f"current_score must be a number, got {type(current_score)}: {current_score}") from e
+        
         # Initialize best score on first call
         if self.best_score is None:
             self.best_score = current_score
