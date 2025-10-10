@@ -124,8 +124,8 @@ class TrainingConfig:
     linear_end_factor: float = 0.0
     
     # Early stopping
-    early_stopping: bool = False
-    early_stopping_patience: int = 20
+    early_stopping: bool = True
+    early_stopping_patience: int = 4
     early_stopping_min_delta: float = 1e-4
     early_stopping_mode: str = "min"  # "min" or "max"
     early_stopping_baseline: Optional[float] = None
