@@ -23,6 +23,7 @@ from .utils import (
     create_training_script,
     EarlyStopping
 )
+from .evaluation import compare_generated_vs_real
 
 __all__ = [
     "Trainer",
@@ -38,6 +39,7 @@ __all__ = [
     "validate_training_config",
     "create_training_script",
     "EarlyStopping",
+    "compare_generated_vs_real",
 ]
 
 __version__ = "1.0.0"

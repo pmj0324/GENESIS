@@ -511,12 +511,43 @@ class Trainer:
         if epoch + 1 == self.config.training.num_epochs:
             self._save_checkpoint(epoch, epoch_metrics, is_best, suffix='final')
         
+        # Post-training evaluation: Compare generated vs real samples
+        print(f"\n{'='*70}")
+        print("🎨 Post-Training Evaluation")
+        print(f"{'='*70}")
+        
+        try:
+            from .evaluation import compare_generated_vs_real
+            
+            # Get a batch of real data for comparison
+            real_batch = next(iter(self.train_loader))
+            real_x_sig, real_geom, real_label, _ = real_batch
+            
+            # Run comparison
+            compare_generated_vs_real(
+                self.diffusion,
+                real_x_sig,
+                real_geom,
+                real_label,
+                num_samples=4,
+                save_dir=Path(self.config.training.output_dir) / "final_evaluation",
+                affine_offsets=self.config.model.affine_offsets,
+                affine_scales=self.config.model.affine_scales,
+                time_transform=self.config.model.time_transform
+            )
+            
+            print("✅ Post-training evaluation complete!")
+        except Exception as e:
+            print(f"⚠️  Post-training evaluation failed: {e}")
+        
         # Close logging
         self.writer.close()
         if self.config.use_wandb and WANDB_AVAILABLE:
             wandb.finish()
         
-        print("Training completed!")
+        print("\n{'='*70}")
+        print("🎉 Training completed!")
+        print(f"{'='*70}")
 
 
 def create_trainer(config: ExperimentConfig) -> Trainer:

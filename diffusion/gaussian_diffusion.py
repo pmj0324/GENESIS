@@ -35,6 +35,11 @@ class DiffusionConfig:
     beta_end: float = 2e-2         # Ending noise schedule
     objective: str = "eps"         # Training objective: "eps" or "x0"
     schedule: str = "linear"       # Noise schedule: "linear" or "cosine"
+    
+    # Classifier-free guidance
+    use_cfg: bool = True           # Use classifier-free guidance
+    cfg_scale: float = 2.0         # Guidance scale (1.0 = no guidance, higher = stronger)
+    cfg_dropout: float = 0.1       # Probability of dropping condition during training
 
 
 class GaussianDiffusion(nn.Module):
@@ -143,7 +148,7 @@ class GaussianDiffusion(nn.Module):
         label: torch.Tensor
     ) -> torch.Tensor:
         """
-        Compute training loss for diffusion model.
+        Compute training loss for diffusion model with optional classifier-free guidance.
         
         Args:
             x0_sig: Clean signals (B, 2, L)
@@ -163,8 +168,20 @@ class GaussianDiffusion(nn.Module):
         noise = torch.randn_like(x0_sig)
         x_sig_t = self.q_sample(x0_sig, t, noise=noise)
         
-        # Predict
-        pred = self.model(x_sig_t, geom, t, label)  # (B, 2, L)
+        # Classifier-free guidance: randomly drop conditions during training
+        if self.cfg.use_cfg and self.training:
+            # Create mask for dropping conditions
+            drop_mask = torch.rand(B, device=device) < self.cfg.cfg_dropout
+            
+            # Zero out labels where mask is True (unconditional)
+            label_conditioned = label.clone()
+            label_conditioned[drop_mask] = 0.0
+            
+            # Predict with possibly dropped conditions
+            pred = self.model(x_sig_t, geom, t, label_conditioned)  # (B, 2, L)
+        else:
+            # Normal prediction
+            pred = self.model(x_sig_t, geom, t, label)  # (B, 2, L)
         
         # Compute loss based on objective
         if self.cfg.objective == "eps":
@@ -210,8 +227,21 @@ class GaussianDiffusion(nn.Module):
         for t_idx in reversed(range(self.cfg.timesteps)):
             t_batch = torch.full((B,), t_idx, device=device, dtype=torch.long)
             
-            # Predict noise
-            eps_hat = self.model(x, geom, t_batch, label)  # (B, 2, L)
+            # Classifier-free guidance
+            if self.cfg.use_cfg and self.cfg.cfg_scale != 1.0:
+                # Predict with condition
+                eps_cond = self.model(x, geom, t_batch, label)  # (B, 2, L)
+                
+                # Predict without condition (unconditional)
+                label_uncond = torch.zeros_like(label)
+                eps_uncond = self.model(x, geom, t_batch, label_uncond)  # (B, 2, L)
+                
+                # Combine predictions with guidance scale
+                # eps = eps_uncond + scale * (eps_cond - eps_uncond)
+                eps_hat = eps_uncond + self.cfg.cfg_scale * (eps_cond - eps_uncond)
+            else:
+                # Standard prediction without guidance
+                eps_hat = self.model(x, geom, t_batch, label)  # (B, 2, L)
             
             # Get schedule values
             alpha = self.alphas[t_idx]

@@ -44,11 +44,12 @@ class ModelConfig:
     # Formula: (x - offset) / scale → charge/time to reasonable range, pos[-1,1]
     # Inverse: x_original = (x_normalized * scale) + offset
     affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)  # [npe, time, xpmt, ypmt, zpmt]
-    affine_scales: Tuple[float, ...] = (200.0, 10.0, 500.0, 500.0, 500.0)  # Scale factors
+    affine_scales: Tuple[float, ...] = (100.0, 10.0, 600.0, 550.0, 550.0)  # Scale factors
     
     # Label affine normalization (per-label)
+    # Formula: (x - offset) / scale (same as signal/geometry)
     label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
-    label_scales: Tuple[float, ...] = (1e-7, 1.0, 1.0, 0.01, 0.01, 0.01)  # [Energy, Zenith, Azimuth, X, Y, Z]
+    label_scales: Tuple[float, ...] = (5e7, 1.0, 1.0, 600.0, 550.0, 550.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
     
     # Time transformation
     time_transform: Optional[str] = "ln"  # "log10", "ln", None
@@ -63,6 +64,12 @@ class DiffusionConfig:
     beta_start: float = 1e-4   # Starting noise schedule
     beta_end: float = 2e-2     # Ending noise schedule
     objective: str = "eps"     # Training objective: "eps" or "x0"
+    schedule: str = "linear"   # Noise schedule: "linear" or "cosine"
+    
+    # Classifier-free guidance
+    use_cfg: bool = True       # Use classifier-free guidance
+    cfg_scale: float = 2.0     # Guidance scale (1.0 = no guidance, higher = stronger)
+    cfg_dropout: float = 0.1   # Probability of dropping condition during training
 
 
 @dataclass
