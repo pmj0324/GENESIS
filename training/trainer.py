@@ -470,10 +470,35 @@ class Trainer:
             print(f"  Early stopping: {self.config.training.early_stopping} (patience={self.config.training.early_stopping_patience})")
             print(f"{'='*70}\n")
         
-        print(f"Starting training for {self.config.training.num_epochs} epochs")
-        print(f"Device: {self.device}")
-        print(f"Mixed precision: {self.scaler is not None}")
-        print(f"Gradient accumulation: {self.config.training.gradient_accumulation_steps}")
+        # Calculate training steps
+        steps_per_epoch = len(self.train_loader)
+        total_steps = steps_per_epoch * self.config.training.num_epochs
+        
+        # Calculate warmup steps (use ratio if set, otherwise use absolute)
+        if hasattr(self.config.training, 'warmup_ratio') and self.config.training.warmup_ratio > 0:
+            warmup_steps = int(total_steps * self.config.training.warmup_ratio)
+        else:
+            warmup_steps = self.config.training.warmup_steps
+        
+        print(f"\n{'='*70}")
+        print(f"📊 Training Overview")
+        print(f"{'='*70}")
+        print(f"  Total Epochs:     {self.config.training.num_epochs}")
+        print(f"  Steps per Epoch:  {steps_per_epoch:,}")
+        print(f"  Total Steps:      {total_steps:,}")
+        print(f"  Warmup Steps:     {warmup_steps:,} ({warmup_steps/total_steps*100:.1f}% of total)")
+        print(f"  Device:           {self.device} {'✅ CUDA' if torch.cuda.is_available() else '⚠️  CPU'}")
+        
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_count = torch.cuda.device_count()
+            print(f"  GPU(s):           {gpu_count}x {gpu_name}")
+            print(f"  Using GPU:        cuda:0")
+        
+        print(f"  Mixed Precision:  {'✅ Enabled (float16)' if self.scaler is not None else '❌ Disabled (float32)'}")
+        print(f"  Gradient Accum:   {self.config.training.gradient_accumulation_steps}")
+        print(f"  Effective Batch:  {self.config.data.batch_size * self.config.training.gradient_accumulation_steps}")
+        print(f"{'='*70}\n")
         
         # GPU memory analysis on first epoch
         if self.start_epoch == 0 and torch.cuda.is_available():
@@ -481,7 +506,8 @@ class Trainer:
                 self.model,
                 batch_size=self.config.data.batch_size,
                 device_id=0 if self.device.type == 'cuda' else 0,
-                mixed_precision=self.config.training.use_amp
+                mixed_precision=self.config.training.use_amp,
+                model_depth=self.config.model.depth
             )
         
         # Data health check on first epoch

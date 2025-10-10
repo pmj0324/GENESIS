@@ -108,7 +108,8 @@ class TrainingConfig:
     # Optimization
     optimizer: str = "AdamW"  # "AdamW", "Adam", "SGD"
     scheduler: Optional[str] = None  # "cosine", "linear", "step", "plateau"
-    warmup_steps: int = 1000
+    warmup_steps: int = 1000  # Absolute steps (deprecated, use warmup_ratio)
+    warmup_ratio: float = 0.04  # Warmup as % of total steps (default: 4%)
     
     # Scheduler-specific parameters
     # Cosine annealing

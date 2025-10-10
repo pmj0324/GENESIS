@@ -120,7 +120,8 @@ def estimate_batch_memory(
     seq_len: int = 5160,
     num_channels: int = 2,
     dtype_size: int = 4,  # float32 = 4 bytes
-    mixed_precision: bool = False
+    mixed_precision: bool = False,
+    depth: int = 3  # Model depth for better activation estimate
 ) -> Dict[str, float]:
     """
     Estimate memory usage for a single batch.
@@ -131,6 +132,7 @@ def estimate_batch_memory(
         num_channels: Number of channels (2 for signals)
         dtype_size: Bytes per element (4 for float32, 2 for float16)
         mixed_precision: Whether using mixed precision
+        depth: Model depth (for activation estimation)
     
     Returns:
         Dictionary with memory estimates in GB
@@ -145,11 +147,14 @@ def estimate_batch_memory(
     
     input_total = signal_size + geom_size + label_size
     
-    # Activations (rough estimate: ~10x input for deep models)
-    activations = input_total * 10
+    # Activations (more accurate estimate based on depth)
+    # For shallow models (depth=3): ~3-5x input
+    # For deep models (depth=8+): ~10-15x input
+    activation_multiplier = min(15, max(3, depth * 1.5))
+    activations = input_total * activation_multiplier
     
-    # Gradients for batch (similar to activations)
-    gradients_batch = activations * 0.5
+    # Gradients for batch (similar to activations, but smaller)
+    gradients_batch = activations * 0.3
     
     # Optimizer states (AdamW: ~2x parameters, but amortized over batches)
     # Not included here as it's per-model, not per-batch
@@ -169,7 +174,8 @@ def recommend_batch_size(
     gpu_memory_gb: float,
     seq_len: int = 5160,
     safety_margin: float = 0.7,  # Use only 70% of GPU memory
-    mixed_precision: bool = True
+    mixed_precision: bool = True,
+    model_depth: int = 3
 ) -> Dict[str, int]:
     """
     Recommend batch size based on GPU memory.
@@ -207,8 +213,8 @@ def recommend_batch_size(
     
     # Binary search for maximum batch size
     batch_sizes = []
-    for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]:
-        batch_mem = estimate_batch_memory(bs, seq_len, mixed_precision=mixed_precision)
+    for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]:
+        batch_mem = estimate_batch_memory(bs, seq_len, mixed_precision=mixed_precision, depth=model_depth)
         total_required = model_mem['total_model_gb'] + batch_mem['total_batch_gb']
         
         if total_required <= gpu_memory_gb * safety_margin:
@@ -246,7 +252,8 @@ def print_memory_analysis(
     model: torch.nn.Module,
     batch_size: int,
     device_id: int = 0,
-    mixed_precision: bool = True
+    mixed_precision: bool = True,
+    model_depth: int = 3
 ):
     """
     Print comprehensive memory analysis.
@@ -256,6 +263,7 @@ def print_memory_analysis(
         batch_size: Current batch size
         device_id: GPU device ID
         mixed_precision: Whether using mixed precision
+        model_depth: Model depth (for better activation estimation)
     """
     if not torch.cuda.is_available():
         print("❌ CUDA not available")
@@ -268,13 +276,14 @@ def print_memory_analysis(
     model_mem = estimate_model_memory(model)
     
     # Batch memory
-    batch_mem = estimate_batch_memory(batch_size, mixed_precision=mixed_precision)
+    batch_mem = estimate_batch_memory(batch_size, mixed_precision=mixed_precision, depth=model_depth)
     
     # Get recommendations
     recommendations = recommend_batch_size(
         model, 
         gpu_info['total_memory_gb'],
-        mixed_precision=mixed_precision
+        mixed_precision=mixed_precision,
+        model_depth=model_depth
     )
     
     print(f"\n{'='*70}")
@@ -312,24 +321,41 @@ def print_memory_analysis(
     
     # Recommendations
     print(f"\n🎯 Batch Size Recommendations (Powers of 2):")
-    print(f"  Maximum:          {recommendations['maximum']} (uses ~70% GPU memory)")
-    print(f"  Recommended:      {recommendations['recommended']} (balanced, 60% of max)")
-    print(f"  Safe:             {recommendations['safe']} (conservative, 40% of max)")
+    print(f"  Maximum:          {recommendations['maximum']} (conservative estimate, ~70% GPU)")
+    print(f"  Recommended:      {recommendations['recommended']} (balanced, 60% of estimated max)")
+    print(f"  Safe:             {recommendations['safe']} (very conservative, 40% of estimated max)")
     print(f"  Current:          {batch_size}", end="")
     
-    if batch_size > recommendations['maximum']:
-        print(" ⚠️  TOO LARGE - May cause OOM!")
-    elif batch_size > recommendations['recommended']:
-        print(" ⚠️  High - Watch for OOM")
-    elif batch_size >= recommendations['safe']:
-        print(" ✅ Good")
+    # More nuanced feedback based on actual usage
+    if usage_percent < 10:
+        if batch_size > recommendations['maximum']:
+            print(f" ⚠️  Above estimate (actual usage: {usage_percent:.1f}% - looks OK!)")
+        elif batch_size >= recommendations['safe']:
+            print(f" ✅ Good (actual usage: {usage_percent:.1f}%)")
+        else:
+            print(f" ✅ Very safe (actual usage: {usage_percent:.1f}% - can increase!)")
     else:
-        print(" ✅ Very safe")
+        if batch_size > recommendations['maximum']:
+            print(f" ⚠️  TOO LARGE - May cause OOM! ({usage_percent:.1f}% used)")
+        elif batch_size > recommendations['recommended']:
+            print(f" ⚠️  High - Watch for OOM ({usage_percent:.1f}% used)")
+        elif batch_size >= recommendations['safe']:
+            print(f" ✅ Good ({usage_percent:.1f}% used)")
+        else:
+            print(f" ✅ Very safe ({usage_percent:.1f}% used)")
     
     # Mixed precision info
     print(f"\n⚙️  Settings:")
     print(f"  Mixed Precision:  {'Enabled (float16)' if mixed_precision else 'Disabled (float32)'}")
     print(f"  Memory Saved:     ~{batch_mem['total_batch_gb'] * 0.5:.2f} GB" if mixed_precision else "  (Enable with --use-amp for 2x memory savings)")
+    
+    # Additional guidance if actual usage is very low
+    if usage_percent < 5:
+        print(f"\n💡 Note:")
+        print(f"  Actual usage is very low ({usage_percent:.1f}%).")
+        print(f"  This is normal for small models (depth={model_depth}, params={sum(p.numel() for p in model.parameters()):,}).")
+        print(f"  You can safely use larger batch sizes (up to {recommendations['maximum']*4} or more).")
+        print(f"  Larger batches = faster training + more stable gradients!")
     
     print(f"\n{'='*70}\n")
     

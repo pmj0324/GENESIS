@@ -68,7 +68,8 @@ training:
   grad_clip_norm: 1.0
   optimizer: "AdamW"
   scheduler: "cosine"  # Added scheduler for stability
-  warmup_steps: 1000
+  warmup_steps: 1000  # Deprecated, use warmup_ratio
+  warmup_ratio: 0.04  # Warmup as 4% of total steps (recommended)
   
   # Scheduler-specific parameters
   cosine_t_max: null
