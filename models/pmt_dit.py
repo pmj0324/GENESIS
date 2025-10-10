@@ -319,17 +319,25 @@ class PMTDit(nn.Module):
         return eps
 
 # -------------------------
-# Gaussian Diffusion wrapper (signals only)
+# NOTE: GaussianDiffusion has been moved to diffusion/gaussian_diffusion.py
+# Import it from there:
+#   from diffusion import GaussianDiffusion, DiffusionConfig
 # -------------------------
+
+# Keep these for backward compatibility
+from dataclasses import dataclass
+
 @dataclass
 class DiffusionConfig:
+    """DEPRECATED: Use diffusion.DiffusionConfig instead."""
     timesteps: int = 1000
     beta_start: float = 1e-4
     beta_end: float = 2e-2
     objective: str = "eps"  # "eps" or "x0"
 
 
-class GaussianDiffusion(nn.Module):
+class GaussianDiffusion_OLD(nn.Module):
+    """DEPRECATED: Use diffusion.GaussianDiffusion instead."""
     """
     DDPM-style trainer/sampler for p(x|c) with geometry.
     Model predicts ε̂(x_sig_t, t, label, geom) → (B,2,L)

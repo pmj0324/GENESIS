@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from .architectures import create_model as _create_arch_model, ArchitectureConfig, get_architecture_info
-from .pmt_dit import GaussianDiffusion, DiffusionConfig
+from diffusion import GaussianDiffusion, DiffusionConfig
 from config import ModelConfig, DiffusionConfig as ConfigDiffusionConfig
 
 

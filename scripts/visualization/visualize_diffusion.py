@@ -18,25 +18,7 @@ from pathlib import Path
 from config import load_config_from_file, get_default_config
 from dataloader.pmt_dataloader import make_dataloader
 from models.factory import ModelFactory
-
-
-def denormalize_signal(x_sig: torch.Tensor, offsets: tuple, scales: tuple) -> torch.Tensor:
-    """
-    Denormalize signal from normalized range back to original scale.
-    
-    Args:
-        x_sig: Normalized signal tensor (B, 2, L)
-        offsets: Offset values for denormalization
-        scales: Scale values for denormalization
-    
-    Returns:
-        Denormalized signal tensor in original scale
-    """
-    # Apply inverse normalization: x_original = (x_normalized * scale) + offset
-    off = torch.tensor(offsets[:2], dtype=torch.float32).view(1, 2, 1)  # Only charge and time
-    scl = torch.tensor(scales[:2], dtype=torch.float32).view(1, 2, 1)
-    
-    return (x_sig * scl) + off
+from utils.denormalization import denormalize_signal
 
 
 def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
@@ -91,7 +73,13 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
         label_single = label[sample_idx:sample_idx+1]    # (1, 6)
         
         # Denormalize original signal for display
-        x0_denorm = denormalize_signal(x0_sig_single, config.model.affine_offsets, config.model.affine_scales)
+        x0_denorm = denormalize_signal(
+            x0_sig_single, 
+            config.model.affine_offsets, 
+            config.model.affine_scales,
+            time_transform=config.model.time_transform,
+            channels="signal"
+        )
         
         # Plot original signal (denormalized)
         ax = axes[sample_idx, 0]
@@ -122,7 +110,13 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
             x_sig_t = diffusion.q_sample(x0_sig_single, t_tensor)
             
             # Denormalize noisy signal for display
-            x_sig_t_denorm = denormalize_signal(x_sig_t, config.model.affine_offsets, config.model.affine_scales)
+            x_sig_t_denorm = denormalize_signal(
+                x_sig_t, 
+                config.model.affine_offsets, 
+                config.model.affine_scales,
+                time_transform=config.model.time_transform,
+                channels="signal"
+            )
             
             charge_noisy = x_sig_t_denorm[0, 0, :].numpy()
             time_noisy = x_sig_t_denorm[0, 1, :].numpy()
@@ -159,7 +153,13 @@ def visualize_diffusion_process(config_path: str = None, num_samples: int = 4):
     print("="*70)
     
     # Denormalize all signals for statistics
-    x_sig_denorm = denormalize_signal(x_sig, config.model.affine_offsets, config.model.affine_scales)
+    x_sig_denorm = denormalize_signal(
+        x_sig, 
+        config.model.affine_offsets, 
+        config.model.affine_scales,
+        time_transform=config.model.time_transform,
+        channels="signal"
+    )
     
     print(f"Original signal (denormalized):")
     print(f"  Charge range: [{x_sig_denorm[:, 0, :].min():.4f}, {x_sig_denorm[:, 0, :].max():.4f}]")
