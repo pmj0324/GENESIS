@@ -13,7 +13,8 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from training import create_trainer, load_config
+from training import create_trainer
+from config import load_config_from_file
 from dataloader import make_dataloader
 from models import create_model
 import argparse
@@ -34,7 +35,7 @@ def main():
     args = parser.parse_args()
     
     # Load configuration
-    config = load_config(args.config)
+    config = load_config_from_file(args.config)
     
     # Set device
     if args.device == "auto":

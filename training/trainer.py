@@ -25,7 +25,7 @@ from tqdm import tqdm
 # Project imports
 from dataloader.pmt_dataloader import make_dataloader, check_dataset_health
 from models.factory import ModelFactory
-from models.pmt_dit import GaussianDiffusion, DiffusionConfig
+from diffusion import GaussianDiffusion, DiffusionConfig
 from config import ExperimentConfig, load_config_from_file
 from .schedulers import create_scheduler
 from .logging import setup_logging, LoggingConfig

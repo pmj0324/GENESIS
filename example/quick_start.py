@@ -12,7 +12,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Project imports
-from models.pmt_dit import PMTDit, GaussianDiffusion, DiffusionConfig
+from models.pmt_dit import PMTDit
+from diffusion import GaussianDiffusion, DiffusionConfig
 from config import get_small_model_config
 
 

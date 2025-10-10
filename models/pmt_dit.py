@@ -324,46 +324,18 @@ class PMTDit(nn.Module):
 #   from diffusion import GaussianDiffusion, DiffusionConfig
 # -------------------------
 
-# Keep these for backward compatibility
-from dataclasses import dataclass
-
-@dataclass
-class DiffusionConfig:
-    """DEPRECATED: Use diffusion.DiffusionConfig instead."""
-    timesteps: int = 1000
-    beta_start: float = 1e-4
-    beta_end: float = 2e-2
-    objective: str = "eps"  # "eps" or "x0"
+# For backward compatibility, import from diffusion module
+# Users should update their code to:
+#   from diffusion import GaussianDiffusion, DiffusionConfig
+from diffusion import GaussianDiffusion, DiffusionConfig
 
 
-class GaussianDiffusion_OLD(nn.Module):
-    """DEPRECATED: Use diffusion.GaussianDiffusion instead."""
-    """
-    DDPM-style trainer/sampler for p(x|c) with geometry.
-    Model predicts ε̂(x_sig_t, t, label, geom) → (B,2,L)
-    """
-    def __init__(self, model: PMTDit, cfg: DiffusionConfig):
-        super().__init__()
-        self.model = model
-        self.cfg = cfg
-
-        T = cfg.timesteps
-        betas = torch.linspace(cfg.beta_start, cfg.beta_end, T)
-        alphas = 1.0 - betas
-        a_bar = torch.cumprod(alphas, dim=0)
-
-        self.register_buffer("betas", betas)
-        self.register_buffer("alphas", alphas)
-        self.register_buffer("alphas_cumprod", a_bar)
-        self.register_buffer("sqrt_alphas_cumprod", torch.sqrt(a_bar))
-        self.register_buffer("sqrt_one_minus_alphas_cumprod", torch.sqrt(1.0 - a_bar))
-
-        post_var = betas * (1 - a_bar.roll(1, 0)) / (1 - a_bar)
-        post_var[0] = betas[0]
-        self.register_buffer("posterior_variance", post_var)
-
+# -------------------------
+# OLD CODE BELOW (KEPT FOR REFERENCE, NOT USED)
+# -------------------------
+if False:  # This code is not executed, kept for reference only
     # q(x_t | x_0) for signals only
-    def q_sample(self, x0_sig: torch.Tensor, t: torch.Tensor, noise: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def q_sample_old(self, x0_sig: torch.Tensor, t: torch.Tensor, noise: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         x0_sig: (B,2,L)
         t:      (B,)

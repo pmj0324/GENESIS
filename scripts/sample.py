@@ -12,7 +12,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from training import load_config
+from config import load_config_from_file
 from models import create_model
 from utils.visualization import EventVisualizer
 import argparse
@@ -38,7 +38,7 @@ def main():
     args = parser.parse_args()
     
     # Load configuration
-    config = load_config(args.config)
+    config = load_config_from_file(args.config)
     
     # Set device
     if args.device == "auto":
