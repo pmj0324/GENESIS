@@ -61,6 +61,8 @@ Examples:
                                 help='Quick mode: test fewer batch sizes (faster)')
     benchmark_parser.add_argument('--debug-cuda', action='store_true',
                                 help='Enable CUDA debugging (slower but safer)')
+    benchmark_parser.add_argument('--small-model', action='store_true',
+                                help='Use small model for faster testing (hidden_dim=64, layers=2)')
     
     # Memory analysis subcommand
     memory_parser = subparsers.add_parser('memory', help='Analyze GPU memory usage')
@@ -90,6 +92,8 @@ Examples:
             sys.argv.append('--quick')
         if args.debug_cuda:
             sys.argv.append('--debug-cuda')
+        if args.small_model:
+            sys.argv.append('--small-model')
             
         benchmark_main()
         

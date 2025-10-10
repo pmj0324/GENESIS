@@ -73,7 +73,8 @@ def benchmark_batch_size(
     device: str = "cuda",
     use_amp: bool = True,
     num_workers: int = 4,
-    pin_memory: bool = True
+    pin_memory: bool = True,
+    use_small_model: bool = False
 ) -> Dict:
     """
     Benchmark a specific batch size configuration.
@@ -129,13 +130,32 @@ def benchmark_batch_size(
             exclude_zero_time=config.model.exclude_zero_time,
         )
         
+        # Calculate dataset info
+        total_samples = len(dataloader.dataset)
+        batches_per_epoch = len(dataloader)
+        print(f"   Dataset: {total_samples:,} samples, {batches_per_epoch:,} batches per epoch")
+        
         # Create model
         print("🏗️  Creating model...")
-        model, diffusion = ModelFactory.create_model_and_diffusion(
-            config.model,
-            config.diffusion,
-            device=None
-        )
+        if use_small_model:
+            # Create small model config for faster testing
+            small_model_config = config.model.__class__(**config.model.__dict__)
+            small_model_config.hidden_dim = 64
+            small_model_config.num_heads = 4
+            small_model_config.num_layers = 2
+            small_model_config.depth = 2
+            print("   Using small model for faster testing (hidden_dim=64, layers=2)")
+            model, diffusion = ModelFactory.create_model_and_diffusion(
+                small_model_config,
+                config.diffusion,
+                device=None
+            )
+        else:
+            model, diffusion = ModelFactory.create_model_and_diffusion(
+                config.model,
+                config.diffusion,
+                device=None
+            )
         model = model.to(device)
         diffusion = diffusion.to(device)
         
@@ -285,16 +305,21 @@ def benchmark_batch_size(
             results['gpu_mem_mean'] = np.mean(gpu_mems) if gpu_mems else 0.0
             results['peak_memory_gb'] = peak_memory
             
+            # Calculate epoch time
+            epoch_time_seconds = results['total_time_per_step'] * batches_per_epoch
+            epoch_time_minutes = epoch_time_seconds / 60
+            
             # Print results
             print(f"\n📊 Results:")
-            print(f"  I/O Time:       {results['io_time_mean']*1000:.2f} ± {results['io_time_std']*1000:.2f} ms")
-            print(f"  Forward Time:   {results['forward_time_mean']*1000:.2f} ± {results['forward_time_std']*1000:.2f} ms")
-            print(f"  Backward Time:  {results['backward_time_mean']*1000:.2f} ± {results['backward_time_std']*1000:.2f} ms")
-            print(f"  Optimizer Time: {results['optimizer_time_mean']*1000:.2f} ± {results['optimizer_time_std']*1000:.2f} ms")
-            print(f"  Total/Step:     {results['total_time_per_step']*1000:.2f} ms")
+            print(f"  I/O Time:       {results['io_time_mean']*1000:.2f} ± {results['io_time_std']*1000:.2f} ms ({results['io_time_mean']:.3f}s)")
+            print(f"  Forward Time:   {results['forward_time_mean']*1000:.2f} ± {results['forward_time_std']*1000:.2f} ms ({results['forward_time_mean']:.3f}s)")
+            print(f"  Backward Time:  {results['backward_time_mean']*1000:.2f} ± {results['backward_time_std']*1000:.2f} ms ({results['backward_time_mean']:.3f}s)")
+            print(f"  Optimizer Time: {results['optimizer_time_mean']*1000:.2f} ± {results['optimizer_time_std']*1000:.2f} ms ({results['optimizer_time_mean']:.3f}s)")
+            print(f"  Total/Step:     {results['total_time_per_step']*1000:.2f} ms ({results['total_time_per_step']:.3f}s)")
             print(f"  Throughput:     {results['samples_per_second']:.1f} samples/sec")
             print(f"  GPU Util:       {results['gpu_util_mean']:.1f}% (peak: {results['gpu_util_peak']:.1f}%)")
             print(f"  GPU Memory:     {results['gpu_mem_mean']:.2f} GB (peak: {peak_memory:.2f} GB)")
+            print(f"  🕐 1 Epoch:     {epoch_time_seconds:.1f}s ({epoch_time_minutes:.1f}min) for {batches_per_epoch:,} batches")
             print(f"  ✅ SUCCESS")
         
     except RuntimeError as e:
@@ -585,6 +610,8 @@ def main():
                        help="Quick mode: test fewer batch sizes (faster)")
     parser.add_argument("--debug-cuda", action="store_true",
                        help="Enable CUDA debugging (slower but safer)")
+    parser.add_argument("--small-model", action="store_true",
+                       help="Use small model for faster testing (hidden_dim=64, layers=2)")
     
     args = parser.parse_args()
     
@@ -635,16 +662,16 @@ def main():
         print(f"\n💻 CPU Information:")
         print(f"   CPU Cores: {cpu_count}")
         
-        # Suggest worker counts: 50%, 75%, 90% of CPU cores (maximized for throughput)
+        # Suggest worker counts: 90%, 75%, 50% of CPU cores (start with largest for throughput)
         suggested_workers = [
-            max(2, cpu_count // 2),        # 50% of cores
+            max(8, cpu_count * 9 // 10),   # 90% of cores (start here!)
             max(4, cpu_count * 3 // 4),    # 75% of cores
-            max(8, cpu_count * 9 // 10)    # 90% of cores (near maximum)
+            max(2, cpu_count // 2),        # 50% of cores
         ]
-        # Remove duplicates and sort
-        suggested_workers = sorted(list(set(suggested_workers)))
+        # Remove duplicates and sort in descending order (largest first)
+        suggested_workers = sorted(list(set(suggested_workers)), reverse=True)
         num_workers_list = suggested_workers
-        print(f"   Testing workers: {num_workers_list} (50%, 75%, 90% of cores - maximized!)\n")
+        print(f"   Testing workers: {num_workers_list} (90%, 75%, 50% of cores - largest first!)\n")
     
     # Print GPU info
     print(f"\n{'='*70}")
@@ -687,7 +714,8 @@ def main():
                 device=device,
                 use_amp=True,
                 num_workers=num_workers,
-                pin_memory=True
+                pin_memory=True,
+                use_small_model=args.small_model
             )
             all_results.append(result)
             
