@@ -43,15 +43,16 @@ def analyze_forward_diffusion(
         save_dir.mkdir(parents=True, exist_ok=True)
     
     T = diffusion.cfg.timesteps
-    device = x0.device
+    # Use diffusion model's device
+    device = next(diffusion.parameters()).device
     
     # Default timesteps to check
     if timesteps_to_check is None:
         timesteps_to_check = [0, T//4, T//2, 3*T//4, T-1]
     
-    # Sample from x0
+    # Sample from x0 and move to device
     N = min(num_samples, x0.size(0))
-    x0_samples = x0[:N]  # (N, C, L)
+    x0_samples = x0[:N].to(device)  # (N, C, L) - move to device
     
     results = {}
     
@@ -135,6 +136,7 @@ def _plot_diffusion_convergence(
 ):
     """Plot histograms showing convergence to Gaussian."""
     N = x0.size(0)
+    # x0 is already on the correct device from analyze_forward_diffusion
     device = x0.device
     
     fig, axes = plt.subplots(2, len(timesteps), figsize=(4*len(timesteps), 8))
@@ -199,7 +201,9 @@ def visualize_diffusion_process(
         x0_sample = x0_sample.unsqueeze(0)  # (1, C, L)
     
     T = diffusion.cfg.timesteps
-    device = x0_sample.device
+    # Use diffusion model's device
+    device = next(diffusion.parameters()).device
+    x0_sample = x0_sample.to(device)
     
     # Select timesteps to visualize
     timesteps = np.linspace(0, T-1, num_steps, dtype=int)
