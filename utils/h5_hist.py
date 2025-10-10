@@ -2,61 +2,35 @@
 # -*- coding: utf-8 -*-
 
 """
-h5_hist.py - Advanced Histogram Plotter for IceCube HDF5 Data
-================================================================
+h5_hist.py - Beautiful Histogram Plotter for IceCube HDF5 Data
+==============================================================
 
-HDF5 파일의 input 데이터셋 (shape: N, 2, 5160)에서
-채널 0=charge(NPE), 채널 1=time 의 고급 히스토그램을 생성합니다.
+HDF5 파일의 input 데이터셋에서 charge와 time의 아름다운 히스토그램을 생성합니다.
 
 Features:
-- 로그 스케일 (X축, Y축)
-- 통계선 표시 (평균, 중앙값, 표준편차)
-- 퍼센타일선 표시 (P10, P25, P75, P90)
-- 통계 정보 박스
-- 스트리밍 처리 (대용량 파일 지원)
+- 아름다운 시각화 디자인
+- 정확한 통계선과 범위 표시
+- 로그 변환 지원 (log10, ln)
+- 다양한 필터링 옵션
+- 반응형 레이아웃
+- 명확한 범례와 통계 정보
 
 사용 예시:
 ================================================================
 
-1. 기본 사용 (모든 통계선 표시):
+1. 기본 사용:
    python utils/h5_hist.py -p /path/to/data.h5
 
-2. 로그 스케일 적용:
-   python utils/h5_hist.py -p /path/to/data.h5 --logy --logx
+2. 로그 변환과 필터링:
+   python utils/h5_hist.py -p /path/to/data.h5 --log-time log10 --exclude-zero --min-time 1000
 
-3. 통계선 숨김 (히스토그램만):
-   python utils/h5_hist.py -p /path/to/data.h5 --no-stats --no-percentiles
+3. 아름다운 스타일링:
+   python utils/h5_hist.py -p /path/to/data.h5 --style modern --logy --bins 300
 
-4. 퍼센타일만 표시:
-   python utils/h5_hist.py -p /path/to/data.h5 --no-stats
-
-5. 큰 그림 크기 + 자세한 범위:
-   python utils/h5_hist.py -p /path/to/data.h5 --figsize 16 10 \
-     --range-charge 0 100 --range-time 0 50000
-
-6. 고해상도 + 많은 빈:
-   python utils/h5_hist.py -p /path/to/data.h5 --bins 500 --chunk 2048
-
-7. 0 제외 히스토그램:
-   python utils/h5_hist.py -p /path/to/data.h5 --exclude-zero
-
-8. 모든 값과 0 제외 값 모두 플롯:
-   python utils/h5_hist.py -p /path/to/data.h5 --plot-both
-
-9. Time 임계값 적용 (1000ns 이상만):
-   python utils/h5_hist.py -p /path/to/data.h5 --min-time 1000
-
-10. Time 값에 log10 변환 적용:
-    python utils/h5_hist.py -p /path/to/data.h5 --log-time log10
-
-11. Time 값에 ln 변환 적용하고 0 제외:
-    python utils/h5_hist.py -p /path/to/data.h5 --log-time ln --exclude-zero
-
-12. 완전 커스텀 설정:
+4. 완전 커스텀:
    python utils/h5_hist.py -p /path/to/data.h5 \
-     --bins 300 --logy --logx --figsize 14 8 \
-     --range-charge 0 50 --range-time 0 20000 \
-     --out custom_hist --pclip 1 99
+     --log-time ln --exclude-zero --min-time 5000 \
+     --style elegant --figsize 16 10 --bins 250
 
 CLI Options:
 ================================================================
@@ -69,91 +43,183 @@ CLI Options:
 --logy              : Y축 로그 스케일
 --logx              : X축 로그 스케일
 --log-time          : Time 값 로그 변환 (log10, ln) - 기본값: log10
---no-stats          : 통계선 숨김 (평균, 중앙값, 표준편차)
---no-percentiles    : 퍼센타일선 숨김 (P10, P90, P25, P75)
---figsize           : 그림 크기 (예: 12 8)
 --exclude-zero      : 0 값을 제외한 히스토그램만 생성
 --plot-both         : 모든 값과 0 제외 값 모두 플롯
---min-time          : Time 최소 임계값 (ns) - 이 값 이상의 time만 플롯
+--min-time          : Time 최소 임계값 (ns)
+--style             : 스타일 선택 (modern, elegant, classic) - 기본값: modern
+--figsize           : 그림 크기 (예: 12 8)
 --pclip             : 자동 범위 퍼센타일 (기본: 0.5 99.5)
 
 출력:
 ================================================================
-- {out_prefix}_charge.png : Charge 분포 히스토그램
-- {out_prefix}_time.png   : Time 분포 히스토그램
-- {out_prefix}_charge_nonzero.png : Charge 분포 히스토그램 (0 제외)
-- {out_prefix}_time_nonzero.png   : Time 분포 히스토그램 (0 제외)
-- {out_prefix}_time_min{threshold}.png : Time 분포 히스토그램 (임계값 적용)
-- 콘솔에 상세 통계 정보 출력 (0 개수, 비율, 임계값 정보 포함)
-
-예시 출력 통계:
-📊 Charge Statistics:
-  Range: [0.000, 225.000]
-  Mean ± Std: 0.675 ± 6.265
-  Median: 0.000
-  Percentiles: P10=0.000, P90=2.000
-
-⏱️ Time Statistics:
-  Range: [0.0, 135232.0]
-  Mean ± Std: 624.2 ± 3110.0
-  Median: 0.0
-  Percentiles: P10=0.0, P90=2000.0
+- {out_prefix}_charge.png: Charge 히스토그램
+- {out_prefix}_time[_log10/ln][_nonzero][_min{threshold}].png: Time 히스토그램
 """
 
 import argparse
-from typing import Optional, Tuple, Dict, Any
-import numpy as np
 import h5py
+import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from scipy import stats
+import matplotlib.patches as mpatches
+from matplotlib.patches import Rectangle
+from matplotlib.colors import LinearSegmentedColormap
+from typing import Tuple, Optional, Dict, Any
+import warnings
+warnings.filterwarnings('ignore')
 
-def _percentile_range(
-    dset, ch: int, chunk: int, sample_chunks: int, p_low: float, p_high: float
-) -> Tuple[float, float]:
-    """퍼센타일 기반 자동 범위 추정 (극단값에 둔감)."""
-    N = dset.shape[0]
-    idx = np.linspace(0, N - 1, num=min(sample_chunks * chunk, N), dtype=int)
-    xs = []
-    for i in range(0, len(idx), chunk):
-        ids = idx[i : i + chunk]
-        batch = np.asarray(dset[ids, ch, :], dtype=np.float64).ravel()
-        xs.append(batch[~np.isnan(batch)])
-    x = np.concatenate(xs) if xs else np.array([], dtype=np.float64)
-    if x.size == 0:
-        return (0.0, 1.0)
-    lo, hi = np.percentile(x, [p_low, p_high])
+# 스타일 설정
+plt.style.use('default')
+plt.rcParams.update({
+    'font.size': 11,
+    'axes.titlesize': 14,
+    'axes.labelsize': 12,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+    'figure.titlesize': 16,
+    'font.family': 'DejaVu Sans',
+    'axes.linewidth': 1.2,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+    'grid.linewidth': 0.5
+})
+
+def apply_style(style: str = "modern"):
+    """적용할 스타일 설정"""
+    if style == "modern":
+        plt.rcParams.update({
+            'axes.facecolor': '#f8f9fa',
+            'figure.facecolor': 'white',
+            'grid.color': '#e0e0e0',
+            'axes.edgecolor': '#333333',
+            'xtick.color': '#666666',
+            'ytick.color': '#666666',
+        })
+    elif style == "elegant":
+        plt.rcParams.update({
+            'axes.facecolor': '#fafafa',
+            'figure.facecolor': '#ffffff',
+            'grid.color': '#e8e8e8',
+            'axes.edgecolor': '#2c2c2c',
+            'xtick.color': '#555555',
+            'ytick.color': '#555555',
+        })
+    elif style == "classic":
+        plt.rcParams.update({
+            'axes.facecolor': 'white',
+            'figure.facecolor': 'white',
+            'grid.color': '#cccccc',
+            'axes.edgecolor': 'black',
+            'xtick.color': 'black',
+            'ytick.color': 'black',
+        })
+
+def get_colors(style: str = "modern"):
+    """스타일에 따른 색상 팔레트"""
+    if style == "modern":
+        return {
+            'charge': '#2E86AB',
+            'charge_edge': '#1A5F7A',
+            'time': '#A23B72',
+            'time_edge': '#7D2A5A',
+            'mean': '#E63946',
+            'median': '#F77F00',
+            'std_fill': '#FFE5E5',
+            'p10_p90': '#457B9D',
+            'p25_p75': '#7209B7',
+            'text_bg': '#FFFFFF',
+            'text_border': '#E0E0E0'
+        }
+    elif style == "elegant":
+        return {
+            'charge': '#6C5CE7',
+            'charge_edge': '#5F3DC4',
+            'time': '#00B894',
+            'time_edge': '#00A085',
+            'mean': '#E17055',
+            'median': '#FDCB6E',
+            'std_fill': '#FFF5F5',
+            'p10_p90': '#74B9FF',
+            'p25_p75': '#A29BFE',
+            'text_bg': '#FFFFFF',
+            'text_border': '#DDD6FE'
+        }
+    else:  # classic
+        return {
+            'charge': '#1f77b4',
+            'charge_edge': '#0d5aa7',
+            'time': '#ff7f0e',
+            'time_edge': '#cc5c00',
+            'mean': '#d62728',
+            'median': '#ff7f0e',
+            'std_fill': '#ffe5e5',
+            'p10_p90': '#2ca02c',
+            'p25_p75': '#9467bd',
+            'text_bg': '#FFFFFF',
+            'text_border': '#CCCCCC'
+        }
+
+def calculate_percentile_range(dset, channel: int, chunk: int = 1024, 
+                              sample_chunks: int = 8, p_low: float = 0.5, 
+                              p_high: float = 99.5) -> Tuple[float, float]:
+    """퍼센타일 기반 자동 범위 계산"""
+    total_chunks = dset.shape[0] // chunk
+    sample_size = min(sample_chunks, total_chunks)
+    
+    # 랜덤 샘플링
+    chunk_indices = np.random.choice(total_chunks, size=sample_size, replace=False)
+    
+    values = []
+    for i in chunk_indices:
+        start_idx = i * chunk
+        end_idx = min(start_idx + chunk, dset.shape[0])
+        chunk_data = dset[start_idx:end_idx, channel, :].flatten()
+        values.extend(chunk_data[~np.isnan(chunk_data)])
+    
+    if not values:
+        return 0.0, 1.0
+    
+    values = np.array(values)
+    lo, hi = np.percentile(values, [p_low, p_high])
     if hi <= lo:
         hi = lo + 1.0
+    
     return float(lo), float(hi)
 
-def _hist_stream(
-    dset, ch: int, bins: int, v_range: Tuple[float, float], chunk: int, 
-    exclude_zero: bool = False, min_threshold: Optional[float] = None,
-    log_transform: Optional[str] = None
-) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
-    """스트리밍으로 전체 히스토그램 계산 및 통계 수집."""
+def process_data_stream(dset, channel: int, bins: int, v_range: Tuple[float, float], 
+                       chunk: int, exclude_zero: bool = False, 
+                       min_threshold: Optional[float] = None,
+                       log_transform: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+    """스트리밍 데이터 처리 및 히스토그램 생성"""
+    
+    # 히스토그램 엣지 생성
     edges = np.linspace(v_range[0], v_range[1], bins + 1)
     counts = np.zeros(bins, dtype=np.int64)
     
-    # 통계 수집을 위한 배열
+    # 통계 수집
     all_values = []
     zero_count = 0
     total_count = 0
-    N = dset.shape[0]
     
-    for i in range(0, N, chunk):
-        sl = slice(i, min(i + chunk, N))
-        x = np.asarray(dset[sl, ch, :], dtype=np.float64).ravel()
-        x = x[~np.isnan(x)]
+    # 데이터 스트리밍 처리
+    total_chunks = dset.shape[0] // chunk
+    for i in range(total_chunks):
+        start_idx = i * chunk
+        end_idx = min(start_idx + chunk, dset.shape[0])
         
-        # 0 카운팅
+        # 데이터 로드
+        x = dset[start_idx:end_idx, channel, :].flatten()
+        x = x[~np.isnan(x)]  # NaN 제거
+        
         total_count += len(x)
-        zero_count += np.sum(x == 0)
         
         # 0 제외 옵션
         if exclude_zero:
-            x = x[x != 0]
+            zero_mask = (x == 0)
+            zero_count += np.sum(zero_mask)
+            x = x[~zero_mask]
         
         # 최소 임계값 적용
         if min_threshold is not None:
@@ -162,354 +228,314 @@ def _hist_stream(
         # 로그 변환 적용
         if log_transform is not None and len(x) > 0:
             if log_transform == "log10":
-                x = np.log10(x + 1e-10)  # 0 방지를 위한 작은 값 추가
+                x = np.log10(x + 1e-10)
             elif log_transform == "ln":
-                x = np.log(x + 1e-10)  # 0 방지를 위한 작은 값 추가
+                x = np.log(x + 1e-10)
         
-        # 통계용 데이터 수집 (샘플링으로 메모리 절약)
-        if len(all_values) < 100000:  # 최대 10만개 샘플
+        # 통계 수집 (샘플링으로 메모리 절약)
+        if len(all_values) < 100000:
             all_values.extend(x.tolist())
         
-        if len(x) > 0:
-            # 범위 확인 및 조정
-            if edges[0] < edges[-1]:  # 유효한 범위인지 확인
-                x = np.clip(x, edges[0], edges[-1])
-                c, _ = np.histogram(x, bins=edges)
-                counts += c
+        # 히스토그램 계산
+        if len(x) > 0 and edges[0] < edges[-1]:
+            x_clipped = np.clip(x, edges[0], edges[-1])
+            c, _ = np.histogram(x_clipped, bins=edges)
+        counts += c
     
+    # 빈 중심점 계산
     centers = 0.5 * (edges[:-1] + edges[1:])
     
     # 통계 계산
     if all_values:
         all_values = np.array(all_values)
         stats_dict = {
+            'count': len(all_values),
+            'zero_count': zero_count,
+            'total_count': total_count,
+            'zero_fraction': zero_count / total_count if total_count > 0 else 0,
+            'min_threshold': min_threshold,
+            'transform': log_transform,
             'mean': np.mean(all_values),
             'std': np.std(all_values),
             'median': np.median(all_values),
             'min': np.min(all_values),
             'max': np.max(all_values),
             'p10': np.percentile(all_values, 10),
-            'p90': np.percentile(all_values, 90),
             'p25': np.percentile(all_values, 25),
             'p75': np.percentile(all_values, 75),
-            'count': len(all_values),
-            'zero_count': zero_count,
-            'total_count': total_count,
-            'zero_fraction': zero_count / total_count if total_count > 0 else 0,
-            'min_threshold': min_threshold
+            'p90': np.percentile(all_values, 90),
         }
     else:
         stats_dict = {
+            'count': 0, 'zero_count': 0, 'total_count': 0, 'zero_fraction': 0,
+            'min_threshold': min_threshold, 'transform': log_transform,
             'mean': 0, 'std': 0, 'median': 0, 'min': 0, 'max': 0,
-            'p10': 0, 'p90': 0, 'p25': 0, 'p75': 0, 'count': 0,
-            'zero_count': zero_count, 'total_count': total_count,
-            'zero_fraction': zero_count / total_count if total_count > 0 else 0,
-            'min_threshold': min_threshold
+            'p10': 0, 'p25': 0, 'p75': 0, 'p90': 0
         }
     
     return centers, counts, stats_dict
 
-def plot_hist_pair(
-    h5_path: str,
-    bins: int = 200,
-    chunk: int = 1024,
+def create_beautiful_histogram(x, y, stats, title, xlabel, colors, 
+                              logy=False, logx=False, figsize=(12, 8),
+                              show_stats=True, show_percentiles=True):
+    """아름다운 히스토그램 생성"""
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # 데이터가 있는지 확인
+    if len(x) == 0 or np.sum(y) == 0:
+        ax.text(0.5, 0.5, 'No data available', transform=ax.transAxes,
+                ha='center', va='center', fontsize=16, color='red',
+                bbox=dict(boxstyle='round,pad=1', facecolor='white', edgecolor='red'))
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        return fig, ax
+    
+    # 히스토그램 플롯
+    if len(x) > 0 and np.sum(y) > 0:
+        # 막대 히스토그램
+        bars = ax.bar(x, y, width=x[1]-x[0] if len(x) > 1 else 1, 
+                     alpha=0.8, color=colors['charge'], 
+                     edgecolor=colors['charge_edge'], linewidth=0.5)
+        
+        # 그라데이션 효과 (선택적)
+        for i, bar in enumerate(bars):
+            bar.set_alpha(0.8 - (i % 3) * 0.1)
+    
+    # 통계선 추가
+    if show_stats and stats['count'] > 0:
+        # 평균선
+        ax.axvline(stats['mean'], color=colors['mean'], linestyle='--', 
+                  linewidth=2.5, alpha=0.8, label=f'Mean: {stats["mean"]:.2f}')
+        
+        # 중앙값선
+        ax.axvline(stats['median'], color=colors['median'], linestyle=':', 
+                  linewidth=2.5, alpha=0.8, label=f'Median: {stats["median"]:.2f}')
+        
+        # 표준편차 영역
+        std_low = stats['mean'] - stats['std']
+        std_high = stats['mean'] + stats['std']
+        ax.axvspan(std_low, std_high, alpha=0.2, color=colors['std_fill'],
+                  label=f'±1σ: [{std_low:.2f}, {std_high:.2f}]')
+    
+    # 백분위수선 추가
+    if show_percentiles and stats['count'] > 0:
+        ax.axvline(stats['p10'], color=colors['p10_p90'], linestyle='--', 
+                  linewidth=1.5, alpha=0.7, label=f'P10: {stats["p10"]:.2f}')
+        ax.axvline(stats['p90'], color=colors['p10_p90'], linestyle='--', 
+                  linewidth=1.5, alpha=0.7, label=f'P90: {stats["p90"]:.2f}')
+        ax.axvline(stats['p25'], color=colors['p25_p75'], linestyle=':', 
+                  linewidth=1.5, alpha=0.7, label=f'P25: {stats["p25"]:.2f}')
+        ax.axvline(stats['p75'], color=colors['p25_p75'], linestyle=':', 
+                  linewidth=1.5, alpha=0.7, label=f'P75: {stats["p75"]:.2f}')
+    
+    # 축 설정
+    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
+    ax.set_ylabel("Count", fontsize=12, fontweight='bold')
+    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+    
+    # 로그 스케일 적용
+    if logy:
+        ax.set_yscale("log")
+        ax.set_ylabel("Count (log scale)", fontsize=12, fontweight='bold')
+    if logx:
+        ax.set_xscale("log")
+    
+    # 범례
+    if show_stats or show_percentiles:
+        legend = ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', 
+                          fontsize=10, framealpha=0.9, fancybox=True, shadow=True)
+        legend.get_frame().set_facecolor('white')
+        legend.get_frame().set_edgecolor('gray')
+    
+    # 통계 정보 박스
+    if stats['count'] > 0:
+        info_lines = [
+            f"Count: {stats['count']:,}",
+            f"Range: [{stats['min']:.2f}, {stats['max']:.2f}]",
+            f"Mean: {stats['mean']:.2f} ± {stats['std']:.2f}",
+            f"Median: {stats['median']:.2f}"
+        ]
+        
+        if stats['zero_fraction'] > 0:
+            info_lines.append(f"Zeros: {stats['zero_count']:,} ({stats['zero_fraction']:.1%})")
+        
+        if stats['min_threshold'] is not None:
+            info_lines.append(f"Min Threshold: {stats['min_threshold']:.1f}")
+        
+        if stats['transform'] is not None:
+            info_lines.append(f"Transform: {stats['transform']}")
+        
+        info_text = "\n".join(info_lines)
+        
+        # 아름다운 텍스트 박스
+        textbox = ax.text(0.02, 0.98, info_text, transform=ax.transAxes,
+                         verticalalignment='top', fontsize=10, fontweight='normal',
+                         bbox=dict(boxstyle='round,pad=0.8', 
+                                 facecolor=colors['text_bg'], 
+                                 edgecolor=colors['text_border'],
+                                 alpha=0.95, linewidth=1.5))
+    
+    # 그리드 및 레이아웃
+    ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+    ax.set_axisbelow(True)
+    
+    # X축 범위 자동 조정
+    if len(x) > 0 and np.sum(y) > 0:
+        data_min = np.min(x[y > 0])
+        data_max = np.max(x[y > 0])
+        margin = (data_max - data_min) * 0.02  # 2% 마진
+        ax.set_xlim(max(0, data_min - margin), data_max + margin)
+    
+    plt.tight_layout()
+    return fig, ax
+
+def plot_hist_pair(h5_path: str, bins: int = 200, chunk: int = 1024,
     range_charge: Optional[Tuple[float, float]] = None,
     range_time: Optional[Tuple[float, float]] = None,
-    out_prefix: str = "hist_input",
-    logy: bool = False,
-    logx: bool = False,
-    pclip: Tuple[float, float] = (0.5, 99.5),
-    show_stats: bool = True,
-    show_percentiles: bool = True,
-    figsize: Tuple[int, int] = (12, 8),
-    exclude_zero: bool = False,
-    plot_both: bool = False,
-    min_time_threshold: Optional[float] = None,
-    log_time_transform: Optional[str] = None,
-):
-    """고급 히스토그램 플롯 함수."""
+                   out_prefix: str = "hist_input", logy: bool = False,
+                   logx: bool = False, pclip: Tuple[float, float] = (0.5, 99.5),
+                   show_stats: bool = True, show_percentiles: bool = True,
+                   figsize: Tuple[int, int] = (12, 8), exclude_zero: bool = False,
+                   plot_both: bool = False, min_time_threshold: Optional[float] = None,
+                   log_time_transform: Optional[str] = None, style: str = "modern"):
+    """메인 히스토그램 플롯 함수"""
     
+    # 스타일 적용
+    apply_style(style)
+    colors = get_colors(style)
+
     with h5py.File(h5_path, "r") as f:
         if "input" not in f:
             raise KeyError("Dataset 'input' not found")
-        dset = f["input"]  # (N, 2, 5160)
+        
+        dset = f["input"]
 
-        # 자동 범위 추정(퍼센타일) 또는 사용자 지정 범위 사용
+        # 자동 범위 계산
         if range_charge is None:
-            range_charge = _percentile_range(dset, 0, chunk, sample_chunks=8,
-                                             p_low=pclip[0], p_high=pclip[1])
+            range_charge = calculate_percentile_range(dset, 0, chunk, 8, pclip[0], pclip[1])
         if range_time is None:
-            range_time = _percentile_range(dset, 1, chunk, sample_chunks=8,
-                                           p_low=pclip[0], p_high=pclip[1])
+            range_time = calculate_percentile_range(dset, 1, chunk, 8, pclip[0], pclip[1])
             
         # 임계값이 있으면 범위 조정
         if min_time_threshold is not None:
             range_time = (min_time_threshold, max(range_time[1], min_time_threshold + 1))
-
-        # 스트리밍 히스토그램 및 통계 수집
-        x_c, y_c, stats_c = _hist_stream(dset, 0, bins, range_charge, chunk, exclude_zero, None, None)
-        x_t, y_t, stats_t = _hist_stream(dset, 1, bins, range_time, chunk, exclude_zero, min_time_threshold, log_time_transform)
-
-    # Charge 히스토그램
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # 히스토그램 플롯 (더 명확하게)
-    if len(x_c) > 0 and np.sum(y_c) > 0:
-        # 범위 계산
-        x_min, x_max = np.min(x_c), np.max(x_c)
-        if x_min < x_max:  # 유효한 범위인지 확인
-            # 막대 히스토그램으로 변경
-            ax.hist(x_c, bins=bins, weights=y_c, alpha=0.7, color='blue', 
-                    edgecolor='darkblue', linewidth=0.5, range=(x_min, x_max))
-            
-            # 라인도 추가 (선택적)
-            ax.plot(x_c, y_c, drawstyle="steps-mid", linewidth=2, color='darkblue', alpha=0.8)
-        else:
-            ax.text(0.5, 0.5, 'Invalid data range', transform=ax.transAxes, 
-                    ha='center', va='center', fontsize=14, color='red')
-    else:
-        ax.text(0.5, 0.5, 'No data in this range', transform=ax.transAxes, 
-                ha='center', va='center', fontsize=14, color='red')
-    
-    # 통계선 추가
-    if show_stats:
-        # 평균선
-        ax.axvline(stats_c['mean'], color='red', linestyle='--', linewidth=2, 
-                   label=f'Mean: {stats_c["mean"]:.3f}')
         
-        # 중앙값선
-        ax.axvline(stats_c['median'], color='orange', linestyle=':', linewidth=2, 
-                   label=f'Median: {stats_c["median"]:.3f}')
+        # Charge 히스토그램
+        x_c, y_c, stats_c = process_data_stream(dset, 0, bins, range_charge, chunk, 
+                                               exclude_zero, None, None)
         
-        # 표준편차 영역 (평균 ± 1σ)
-        std_low = stats_c['mean'] - stats_c['std']
-        std_high = stats_c['mean'] + stats_c['std']
-        ax.axvspan(std_low, std_high, alpha=0.2, color='red', 
-                   label=f'±1σ: [{std_low:.3f}, {std_high:.3f}]')
+        # Time 히스토그램
+        x_t, y_t, stats_t = process_data_stream(dset, 1, bins, range_time, chunk,
+                                               exclude_zero, min_time_threshold, log_time_transform)
     
-    # 퍼센타일선 추가
-    if show_percentiles:
-        ax.axvline(stats_c['p10'], color='green', linestyle='-.', alpha=0.7, 
-                   label=f'P10: {stats_c["p10"]:.3f}')
-        ax.axvline(stats_c['p90'], color='green', linestyle='-.', alpha=0.7, 
-                   label=f'P90: {stats_c["p90"]:.3f}')
-        ax.axvline(stats_c['p25'], color='purple', linestyle=':', alpha=0.7, 
-                   label=f'P25: {stats_c["p25"]:.3f}')
-        ax.axvline(stats_c['p75'], color='purple', linestyle=':', alpha=0.7, 
-                   label=f'P75: {stats_c["p75"]:.3f}')
-    
-    # 축 설정
-    ax.set_xlabel("Charge (NPE)", fontsize=12)
-    ax.set_ylabel("Count", fontsize=12)
-    title = "Charge Distribution (Non-zero only)" if exclude_zero else "Charge Distribution"
-    ax.set_title(title, fontsize=14, fontweight='bold')
-    
-    if logy: 
-        ax.set_yscale("log")
-        ax.set_ylabel("Count (log scale)", fontsize=12)
-    if logx: 
-        ax.set_xscale("log")
-        ax.set_xlabel("Charge (NPE, log scale)", fontsize=12)
-    
-    # X축 범위 자동 조정 (데이터에 맞게)
-    if len(x_c) > 0 and np.max(y_c) > 0:
-        data_min = np.min(x_c[y_c > 0])
-        data_max = np.max(x_c[y_c > 0])
-        margin = (data_max - data_min) * 0.05  # 5% 마진
-        ax.set_xlim(max(0, data_min - margin), data_max + margin)
-    
-    # 범례
-    if show_stats or show_percentiles:
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-    
-    # 통계 텍스트 박스
-    zero_info = f"Zeros: {stats_c['zero_count']:,} ({stats_c['zero_fraction']:.1%})" if not exclude_zero else ""
-    stats_text = f"""Statistics:
-Count: {stats_c['count']:,}
-{zero_info}
-Min: {stats_c['min']:.3f}
-Max: {stats_c['max']:.3f}
-Mean: {stats_c['mean']:.3f} ± {stats_c['std']:.3f}
-Median: {stats_c['median']:.3f}
-P10: {stats_c['p10']:.3f}
-P90: {stats_c['p90']:.3f}"""
-    
-    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-            verticalalignment='top', fontsize=9, 
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-    
-    plt.tight_layout()
-    suffix = "_nonzero" if exclude_zero else ""
-    plt.savefig(f"{out_prefix}_charge{suffix}.png", dpi=150, bbox_inches='tight')
-    plt.close()
-
-    # Time 히스토그램
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # 히스토그램 플롯 (더 명확하게)
-    if len(x_t) > 0 and np.sum(y_t) > 0:
-        # 범위 계산
-        x_min, x_max = np.min(x_t), np.max(x_t)
-        if x_min < x_max:  # 유효한 범위인지 확인
-            # 막대 히스토그램으로 변경
-            ax.hist(x_t, bins=bins, weights=y_t, alpha=0.7, color='green', 
-                    edgecolor='darkgreen', linewidth=0.5, range=(x_min, x_max))
-            
-            # 라인도 추가 (선택적)
-            ax.plot(x_t, y_t, drawstyle="steps-mid", linewidth=2, color='darkgreen', alpha=0.8)
-        else:
-            ax.text(0.5, 0.5, 'Invalid data range', transform=ax.transAxes, 
-                    ha='center', va='center', fontsize=14, color='red')
-    else:
-        ax.text(0.5, 0.5, 'No data in this range', transform=ax.transAxes, 
-                ha='center', va='center', fontsize=14, color='red')
-    
-    # 통계선 추가
-    if show_stats:
-        # 평균선
-        ax.axvline(stats_t['mean'], color='red', linestyle='--', linewidth=2, 
-                   label=f'Mean: {stats_t["mean"]:.1f}')
-        
-        # 중앙값선
-        ax.axvline(stats_t['median'], color='orange', linestyle=':', linewidth=2, 
-                   label=f'Median: {stats_t["median"]:.1f}')
-        
-        # 표준편차 영역
-        std_low = stats_t['mean'] - stats_t['std']
-        std_high = stats_t['mean'] + stats_t['std']
-        ax.axvspan(std_low, std_high, alpha=0.2, color='red', 
-                   label=f'±1σ: [{std_low:.1f}, {std_high:.1f}]')
-    
-    # 퍼센타일선 추가
-    if show_percentiles:
-        ax.axvline(stats_t['p10'], color='blue', linestyle='-.', alpha=0.7, 
-                   label=f'P10: {stats_t["p10"]:.1f}')
-        ax.axvline(stats_t['p90'], color='blue', linestyle='-.', alpha=0.7, 
-                   label=f'P90: {stats_t["p90"]:.1f}')
-        ax.axvline(stats_t['p25'], color='purple', linestyle=':', alpha=0.7, 
-                   label=f'P25: {stats_t["p25"]:.1f}')
-        ax.axvline(stats_t['p75'], color='purple', linestyle=':', alpha=0.7, 
-                   label=f'P75: {stats_t["p75"]:.1f}')
-    
-    # 축 설정
-    xlabel = "Time (ns)"
-    if log_time_transform == "log10":
-        xlabel = "log₁₀(Time + ε) (ns)"
-    elif log_time_transform == "ln":
-        xlabel = "ln(Time + ε) (ns)"
-    
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel("Count", fontsize=12)
-    
-    title = "Time Distribution"
+    # Charge 히스토그램 생성
+    charge_title = "Charge Distribution"
     if exclude_zero:
-        title += " (Non-zero only)"
+        charge_title += " (Non-zero only)"
+    
+    charge_xlabel = "Charge (NPE)"
+    
+    fig_c, ax_c = create_beautiful_histogram(
+        x_c, y_c, stats_c, charge_title, charge_xlabel, colors,
+        logy, logx, figsize, show_stats, show_percentiles
+    )
+    
+    # 파일 저장
+    suffix = "_nonzero" if exclude_zero else ""
+    plt.savefig(f"{out_prefix}_charge{suffix}.png", dpi=150, bbox_inches='tight',
+               facecolor='white', edgecolor='none')
+    plt.close(fig_c)
+    
+    # Time 히스토그램 생성
+    time_title = "Time Distribution"
+    if exclude_zero:
+        time_title += " (Non-zero only)"
     if min_time_threshold is not None:
-        title += f" (≥{min_time_threshold:.1f}ns)"
+        time_title += f" (≥{min_time_threshold:.1f}ns)"
     if log_time_transform is not None:
         transform_name = "log₁₀" if log_time_transform == "log10" else "ln"
-        title += f" [{transform_name} transformed]"
-    ax.set_title(title, fontsize=14, fontweight='bold')
+        time_title += f" [{transform_name} transformed]"
     
-    if logy: 
-        ax.set_yscale("log")
-        ax.set_ylabel("Count (log scale)", fontsize=12)
-    if logx: 
-        ax.set_xscale("log")
-        ax.set_xlabel("Time (ns, log scale)", fontsize=12)
+    time_xlabel = "Time (ns)"
+    if log_time_transform == "log10":
+        time_xlabel = "log₁₀(Time + ε) (ns)"
+    elif log_time_transform == "ln":
+        time_xlabel = "ln(Time + ε) (ns)"
     
-    # X축 범위 자동 조정 (데이터에 맞게)
-    if len(x_t) > 0 and np.max(y_t) > 0:
-        data_min = np.min(x_t[y_t > 0])
-        data_max = np.max(x_t[y_t > 0])
-        margin = (data_max - data_min) * 0.05  # 5% 마진
-        ax.set_xlim(max(0, data_min - margin), data_max + margin)
+    fig_t, ax_t = create_beautiful_histogram(
+        x_t, y_t, stats_t, time_title, time_xlabel, colors,
+        logy, logx, figsize, show_stats, show_percentiles
+    )
     
-    # 범례
-    if show_stats or show_percentiles:
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-    
-    # 통계 텍스트 박스
-    zero_info = f"Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})" if not exclude_zero else ""
-    threshold_info = f"Threshold: ≥{stats_t['min_threshold']:.1f}ns" if stats_t['min_threshold'] is not None else ""
-    transform_info = f"Transform: {log_time_transform}" if log_time_transform is not None else ""
-    
-    stats_text = f"""Statistics:
-Count: {stats_t['count']:,}
-{zero_info}
-{threshold_info}
-{transform_info}
-Min: {stats_t['min']:.1f}
-Max: {stats_t['max']:.1f}
-Mean: {stats_t['mean']:.1f} ± {stats_t['std']:.1f}
-Median: {stats_t['median']:.1f}
-P10: {stats_t['p10']:.1f}
-P90: {stats_t['p90']:.1f}"""
-    
-    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-            verticalalignment='top', fontsize=9, 
-            bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
-    
-    plt.tight_layout()
+    # 파일 저장
     suffix = "_nonzero" if exclude_zero else ""
     if min_time_threshold is not None:
         suffix += f"_min{min_time_threshold:.0f}"
     if log_time_transform is not None:
         suffix += f"_{log_time_transform}"
-    plt.savefig(f"{out_prefix}_time{suffix}.png", dpi=150, bbox_inches='tight')
-    plt.close()
+    
+    plt.savefig(f"{out_prefix}_time{suffix}.png", dpi=150, bbox_inches='tight',
+               facecolor='white', edgecolor='none')
+    plt.close(fig_t)
     
     # 통계 정보 출력
-    zero_suffix = " (Non-zero only)" if exclude_zero else ""
-    threshold_suffix = f" (≥{min_time_threshold:.1f}ns)" if min_time_threshold is not None else ""
-    transform_suffix = f" [{log_time_transform} transformed]" if log_time_transform is not None else ""
+    print(f"\n🎨 Style: {style.title()}")
+    print(f"📊 Charge Statistics{' (Non-zero only)' if exclude_zero else ''}:")
+    if stats_c['count'] > 0:
+        print(f"  Count: {stats_c['count']:,}")
+        print(f"  Range: [{stats_c['min']:.3f}, {stats_c['max']:.3f}]")
+        print(f"  Mean ± Std: {stats_c['mean']:.3f} ± {stats_c['std']:.3f}")
+        print(f"  Median: {stats_c['median']:.3f}")
+        print(f"  Percentiles: P10={stats_c['p10']:.3f}, P90={stats_c['p90']:.3f}")
+        if stats_c['zero_fraction'] > 0:
+            print(f"  Zeros: {stats_c['zero_count']:,} ({stats_c['zero_fraction']:.1%})")
+    else:
+        print("  No data available")
     
-    print(f"\n📊 Charge Statistics{zero_suffix}:")
-    print(f"  Range: [{stats_c['min']:.3f}, {stats_c['max']:.3f}]")
-    print(f"  Mean ± Std: {stats_c['mean']:.3f} ± {stats_c['std']:.3f}")
-    print(f"  Median: {stats_c['median']:.3f}")
-    print(f"  Percentiles: P10={stats_c['p10']:.3f}, P90={stats_c['p90']:.3f}")
-    if not exclude_zero:
-        print(f"  Zeros: {stats_c['zero_count']:,} ({stats_c['zero_fraction']:.1%})")
-    
-    print(f"\n⏱️  Time Statistics{zero_suffix}{threshold_suffix}{transform_suffix}:")
-    print(f"  Range: [{stats_t['min']:.3f}, {stats_t['max']:.3f}]")
-    print(f"  Mean ± Std: {stats_t['mean']:.3f} ± {stats_t['std']:.3f}")
-    print(f"  Median: {stats_t['median']:.3f}")
-    print(f"  Percentiles: P10={stats_t['p10']:.3f}, P90={stats_t['p90']:.3f}")
-    if not exclude_zero:
-        print(f"  Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})")
-    if min_time_threshold is not None:
-        print(f"  Min Threshold: {min_time_threshold:.1f}ns")
-    if log_time_transform is not None:
-        print(f"  Log Transform: {log_time_transform}")
+    print(f"\n⏱️  Time Statistics{' (Non-zero only)' if exclude_zero else ''}{' (≥' + str(min_time_threshold) + 'ns)' if min_time_threshold else ''}{' [' + log_time_transform + ' transformed]' if log_time_transform else ''}:")
+    if stats_t['count'] > 0:
+        print(f"  Count: {stats_t['count']:,}")
+        print(f"  Range: [{stats_t['min']:.3f}, {stats_t['max']:.3f}]")
+        print(f"  Mean ± Std: {stats_t['mean']:.3f} ± {stats_t['std']:.3f}")
+        print(f"  Median: {stats_t['median']:.3f}")
+        print(f"  Percentiles: P10={stats_t['p10']:.3f}, P90={stats_t['p90']:.3f}")
+        if stats_t['zero_fraction'] > 0:
+            print(f"  Zeros: {stats_t['zero_count']:,} ({stats_t['zero_fraction']:.1%})")
+        if min_time_threshold is not None:
+            print(f"  Min Threshold: {min_time_threshold:.1f}ns")
+        if log_time_transform is not None:
+            print(f"  Log Transform: {log_time_transform}")
+    else:
+        print("  No data available")
 
 def main():
-    ap = argparse.ArgumentParser(description="Plot advanced histograms for input charge/time from HDF5")
-    ap.add_argument("-p", "--path", required=True, help="Path to HDF5 file")
-    ap.add_argument("--bins", type=int, default=200, help="Number of histogram bins")
-    ap.add_argument("--chunk", type=int, default=1024, help="Batch chunk size for streaming")
-    ap.add_argument("--range-charge", type=float, nargs=2, metavar=("MIN","MAX"),
-                    help="Manual range for charge (e.g., 0 50)")
-    ap.add_argument("--range-time", type=float, nargs=2, metavar=("MIN","MAX"),
-                    help="Manual range for time (e.g., 0 20000)")
-    ap.add_argument("--out", type=str, default="hist_input", help="Output PNG prefix")
-    ap.add_argument("--logy", action="store_true", help="Use log-scale on y-axis")
-    ap.add_argument("--logx", action="store_true", help="Use log-scale on x-axis")
-    ap.add_argument("--no-stats", action="store_true", help="Hide statistical lines (mean, median, std)")
-    ap.add_argument("--no-percentiles", action="store_true", help="Hide percentile lines (P10, P90, P25, P75)")
-    ap.add_argument("--figsize", type=int, nargs=2, default=(12, 8), metavar=("WIDTH", "HEIGHT"),
-                    help="Figure size (width, height)")
-    ap.add_argument("--exclude-zero", action="store_true", help="Exclude zero values from histogram")
-    ap.add_argument("--plot-both", action="store_true", help="Plot both all values and non-zero only")
-    ap.add_argument("--min-time", type=float, help="Minimum time threshold (ns) - only plot time values above this")
-    ap.add_argument("--log-time", choices=["log10", "ln"], default="log10",
-                   help="Log transformation for time values: log10 (default) or ln")
-    ap.add_argument("--pclip", type=float, nargs=2, default=(0.5, 99.5),
-                    metavar=("LOW","HIGH"),
-                    help="Percentiles for auto-range when range not given")
-    args = ap.parse_args()
-
+    parser = argparse.ArgumentParser(description="Create beautiful histograms for IceCube HDF5 data")
+    parser.add_argument("-p", "--path", required=True, help="Path to HDF5 file")
+    parser.add_argument("--bins", type=int, default=200, help="Number of histogram bins")
+    parser.add_argument("--chunk", type=int, default=1024, help="Chunk size for streaming")
+    parser.add_argument("--range-charge", type=float, nargs=2, metavar=("MIN", "MAX"),
+                       help="Manual range for charge")
+    parser.add_argument("--range-time", type=float, nargs=2, metavar=("MIN", "MAX"),
+                       help="Manual range for time")
+    parser.add_argument("--out", default="hist_input", help="Output file prefix")
+    parser.add_argument("--logy", action="store_true", help="Use log-scale on y-axis")
+    parser.add_argument("--logx", action="store_true", help="Use log-scale on x-axis")
+    parser.add_argument("--log-time", choices=["log10", "ln"], default="log10",
+                       help="Log transformation for time values")
+    parser.add_argument("--no-stats", action="store_true", help="Hide statistical lines")
+    parser.add_argument("--no-percentiles", action="store_true", help="Hide percentile lines")
+    parser.add_argument("--figsize", type=int, nargs=2, default=(12, 8), metavar=("WIDTH", "HEIGHT"),
+                       help="Figure size")
+    parser.add_argument("--exclude-zero", action="store_true", help="Exclude zero values")
+    parser.add_argument("--plot-both", action="store_true", help="Plot both all and non-zero values")
+    parser.add_argument("--min-time", type=float, help="Minimum time threshold (ns)")
+    parser.add_argument("--style", choices=["modern", "elegant", "classic"], default="modern",
+                       help="Visual style")
+    parser.add_argument("--pclip", type=float, nargs=2, default=(0.5, 99.5),
+                       metavar=("LOW", "HIGH"), help="Percentiles for auto-range")
+    
+    args = parser.parse_args()
+    
     # 기본 플롯 (모든 값 포함)
     if not args.exclude_zero or args.plot_both:
         plot_hist_pair(
@@ -528,6 +554,7 @@ def main():
             plot_both=args.plot_both,
             min_time_threshold=args.min_time,
             log_time_transform=args.log_time,
+            style=args.style,
             pclip=tuple(args.pclip),
         )
     
@@ -549,6 +576,7 @@ def main():
             plot_both=args.plot_both,
             min_time_threshold=args.min_time,
             log_time_transform=args.log_time,
+            style=args.style,
             pclip=tuple(args.pclip),
         )
     
@@ -560,7 +588,8 @@ def main():
         time_suffix += f"_{args.log_time}"
     
     if args.plot_both:
-        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time{time_suffix}.png, {args.out}_charge_nonzero.png, {args.out}_time_nonzero{time_suffix}.png")
+        print(f"\n✅ Saved: {args.out}_charge.png, {args.out}_time{time_suffix}.png, "
+              f"{args.out}_charge_nonzero.png, {args.out}_time_nonzero{time_suffix}.png")
     elif args.exclude_zero:
         print(f"\n✅ Saved: {args.out}_charge_nonzero.png, {args.out}_time_nonzero{time_suffix}.png")
     else:
