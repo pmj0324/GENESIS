@@ -69,7 +69,7 @@ def benchmark_batch_size(
     batch_size: int,
     config,
     data_path: str,
-    num_steps: int = 10,
+    num_steps: int = 1,
     device: str = "cuda",
     use_amp: bool = True,
     num_workers: int = 4,

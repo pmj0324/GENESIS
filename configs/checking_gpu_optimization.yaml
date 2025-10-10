@@ -112,7 +112,7 @@ benchmark:
   num_workers_options: [0, 2, 4, 8, 12, 16]
   
   # Number of steps to test per configuration
-  steps_per_test: 10  # Test 10 steps per batch size
+  steps_per_test: 1  # Test 1 steps per batch size
   
   # Whether to test mixed precision on/off
   test_mixed_precision: true
@@ -128,4 +128,3 @@ seed: 42
 use_wandb: false
 wandb_project: null
 wandb_entity: null
-
