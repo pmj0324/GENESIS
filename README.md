@@ -90,12 +90,24 @@ python scripts/analysis/evaluate.py --checkpoint /path/to/checkpoint.pth --data-
 
 ### Time Transformations
 
-The framework supports advanced time data processing:
+The framework uses **log(1 + x)** method for numerical stability:
 
-- **Natural Log Transformation**: `--log-time ln` (default)
-- **Log10 Transformation**: `--log-time log10`
-- **Zero Exclusion**: Automatically excludes zero values for log transforms
-- **Threshold Filtering**: `--min-time 1000` (ns)
+**Formula:**
+- **Natural Log**: `y = ln(1 + time) / scale` (default)
+- **Log10**: `y = log10(1 + time) / scale`
+- **Inverse**: `time = exp(y × scale) - 1` or `10^(y × scale) - 1`
+
+**Advantages:**
+- ✅ `log(1 + 0) = 0` (natural handling of zero)
+- ✅ No `-inf` issue at zero
+- ✅ Taylor series: `log(1+x) ≈ x` for small x
+- ✅ Smooth transformation near zero
+
+**Options:**
+- **time_transform**: `"ln"` (default), `"log10"`, or `null`
+- **exclude_zero_time**: `true` (recommended for clarity), `false` (simpler)
+  - Note: With `log(1+x)`, both give same result (0.0)
+  - `true` explicitly marks time=0 as "no hit" (physical meaning)
 
 ### Configuration Example
 

@@ -6,6 +6,16 @@ from .denormalization import (
     denormalize_full_event,
     denormalize_from_config
 )
+from .gpu_utils import (
+    get_gpu_info,
+    print_gpu_info,
+    estimate_model_memory,
+    estimate_batch_memory,
+    recommend_batch_size,
+    print_memory_analysis,
+    monitor_gpu_memory,
+    auto_select_batch_size,
+)
 
 __all__ = [
     "print_h5_structure",
@@ -14,4 +24,12 @@ __all__ = [
     "denormalize_label",
     "denormalize_full_event",
     "denormalize_from_config",
+    "get_gpu_info",
+    "print_gpu_info",
+    "estimate_model_memory",
+    "estimate_batch_memory",
+    "recommend_batch_size",
+    "print_memory_analysis",
+    "monitor_gpu_memory",
+    "auto_select_batch_size",
 ]

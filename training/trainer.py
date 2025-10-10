@@ -27,6 +27,7 @@ from dataloader.pmt_dataloader import make_dataloader, check_dataset_health
 from models.factory import ModelFactory
 from diffusion import GaussianDiffusion, DiffusionConfig
 from config import ExperimentConfig, load_config_from_file
+from utils.gpu_utils import print_memory_analysis, print_gpu_info
 from .schedulers import create_scheduler
 from .logging import setup_logging, LoggingConfig
 from .checkpointing import CheckpointManager
@@ -473,6 +474,15 @@ class Trainer:
         print(f"Device: {self.device}")
         print(f"Mixed precision: {self.scaler is not None}")
         print(f"Gradient accumulation: {self.config.training.gradient_accumulation_steps}")
+        
+        # GPU memory analysis on first epoch
+        if self.start_epoch == 0 and torch.cuda.is_available():
+            print_memory_analysis(
+                self.model,
+                batch_size=self.config.data.batch_size,
+                device_id=0 if self.device.type == 'cuda' else 0,
+                mixed_precision=self.config.training.use_amp
+            )
         
         # Data health check on first epoch
         if self.start_epoch == 0:

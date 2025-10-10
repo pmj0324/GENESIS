@@ -96,24 +96,33 @@ class PMTSignalsH5(Dataset):
             x_sig[1, :] = t
         
         # Time transformation (log10 or ln)
+        # Uses log(1 + x) instead of log(x) for better numerical stability:
+        #   - log(1 + 0) = 0 (natural, no special handling needed)
+        #   - No -inf issue at x=0
+        #   - Inverse: exp(y) - 1 or 10^y - 1
+        #   - Taylor series: log(1+x) ≈ x for small x (linear-like near 0)
         if self.time_transform is not None:
-            # 0값 제외 옵션
+            # exclude_zero_time option:
+            # While log(1+x) handles x=0 naturally, we still mark zeros explicitly because:
+            #   1. Physical meaning: time=0 means "no hit" (different from small time)
+            #   2. Data quality: explicit separation of no-hit vs actual-hit PMTs
+            #   3. Future flexibility: allows different handling of zeros if needed
+            # Note: With log(1+x), this is optional and both True/False give same result (0.0)
             if self.exclude_zero_time:
-                # 0값을 NaN으로 마킹 (나중에 제거)
+                # Mark 0 values as NaN for explicit tracking
                 t_zero_mask = (t == 0.0)
                 t[t_zero_mask] = np.nan
             
-            # 로그 변환 적용: log(1 + x)
-            # 장점: x=0일 때 log(1+0)=0이 되어 더 자연스러움
+            # Apply log transform: ln(1 + x) or log10(1 + x)
             if self.time_transform == "log10":
-                t = np.log10(1.0 + t)
+                t = np.log10(1.0 + t)  # log10(1+0)=0, log10(1+135232)≈5.13
             elif self.time_transform == "ln":
-                t = np.log(1.0 + t)
+                t = np.log(1.0 + t)    # ln(1+0)=0, ln(1+135232)≈11.82
             
-            # NaN 값들을 적절한 값으로 대체
+            # Replace NaN values (from excluded zeros) with 0.0
             t_nan_mask = ~np.isfinite(t)
             if t_nan_mask.any():
-                # 로그 변환된 0값을 0.0으로 설정 (log(1+0) = 0)
+                # log(1+0) = 0, so zeros naturally map to 0.0
                 t[t_nan_mask] = 0.0
             x_sig[1, :] = t
         
