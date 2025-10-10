@@ -117,7 +117,11 @@ def benchmark_batch_size(
         
         # Create model
         print("🏗️  Creating model...")
-        model, diffusion = ModelFactory.create_model_and_diffusion(config)
+        model, diffusion = ModelFactory.create_model_and_diffusion(
+            config.model,
+            config.diffusion,
+            device=None
+        )
         model = model.to(device)
         diffusion = diffusion.to(device)
         
@@ -549,6 +553,8 @@ def main():
                        help="Number of steps to test per configuration")
     parser.add_argument("--device", type=str, default="auto",
                        help="Device to use")
+    parser.add_argument("--quick", action="store_true",
+                       help="Quick mode: test fewer batch sizes (faster)")
     
     args = parser.parse_args()
     
@@ -571,7 +577,13 @@ def main():
     elif hasattr(config, 'benchmark') and hasattr(config.benchmark, 'batch_sizes'):
         batch_sizes = config.benchmark.batch_sizes
     else:
-        batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+        if args.quick:
+            # Quick mode: test key batch sizes only
+            batch_sizes = [128, 512, 1024, 2048, 4096, 8192]
+            print("⚡ Quick mode: testing key batch sizes only")
+        else:
+            # Full mode: test all power of 2 batch sizes
+            batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
     
     # Get num_workers to test
     if args.num_workers:
@@ -579,7 +591,22 @@ def main():
     elif hasattr(config, 'benchmark') and hasattr(config.benchmark, 'num_workers_options'):
         num_workers_list = config.benchmark.num_workers_options
     else:
-        num_workers_list = [4]  # Default: only test with 4 workers
+        # Auto-detect optimal workers based on CPU cores
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        print(f"\n💻 CPU Information:")
+        print(f"   CPU Cores: {cpu_count}")
+        
+        # Suggest worker counts: 25%, 50%, 75% of CPU cores
+        suggested_workers = [
+            max(1, cpu_count // 4),
+            max(2, cpu_count // 2),
+            max(4, cpu_count * 3 // 4)
+        ]
+        # Remove duplicates and sort
+        suggested_workers = sorted(list(set(suggested_workers)))
+        num_workers_list = suggested_workers
+        print(f"   Testing workers: {num_workers_list} (25%, 50%, 75% of cores)\n")
     
     # Print GPU info
     print(f"\n{'='*70}")
