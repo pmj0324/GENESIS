@@ -328,8 +328,21 @@ class Trainer:
                 print("📊 First Batch - Model Input (After Normalization)")
                 print(f"{'='*70}")
                 
+                # Sample first 128 samples for statistics (regardless of batch size)
+                batch_size = x_sig.size(0)
+                sample_size = min(128, batch_size)
+                if batch_size > 128:
+                    print(f"  ℹ️  Showing statistics for first {sample_size} samples (batch_size={batch_size})")
+                else:
+                    print(f"  ℹ️  Batch size: {batch_size}")
+                
+                # Sample data for statistics
+                x_sig_sample = x_sig[:sample_size]
+                geom_sample = geom[:sample_size]
+                label_sample = label[:sample_size]
+                
                 # Apply normalization to see what model receives
-                x5 = torch.cat([x_sig, geom], dim=1)  # (B, 5, L)
+                x5 = torch.cat([x_sig_sample, geom_sample], dim=1)  # (sample_size, 5, L)
                 
                 # Get normalization parameters from model
                 if hasattr(self.model, 'affine_offset'):
@@ -337,7 +350,7 @@ class Trainer:
                     scl = self.model.affine_scale.view(1, 5, 1)
                     x5_norm = (x5 - off) / scl
                     
-                    print(f"  Normalized Signals + Geometry:")
+                    print(f"\n  Normalized Signals + Geometry (n={sample_size}):")
                     print(f"    Charge (ch 0): [{x5_norm[:, 0, :].min():.6f}, {x5_norm[:, 0, :].max():.6f}] "
                           f"mean={x5_norm[:, 0, :].mean():.6f} std={x5_norm[:, 0, :].std():.6f}")
                     print(f"    Time   (ch 1): [{x5_norm[:, 1, :].min():.6f}, {x5_norm[:, 1, :].max():.6f}] "
@@ -353,9 +366,9 @@ class Trainer:
                 if hasattr(self.model, 'label_offset'):
                     label_off = self.model.label_offset.view(1, 6)
                     label_scl = self.model.label_scale.view(1, 6)
-                    label_norm = (label - label_off) / label_scl
+                    label_norm = (label_sample - label_off) / label_scl
                     
-                    print(f"\n  Normalized Labels:")
+                    print(f"\n  Normalized Labels (n={sample_size}):")
                     label_names = ['Energy', 'Zenith', 'Azimuth', 'X', 'Y', 'Z']
                     for ch_idx, name in enumerate(label_names):
                         print(f"    {name:8s} (ch {ch_idx}): [{label_norm[:, ch_idx].min():.6f}, {label_norm[:, ch_idx].max():.6f}] "
