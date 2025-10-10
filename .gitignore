@@ -97,5 +97,6 @@ dev-logs/
 *.out
 
 # Data files (uncomment if you don't want to track data)
+.diffusion_analysis/
 # data/
 # datasets/
