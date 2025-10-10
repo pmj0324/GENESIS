@@ -29,6 +29,8 @@ class EventVisualizer:
         base_radius: float = 5.0,
         radius_scale: float = 0.2,
         figure_size: Tuple[int, int] = (15, 10),
+        time_transform: Optional[str] = "ln",  # "log10", "ln", None
+        exclude_zero_time: bool = True,
     ):
         """
         Initialize the event visualizer.
@@ -45,9 +47,51 @@ class EventVisualizer:
         self.base_radius = base_radius
         self.radius_scale = radius_scale
         self.figure_size = figure_size
+        self.time_transform = time_transform
+        self.exclude_zero_time = exclude_zero_time
         
         # Load detector geometry
         self._load_detector_geometry()
+    
+    def denormalize_signal(self, x_sig: torch.Tensor, affine_offsets: Tuple[float, ...], 
+                          affine_scales: Tuple[float, ...]) -> torch.Tensor:
+        """
+        Denormalize signal from normalized range back to original scale.
+        Formula: x_original = (x_normalized * scale) + offset
+        
+        Args:
+            x_sig: Normalized signal tensor (B, 2, L)
+            affine_offsets: Offset values for [npe, time, x, y, z]
+            affine_scales: Scale values for [npe, time, x, y, z]
+            
+        Returns:
+            Denormalized signal tensor
+        """
+        # Only use charge and time offsets/scales (first 2 elements)
+        off = torch.tensor(affine_offsets[:2], dtype=torch.float32).view(1, 2, 1)
+        scl = torch.tensor(affine_scales[:2], dtype=torch.float32).view(1, 2, 1)
+        
+        # Apply inverse normalization: x_original = (x_normalized * scale) + offset
+        x_original = (x_sig * scl) + off
+        
+        # If time was log-transformed, apply inverse transformation
+        if self.time_transform is not None and x_sig.shape[1] >= 2:
+            time_original = x_original[:, 1, :]  # Time channel
+            
+            if self.time_transform == "log10":
+                time_original = torch.pow(10.0, time_original) - 1e-10
+            elif self.time_transform == "ln":
+                time_original = torch.exp(time_original) - 1e-10
+            
+            # Handle the case where 0 values were excluded
+            if self.exclude_zero_time:
+                # Very negative values in log space correspond to original 0 values
+                zero_mask = time_original < 0.1  # Very small values
+                time_original[zero_mask] = 0.0
+            
+            x_original[:, 1, :] = time_original
+        
+        return x_original
     
     def _load_detector_geometry(self):
         """Load detector geometry from CSV file."""
@@ -86,6 +130,9 @@ class EventVisualizer:
         skip_nonfinite: bool = True,
         scatter_background: bool = True,
         show_detector_hull: bool = True,
+        denormalize: bool = True,
+        affine_offsets: Optional[Tuple[float, ...]] = None,
+        affine_scales: Optional[Tuple[float, ...]] = None,
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
         Visualize a single neutrino event in 3D.
@@ -102,9 +149,25 @@ class EventVisualizer:
         Returns:
             Tuple of (figure, axes)
         """
-        # Convert to numpy if needed
-        if isinstance(pmt_signals, torch.Tensor):
-            pmt_signals = pmt_signals.cpu().numpy()
+        # Convert to torch tensor if needed for denormalization
+        if isinstance(pmt_signals, np.ndarray):
+            pmt_signals_tensor = torch.from_numpy(pmt_signals)
+        else:
+            pmt_signals_tensor = pmt_signals
+        
+        # Denormalize if requested
+        if denormalize and affine_offsets is not None and affine_scales is not None:
+            if pmt_signals_tensor.ndim == 2:
+                pmt_signals_tensor = pmt_signals_tensor.unsqueeze(0)  # Add batch dimension
+            
+            pmt_signals_tensor = self.denormalize_signal(pmt_signals_tensor, affine_offsets, affine_scales)
+            
+            if pmt_signals_tensor.ndim == 3:
+                pmt_signals_tensor = pmt_signals_tensor.squeeze(0)  # Remove batch dimension
+        
+        # Convert to numpy for visualization
+        pmt_signals = pmt_signals_tensor.cpu().numpy()
+        
         if isinstance(event_conditions, torch.Tensor):
             event_conditions = event_conditions.cpu().numpy()
         

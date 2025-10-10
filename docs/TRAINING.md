@@ -21,20 +21,20 @@ This document provides comprehensive guidance for training the GENESIS IceCube d
 
 ```bash
 # Train with default DiT architecture
-python train.py --config configs/default.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/default.yaml --data-path /path/to/your/data.h5
 
 # Train with CNN architecture (faster)
-python train.py --config configs/cnn.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/cnn.yaml --data-path /path/to/your/data.h5
 
 # Train with hybrid architecture (balanced)
-python train.py --config configs/hybrid.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/hybrid.yaml --data-path /path/to/your/data.h5
 ```
 
 ### Training with Custom Parameters
 
 ```bash
 # Override specific parameters
-python train.py --config configs/default.yaml \
+python scripts/train.py --config configs/default.yaml \
     --data-path /path/to/data.h5 \
     --epochs 200 \
     --batch-size 16 \
@@ -86,7 +86,7 @@ GENESIS supports early stopping to prevent overfitting and save training time. E
 
 **Enable via CLI:**
 ```bash
-python train.py \
+python scripts/train.py \
   --data-path data.h5 \
   --early-stopping \
   --early-stopping-patience 20
@@ -149,7 +149,7 @@ training:
 
 **4. Disable Best Weight Restoration:**
 ```bash
-python train.py \
+python scripts/train.py \
   --early-stopping \
   --early-stopping-patience 15 \
   --no-restore-best-weights  # Keep final weights instead of best
@@ -230,19 +230,19 @@ training:
 #### For Research Applications
 ```bash
 # Use DiT with cosine annealing
-python train.py --config configs/default.yaml --data-path data.h5
+python scripts/train.py --config configs/default.yaml --data-path data.h5
 ```
 
 #### For Production Deployment
 ```bash
 # Use CNN with plateau scheduler
-python train.py --config configs/cnn.yaml --data-path data.h5
+python scripts/train.py --config configs/cnn.yaml --data-path data.h5
 ```
 
 #### For Limited Resources
 ```bash
 # Use small model
-python train.py --config configs/small_model.yaml --data-path data.h5
+python scripts/train.py --config configs/small_model.yaml --data-path data.h5
 ```
 
 ## Data Preparation
@@ -322,12 +322,12 @@ training:
 
 #### Basic Training
 ```bash
-python train.py --config configs/default.yaml --data-path data.h5
+python scripts/train.py --config configs/default.yaml --data-path data.h5
 ```
 
 #### Training with Custom Parameters
 ```bash
-python train.py \
+python scripts/train.py \
     --config configs/default.yaml \
     --data-path data.h5 \
     --epochs 200 \
@@ -339,7 +339,7 @@ python train.py \
 
 #### Resume Training
 ```bash
-python train.py \
+python scripts/train.py \
     --config configs/default.yaml \
     --data-path data.h5 \
     --resume-from-checkpoint checkpoints/model_epoch_50.pt
@@ -410,13 +410,13 @@ Each checkpoint contains:
 
 ```bash
 # Resume from specific checkpoint
-python train.py \
+python scripts/train.py \
     --config configs/default.yaml \
     --data-path data.h5 \
     --resume-from-checkpoint checkpoints/model_epoch_50.pt
 
 # Resume from best checkpoint
-python train.py \
+python scripts/train.py \
     --config configs/default.yaml \
     --data-path data.h5 \
     --resume-from-checkpoint checkpoints/model_best.pt
@@ -494,10 +494,10 @@ Choose batch size based on your hardware:
 #### 1. Out of Memory (OOM)
 ```bash
 # Reduce batch size
-python train.py --config configs/default.yaml --batch-size 4
+python scripts/train.py --config configs/default.yaml --batch-size 4
 
 # Use smaller model
-python train.py --config configs/small_model.yaml
+python scripts/train.py --config configs/small_model.yaml
 
 # Enable gradient checkpointing (if available)
 ```
@@ -505,10 +505,10 @@ python train.py --config configs/small_model.yaml
 #### 2. Training Loss Not Decreasing
 ```bash
 # Check learning rate
-python train.py --config configs/default.yaml --lr 1e-4
+python scripts/train.py --config configs/default.yaml --lr 1e-4
 
 # Enable debug mode
-python train.py --config configs/debug.yaml --debug
+python scripts/train.py --config configs/debug.yaml --debug
 
 # Check data quality
 python -c "from dataloader.pmt_dataloader import make_dataloader; loader = make_dataloader('data.h5'); print(next(iter(loader)))"
@@ -517,10 +517,10 @@ python -c "from dataloader.pmt_dataloader import make_dataloader; loader = make_
 #### 3. Slow Training
 ```bash
 # Use CNN architecture
-python train.py --config configs/cnn.yaml
+python scripts/train.py --config configs/cnn.yaml
 
 # Increase batch size
-python train.py --config configs/default.yaml --batch-size 16
+python scripts/train.py --config configs/default.yaml --batch-size 16
 
 # Enable mixed precision
 # (set use_amp: true in config)
@@ -529,7 +529,7 @@ python train.py --config configs/default.yaml --batch-size 16
 #### 4. NaN/Inf Values
 ```bash
 # Enable anomaly detection
-python train.py --config configs/debug.yaml --debug
+python scripts/train.py --config configs/debug.yaml --debug
 
 # Check data preprocessing
 # (set replace_time_inf_with: 0.0 in config)
@@ -540,7 +540,7 @@ python train.py --config configs/debug.yaml --debug
 Enable debug mode for detailed error information:
 
 ```bash
-python train.py --config configs/debug.yaml --debug
+python scripts/train.py --config configs/debug.yaml --debug
 ```
 
 Debug mode includes:
@@ -648,13 +648,13 @@ experiment_name: "dit_cosine_annealing_v1"
 ### Research Workflow
 ```bash
 # 1. Start with debug configuration
-python train.py --config configs/debug.yaml --data-path data.h5
+python scripts/train.py --config configs/debug.yaml --data-path data.h5
 
 # 2. Move to small model
-python train.py --config configs/small_model.yaml --data-path data.h5
+python scripts/train.py --config configs/small_model.yaml --data-path data.h5
 
 # 3. Full training with DiT
-python train.py --config configs/default.yaml --data-path data.h5 --epochs 200
+python scripts/train.py --config configs/default.yaml --data-path data.h5 --epochs 200
 
 # 4. Evaluate results
 python evaluate.py --real-data data.h5 --generated-data generated.h5
@@ -663,10 +663,10 @@ python evaluate.py --real-data data.h5 --generated-data generated.h5
 ### Production Workflow
 ```bash
 # 1. Quick test with CNN
-python train.py --config configs/cnn.yaml --data-path data.h5 --epochs 10
+python scripts/train.py --config configs/cnn.yaml --data-path data.h5 --epochs 10
 
 # 2. Full CNN training
-python train.py --config configs/cnn.yaml --data-path data.h5 --epochs 100
+python scripts/train.py --config configs/cnn.yaml --data-path data.h5 --epochs 100
 
 # 3. Generate samples
 python sample.py --checkpoint checkpoints/cnn_best.pt --num-events 1000 --output production_samples.h5
@@ -675,9 +675,9 @@ python sample.py --checkpoint checkpoints/cnn_best.pt --num-events 1000 --output
 ### Comparison Workflow
 ```bash
 # 1. Train multiple architectures
-python train.py --config configs/dit.yaml --data-path data.h5 --experiment-name "dit_experiment"
-python train.py --config configs/cnn.yaml --data-path data.h5 --experiment-name "cnn_experiment"
-python train.py --config configs/hybrid.yaml --data-path data.h5 --experiment-name "hybrid_experiment"
+python scripts/train.py --config configs/dit.yaml --data-path data.h5 --experiment-name "dit_experiment"
+python scripts/train.py --config configs/cnn.yaml --data-path data.h5 --experiment-name "cnn_experiment"
+python scripts/train.py --config configs/hybrid.yaml --data-path data.h5 --experiment-name "hybrid_experiment"
 
 # 2. Compare architectures
 python compare_architectures.py --architectures dit cnn hybrid

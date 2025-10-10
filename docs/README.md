@@ -49,7 +49,7 @@ Welcome to the GENESIS documentation! This directory contains comprehensive guid
 
 ### For Beginners
 1. Start with [GETTING_STARTED.md](GETTING_STARTED.md)
-2. Run `python getting_started.py` to test your installation
+2. Run `python scripts/setup/getting_started.py` to test your installation
 3. Follow the quick start tutorial
 
 ### For Training
@@ -77,7 +77,7 @@ docs/
 ## 🎯 Common Use Cases
 
 ### I want to...
-- **Get started quickly**: Read [GETTING_STARTED.md](GETTING_STARTED.md) and run `python getting_started.py`
+- **Get started quickly**: Read [GETTING_STARTED.md](GETTING_STARTED.md) and run `python scripts/setup/getting_started.py`
 - **Train a model**: Read [TRAINING.md](TRAINING.md) and check [TRAINING_EXAMPLES.md](TRAINING_EXAMPLES.md)
 - **Compare architectures**: See the architecture comparison examples in [TRAINING_EXAMPLES.md](TRAINING_EXAMPLES.md)
 - **Use different schedulers**: Check the scheduler examples in [TRAINING_EXAMPLES.md](TRAINING_EXAMPLES.md)
@@ -89,7 +89,7 @@ docs/
 If you can't find what you're looking for:
 
 1. **Check the troubleshooting sections** in the relevant documentation
-2. **Run the getting started script**: `python getting_started.py`
+2. **Run the getting started script**: `python scripts/setup/getting_started.py`
 3. **Look at the examples**: Check the `example/` directory
 4. **Check the source code**: The code is well-documented with docstrings
 5. **Open an issue**: If you find a bug or need help

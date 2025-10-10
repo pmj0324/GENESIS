@@ -48,6 +48,10 @@ class ModelConfig:
     # Label affine normalization (per-label)
     label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
     label_scales: Tuple[float, ...] = (1e-7, 1.0, 1.0, 0.01, 0.01, 0.01)  # [Energy, Zenith, Azimuth, X, Y, Z]
+    
+    # Time transformation
+    time_transform: Optional[str] = "ln"  # "log10", "ln", None
+    exclude_zero_time: bool = True  # Exclude zero time values (recommended for log transforms)
 
 
 @dataclass

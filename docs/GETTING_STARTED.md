@@ -68,7 +68,7 @@ pip uninstall torch torchvision torchaudio
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Or use the setup script
-./setup_micromamba.sh
+./scripts/setup/setup_micromamba.sh
 ```
 
 #### Option B: Using Conda
@@ -236,7 +236,7 @@ Your data should be in HDF5 format with the following structure:
 
 ```bash
 # Train a small CNN model for quick testing
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture cnn \
     --hidden 128 \
@@ -261,7 +261,7 @@ Once you're comfortable with the setup:
 
 ```bash
 # Train a full DiT model
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture dit \
     --hidden 512 \
@@ -279,7 +279,7 @@ python train.py \
 
 ```bash
 # Generate 100 events using your trained model
-python sample.py \
+python scripts/sample.py \
     --checkpoint checkpoints/my_first_training_best.pt \
     --num-events 100 \
     --output generated_events.h5
@@ -289,7 +289,7 @@ python sample.py \
 
 ```bash
 # Generate events with automatic visualization
-python sample.py \
+python scripts/sample.py \
     --checkpoint checkpoints/my_first_training_best.pt \
     --num-events 10 \
     --output generated_events.h5 \
@@ -343,7 +343,7 @@ visualizer.compare_with_real(
 
 ```bash
 # Compare different architectures
-python compare_architectures.py \
+python scripts/analysis/compare_architectures.py \
     --data-path /path/to/your/data.h5 \
     --architectures dit cnn hybrid
 ```
@@ -352,28 +352,28 @@ python compare_architectures.py \
 
 ```bash
 # Train with different schedulers
-python train.py --data-path /path/to/your/data.h5 --scheduler cosine
-python train.py --data-path /path/to/your/data.h5 --scheduler plateau
-python train.py --data-path /path/to/your/data.h5 --scheduler step
+python scripts/train.py --data-path /path/to/your/data.h5 --scheduler cosine
+python scripts/train.py --data-path /path/to/your/data.h5 --scheduler plateau
+python scripts/train.py --data-path /path/to/your/data.h5 --scheduler step
 ```
 
 ### 3. Advanced Training
 
 ```bash
 # Use mixed precision training
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --use-amp \
     --batch-size 16
 
 # Use early stopping to prevent overfitting
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --early-stopping \
     --early-stopping-patience 20
 
 # Use Weights & Biases for experiment tracking
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --use-wandb \
     --wandb-project "icecube-diffusion"
@@ -397,13 +397,13 @@ python evaluate.py \
 
 ```bash
 # Reduce batch size
-python train.py --data-path /path/to/your/data.h5 --batch-size 4
+python scripts/train.py --data-path /path/to/your/data.h5 --batch-size 4
 
 # Use smaller model
-python train.py --data-path /path/to/your/data.h5 --architecture cnn --hidden 128
+python scripts/train.py --data-path /path/to/your/data.h5 --architecture cnn --hidden 128
 
 # Enable mixed precision
-python train.py --data-path /path/to/your/data.h5 --use-amp
+python scripts/train.py --data-path /path/to/your/data.h5 --use-amp
 ```
 
 #### 2. **Data Loading Issues**
@@ -423,13 +423,13 @@ with h5py.File('/path/to/your/data.h5', 'r') as f:
 
 ```bash
 # Try different learning rate
-python train.py --data-path /path/to/your/data.h5 --lr 1e-4
+python scripts/train.py --data-path /path/to/your/data.h5 --lr 1e-4
 
 # Use plateau scheduler
-python train.py --data-path /path/to/your/data.h5 --scheduler plateau
+python scripts/train.py --data-path /path/to/your/data.h5 --scheduler plateau
 
 # Enable debug mode
-python train.py --data-path /path/to/your/data.h5 --debug --epochs 2
+python scripts/train.py --data-path /path/to/your/data.h5 --debug --epochs 2
 ```
 
 #### 4. **CUDA Issues**
@@ -440,7 +440,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 nvidia-smi
 
 # Force CPU usage
-python train.py --data-path /path/to/your/data.h5 --device cpu
+python scripts/train.py --data-path /path/to/your/data.h5 --device cpu
 ```
 
 ### Getting Help
@@ -456,7 +456,7 @@ python train.py --data-path /path/to/your/data.h5 --device cpu
 
 3. **Debug Mode**
    ```bash
-   python train.py --data-path /path/to/your/data.h5 --debug
+   python scripts/train.py --data-path /path/to/your/data.h5 --debug
    ```
 
 ## Configuration Files
@@ -467,11 +467,11 @@ Instead of command-line arguments, you can use YAML configuration files:
 
 ```bash
 # Use a configuration file
-python train.py --config configs/default.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/default.yaml --data-path /path/to/your/data.h5
 
 # Use architecture-specific configs
-python train.py --config configs/cnn.yaml --data-path /path/to/your/data.h5
-python train.py --config configs/hybrid.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/cnn.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/hybrid.yaml --data-path /path/to/your/data.h5
 ```
 
 ### Creating Custom Configurations
@@ -526,14 +526,14 @@ Here's a complete example workflow:
 
 ```bash
 # 1. Quick test
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --debug \
     --epochs 2 \
     --batch-size 2
 
 # 2. Small model training
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture cnn \
     --hidden 128 \
@@ -542,7 +542,7 @@ python train.py \
     --experiment-name "small_test"
 
 # 3. Generate events
-python sample.py \
+python scripts/sample.py \
     --checkpoint checkpoints/small_test_best.pt \
     --num-events 50 \
     --output test_events.h5 \
@@ -555,7 +555,7 @@ python evaluate.py \
     --output test_evaluation.png
 
 # 5. Full training
-python train.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture dit \
     --scheduler cosine \

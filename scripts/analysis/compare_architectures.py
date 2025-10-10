@@ -12,10 +12,14 @@ This script compares different model architectures in terms of:
 """
 
 import os
+import sys
 import time
 import argparse
 from typing import Dict, List, Tuple
 import json
+
+# Add parent directories to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import torch
 import torch.nn as nn

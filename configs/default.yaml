@@ -21,6 +21,10 @@ model:
   # Label affine normalization: [Energy, Zenith, Azimuth, X, Y, Z]
   label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   label_scales: [1e-7, 1.0, 1.0, 0.01, 0.01, 0.01]  # Normalize Energy and positions
+  
+  # Time transformation
+  time_transform: "ln"  # "log10", "ln", or null
+  exclude_zero_time: true  # Exclude zero time values (recommended for log transforms)
 
 # Diffusion configuration
 diffusion:

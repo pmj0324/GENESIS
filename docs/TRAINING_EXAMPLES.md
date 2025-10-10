@@ -18,13 +18,13 @@ This document provides comprehensive examples for training the GENESIS IceCube d
 
 ```bash
 # Train with default DiT configuration
-python train_new.py --data-path /path/to/your/data.h5
+python scripts/train.py --data-path /path/to/your/data.h5
 
 # Train with specific configuration file
-python train_new.py --config configs/default.yaml --data-path /path/to/your/data.h5
+python scripts/train.py --config configs/default.yaml --data-path /path/to/your/data.h5
 
 # Train with custom parameters
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture dit \
     --epochs 100 \
@@ -56,7 +56,7 @@ trainer.train()
 
 ```bash
 # Train DiT with cosine annealing
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture dit \
     --hidden 512 \
@@ -89,7 +89,7 @@ trainer.train()
 
 ```bash
 # Train CNN with plateau scheduler
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture cnn \
     --hidden 256 \
@@ -117,7 +117,7 @@ trainer.train()
 
 ```bash
 # Train Hybrid with step scheduler
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture hybrid \
     --hidden 384 \
@@ -134,7 +134,7 @@ python train_new.py \
 
 ```bash
 # Train MLP with linear scheduler
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture mlp \
     --hidden 256 \
@@ -148,7 +148,7 @@ python train_new.py \
 
 ```bash
 # Train ResNet with cosine annealing
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture resnet \
     --hidden 256 \
@@ -164,7 +164,7 @@ python train_new.py \
 
 ```bash
 # Cosine annealing with custom T_max
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --scheduler cosine \
     --cosine-t-max 200 \
@@ -190,7 +190,7 @@ trainer.train()
 
 ```bash
 # Plateau scheduler with custom parameters
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --scheduler plateau \
     --plateau-patience 15 \
@@ -217,7 +217,7 @@ trainer.train()
 
 ```bash
 # Step scheduler with custom step size and gamma
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --scheduler step \
     --step-size 50 \
@@ -230,7 +230,7 @@ python train_new.py \
 
 ```bash
 # Linear scheduler with custom start/end factors
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --scheduler linear \
     --epochs 200 \
@@ -245,7 +245,7 @@ python train_new.py \
 # Train with multiple GPUs (requires torch.distributed)
 python -m torch.distributed.launch \
     --nproc_per_node=2 \
-    train_new.py \
+    scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture dit \
     --batch-size 16 \
@@ -256,7 +256,7 @@ python -m torch.distributed.launch \
 
 ```bash
 # Enable automatic mixed precision
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --use-amp \
     --architecture dit \
@@ -268,7 +268,7 @@ python train_new.py \
 
 ```bash
 # Resume from checkpoint
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --resume-from-checkpoint checkpoints/model_epoch_50.pt \
     --experiment-name "resumed_training"
@@ -278,7 +278,7 @@ python train_new.py \
 
 ```bash
 # Enable debug mode for troubleshooting
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --debug \
     --architecture dit \
@@ -482,20 +482,20 @@ trainer.train()
 
 ```bash
 # Reduce batch size
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --batch-size 4 \
     --architecture dit
 
 # Use smaller model
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture cnn \
     --hidden 128 \
     --depth 4
 
 # Enable mixed precision
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --use-amp \
     --batch-size 8
@@ -505,13 +505,13 @@ python train_new.py \
 
 ```bash
 # Use faster architecture
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture cnn \
     --batch-size 16
 
 # Increase batch size
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --batch-size 16 \
     --architecture dit
@@ -521,13 +521,13 @@ python train_new.py \
 
 ```bash
 # Adjust learning rate
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --lr 1e-4 \
     --scheduler cosine
 
 # Use plateau scheduler
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --scheduler plateau \
     --plateau-patience 15
@@ -537,7 +537,7 @@ python train_new.py \
 
 ```bash
 # Enable debug mode
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --debug \
     --epochs 2 \
@@ -551,7 +551,7 @@ python train_new.py \
 # Complete training workflow
 
 # 1. Quick test with debug mode
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --debug \
     --epochs 2 \
@@ -559,7 +559,7 @@ python train_new.py \
     --experiment-name "debug_test"
 
 # 2. Train with small model
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture cnn \
     --hidden 128 \
@@ -568,7 +568,7 @@ python train_new.py \
     --experiment-name "small_model"
 
 # 3. Train with full DiT model
-python train_new.py \
+python scripts/train.py \
     --data-path /path/to/your/data.h5 \
     --architecture dit \
     --hidden 512 \

@@ -39,12 +39,16 @@ class PMTSignalsH5(Dataset):
         channel_first: bool = True,  # (2, L) 형태로 반환. False면 (L, 2)
         dtype: np.dtype = np.float32,
         indices: Optional[np.ndarray] = None,  # 서브셋 학습 시 사용
+        time_transform: Optional[str] = "ln",  # "log10", "ln", None
+        exclude_zero_time: bool = True,  # 0값 제외 여부 (로그 변환 시 True 권장)
     ):
         super().__init__()
         self.h5_path = os.path.expanduser(h5_path)
         self.replace_time_inf_with = replace_time_inf_with
         self.channel_first = channel_first
         self.dtype = dtype
+        self.time_transform = time_transform
+        self.exclude_zero_time = exclude_zero_time
 
         # 파일 메타만 먼저 확인 (빠르게)
         with h5py.File(self.h5_path, "r", swmr=True, libver="latest") as f:
@@ -89,6 +93,27 @@ class PMTSignalsH5(Dataset):
         if mask_invalid_time.any():
             replacement_val = self.replace_time_inf_with if self.replace_time_inf_with is not None else 0.0
             t[mask_invalid_time] = replacement_val
+            x_sig[1, :] = t
+        
+        # Time transformation (log10 or ln)
+        if self.time_transform is not None:
+            # 0값 제외 옵션
+            if self.exclude_zero_time:
+                # 0값을 NaN으로 마킹 (나중에 제거)
+                t_zero_mask = (t == 0.0)
+                t[t_zero_mask] = np.nan
+            
+            # 로그 변환 적용 (0 방지를 위해 작은 값 추가)
+            if self.time_transform == "log10":
+                t = np.log10(t + 1e-10)
+            elif self.time_transform == "ln":
+                t = np.log(t + 1e-10)
+            
+            # NaN 값들을 적절한 값으로 대체
+            t_nan_mask = ~np.isfinite(t)
+            if t_nan_mask.any():
+                # 로그 변환된 0값을 매우 작은 음수로 설정
+                t[t_nan_mask] = -10.0  # log10(1e-10) ≈ -10, ln(1e-10) ≈ -23
             x_sig[1, :] = t
         
         # Handle inf/nan in labels
@@ -254,12 +279,16 @@ def make_dataloader(
     replace_time_inf_with: Optional[float] = None,
     channel_first: bool = True,
     indices: Optional[np.ndarray] = None,
+    time_transform: Optional[str] = "ln",
+    exclude_zero_time: bool = True,
 ) -> DataLoader:
     ds = PMTSignalsH5(
         h5_path=h5_path,
         replace_time_inf_with=replace_time_inf_with,
         channel_first=channel_first,
         indices=indices,
+        time_transform=time_transform,
+        exclude_zero_time=exclude_zero_time,
     )
     return DataLoader(
         ds,

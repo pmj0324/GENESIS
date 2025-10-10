@@ -10,10 +10,14 @@ Provides comprehensive evaluation of generated neutrino events including:
 """
 
 import os
+import sys
 import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 import json
+
+# Add parent directories to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import torch
 import numpy as np
@@ -25,7 +29,6 @@ import h5py
 
 # Project imports
 from dataloader.pmt_dataloader import make_dataloader
-from sample import EventSampler
 
 
 class EventEvaluator:

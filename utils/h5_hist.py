@@ -42,7 +42,7 @@ CLI Options:
 --out               : 출력 파일 접두사 (기본: hist_input)
 --logy              : Y축 로그 스케일
 --logx              : X축 로그 스케일
---log-time          : Time 값 로그 변환 (log10, ln) - 기본값: log10
+--log-time          : Time 값 로그 변환 (log10, ln) - 기본값: ln
 --exclude-zero      : 0 값을 제외한 히스토그램만 생성
 --plot-both         : 모든 값과 0 제외 값 모두 플롯
 --min-time          : Time 최소 임계값 (ns)
@@ -533,7 +533,7 @@ def main():
     parser.add_argument("--out", default="hist_input", help="Output file prefix")
     parser.add_argument("--logy", action="store_true", help="Use log-scale on y-axis")
     parser.add_argument("--logx", action="store_true", help="Use log-scale on x-axis")
-    parser.add_argument("--log-time", choices=["log10", "ln"], default="log10",
+    parser.add_argument("--log-time", choices=["log10", "ln"], default="ln",
                        help="Log transformation for time values")
     parser.add_argument("--no-stats", action="store_true", help="Hide statistical lines")
     parser.add_argument("--no-percentiles", action="store_true", help="Hide percentile lines")
@@ -573,14 +573,14 @@ def main():
     
     # 0 제외 플롯
     if args.exclude_zero or args.plot_both:
-        plot_hist_pair(
-            h5_path=args.path,
-            bins=args.bins,
-            chunk=args.chunk,
-            range_charge=tuple(args.range_charge) if args.range_charge else None,
-            range_time=tuple(args.range_time) if args.range_time else None,
-            out_prefix=args.out,
-            logy=args.logy,
+    plot_hist_pair(
+        h5_path=args.path,
+        bins=args.bins,
+        chunk=args.chunk,
+        range_charge=tuple(args.range_charge) if args.range_charge else None,
+        range_time=tuple(args.range_time) if args.range_time else None,
+        out_prefix=args.out,
+        logy=args.logy,
             logx=args.logx,
             show_stats=not args.no_stats,
             show_percentiles=not args.no_percentiles,
@@ -590,8 +590,8 @@ def main():
             min_time_threshold=args.min_time,
             log_time_transform=args.log_time,
             style=args.style,
-            pclip=tuple(args.pclip),
-        )
+        pclip=tuple(args.pclip),
+    )
     
     # 출력 파일 목록
     time_suffix = ""
