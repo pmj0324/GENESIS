@@ -108,15 +108,17 @@ def denormalize_signal(
             time_channel = x_denorm[1:2, :]  # Keep dimension
         
         if time_transform == "ln":
+            # Inverse of ln(1 + x) is exp(y) - 1
             if is_torch:
-                time_original = torch.exp(time_channel)
+                time_original = torch.exp(time_channel) - 1.0
             else:
-                time_original = np.exp(time_channel)
+                time_original = np.exp(time_channel) - 1.0
         elif time_transform == "log10":
+            # Inverse of log10(1 + x) is 10^y - 1
             if is_torch:
-                time_original = torch.pow(10.0, time_channel)
+                time_original = torch.pow(10.0, time_channel) - 1.0
             else:
-                time_original = np.power(10.0, time_channel)
+                time_original = np.power(10.0, time_channel) - 1.0
         else:
             raise ValueError(f"Unknown time_transform: {time_transform}")
         

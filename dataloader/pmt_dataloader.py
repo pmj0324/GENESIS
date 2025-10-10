@@ -103,17 +103,18 @@ class PMTSignalsH5(Dataset):
                 t_zero_mask = (t == 0.0)
                 t[t_zero_mask] = np.nan
             
-            # 로그 변환 적용 (0 방지를 위해 작은 값 추가)
+            # 로그 변환 적용: log(1 + x)
+            # 장점: x=0일 때 log(1+0)=0이 되어 더 자연스러움
             if self.time_transform == "log10":
-                t = np.log10(t + 1e-10)
+                t = np.log10(1.0 + t)
             elif self.time_transform == "ln":
-                t = np.log(t + 1e-10)
+                t = np.log(1.0 + t)
             
             # NaN 값들을 적절한 값으로 대체
             t_nan_mask = ~np.isfinite(t)
             if t_nan_mask.any():
-                # 로그 변환된 0값을 매우 작은 음수로 설정
-                t[t_nan_mask] = -10.0  # log10(1e-10) ≈ -10, ln(1e-10) ≈ -23
+                # 로그 변환된 0값을 0.0으로 설정 (log(1+0) = 0)
+                t[t_nan_mask] = 0.0
             x_sig[1, :] = t
         
         # Handle inf/nan in labels

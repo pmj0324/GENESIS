@@ -438,6 +438,37 @@ class Trainer:
     
     def train(self):
         """Main training loop."""
+        # Print configuration at start
+        if self.start_epoch == 0:
+            print(f"\n{'='*70}")
+            print("⚙️  Configuration Loaded")
+            print(f"{'='*70}")
+            print(f"\nModel Config:")
+            print(f"  Architecture: {self.config.model.architecture}")
+            print(f"  Hidden: {self.config.model.hidden}, Depth: {self.config.model.depth}")
+            print(f"  Fusion: {self.config.model.fusion}")
+            print(f"  Signal+Geometry scales: {self.config.model.affine_scales}")
+            print(f"  Label scales: {self.config.model.label_scales}")
+            print(f"  Time transform: {self.config.model.time_transform}")
+            print(f"  Exclude zero time: {self.config.model.exclude_zero_time}")
+            
+            print(f"\nDiffusion Config:")
+            print(f"  Timesteps: {self.config.diffusion.timesteps}")
+            print(f"  Beta: [{self.config.diffusion.beta_start}, {self.config.diffusion.beta_end}]")
+            print(f"  Objective: {self.config.diffusion.objective}")
+            print(f"  Schedule: {getattr(self.config.diffusion, 'schedule', 'linear')}")
+            print(f"  Use CFG: {getattr(self.config.diffusion, 'use_cfg', False)}")
+            print(f"  CFG Scale: {getattr(self.config.diffusion, 'cfg_scale', 1.0)}")
+            print(f"  CFG Dropout: {getattr(self.config.diffusion, 'cfg_dropout', 0.0)}")
+            
+            print(f"\nTraining Config:")
+            print(f"  Epochs: {self.config.training.num_epochs}")
+            print(f"  Batch size: {self.config.data.batch_size}")
+            print(f"  Learning rate: {self.config.training.learning_rate}")
+            print(f"  Scheduler: {self.config.training.scheduler}")
+            print(f"  Early stopping: {self.config.training.early_stopping} (patience={self.config.training.early_stopping_patience})")
+            print(f"{'='*70}\n")
+        
         print(f"Starting training for {self.config.training.num_epochs} epochs")
         print(f"Device: {self.device}")
         print(f"Mixed precision: {self.scaler is not None}")
