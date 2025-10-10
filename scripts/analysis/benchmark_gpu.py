@@ -1,0 +1,629 @@
+#!/usr/bin/env python3
+"""
+GPU Optimization Benchmark Tool
+================================
+
+Comprehensive benchmarking tool to find optimal batch sizes and settings.
+Tests different configurations and measures:
+- GPU memory usage
+- GPU utilization
+- I/O speed (data loading)
+- Forward pass time
+- Backward pass time
+- Overall throughput
+
+Usage:
+    python scripts/analysis/benchmark_gpu.py \\
+        --config configs/checking_gpu_optimization.yaml \\
+        --data-path /path/to/data.h5
+"""
+
+import sys
+import os
+import time
+import argparse
+from typing import Dict, List, Tuple
+import torch
+import torch.nn as nn
+from torch.cuda.amp import autocast, GradScaler
+import numpy as np
+from tqdm import tqdm
+import yaml
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from config import load_config_from_file
+from dataloader.pmt_dataloader import make_dataloader
+from models.factory import ModelFactory
+from utils.gpu_utils import get_gpu_info
+
+try:
+    import pynvml
+    PYNVML_AVAILABLE = True
+    pynvml.nvmlInit()
+except:
+    PYNVML_AVAILABLE = False
+
+
+def get_gpu_utilization(device_id: int = 0) -> Tuple[float, float]:
+    """
+    Get current GPU utilization and memory usage.
+    
+    Returns:
+        (utilization_percent, memory_used_gb)
+    """
+    if not PYNVML_AVAILABLE or not torch.cuda.is_available():
+        return 0.0, 0.0
+    
+    try:
+        handle = pynvml.nvmlDeviceGetHandleByIndex(device_id)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        return util.gpu, mem.used / 1024**3
+    except:
+        return 0.0, 0.0
+
+
+def benchmark_batch_size(
+    batch_size: int,
+    config,
+    data_path: str,
+    num_steps: int = 10,
+    device: str = "cuda",
+    use_amp: bool = True,
+    num_workers: int = 4,
+    pin_memory: bool = True
+) -> Dict:
+    """
+    Benchmark a specific batch size configuration.
+    
+    Returns:
+        Dictionary with timing and resource usage statistics
+    """
+    print(f"\n{'='*70}")
+    print(f"🧪 Testing Batch Size: {batch_size}")
+    print(f"   Workers: {num_workers}, Pin Memory: {pin_memory}, AMP: {use_amp}")
+    print(f"{'='*70}")
+    
+    results = {
+        'batch_size': batch_size,
+        'num_workers': num_workers,
+        'pin_memory': pin_memory,
+        'use_amp': use_amp,
+        'steps_tested': 0,
+        'oom_error': False,
+        'error': None,
+    }
+    
+    try:
+        # Update config
+        config.data.batch_size = batch_size
+        config.data.num_workers = num_workers
+        config.data.pin_memory = pin_memory
+        config.training.use_amp = use_amp
+        
+        # Create dataloader
+        print("📊 Creating dataloader...")
+        dataloader = make_dataloader(
+            h5_path=data_path,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            shuffle=False,
+            time_transform=config.model.time_transform,
+            exclude_zero_time=config.model.exclude_zero_time,
+        )
+        
+        # Create model
+        print("🏗️  Creating model...")
+        model, diffusion = ModelFactory.create_model_and_diffusion(config)
+        model = model.to(device)
+        diffusion = diffusion.to(device)
+        
+        # Optimizer
+        optimizer = torch.optim.AdamW(model.parameters(), lr=config.training.learning_rate)
+        scaler = GradScaler() if use_amp else None
+        
+        # Clear cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+        
+        # Timing lists
+        io_times = []
+        forward_times = []
+        backward_times = []
+        optimizer_times = []
+        gpu_utils = []
+        gpu_mems = []
+        
+        print(f"⏱️  Running {num_steps} steps...")
+        
+        # Warm-up step
+        data_iter = iter(dataloader)
+        try:
+            x_sig, geom, label, _ = next(data_iter)
+        except StopIteration:
+            results['error'] = "Dataset too small"
+            return results
+        
+        x_sig = x_sig.to(device)
+        if geom.ndim == 2:
+            geom = geom.unsqueeze(0).expand(x_sig.size(0), -1, -1)
+        geom = geom.to(device)
+        label = label.to(device)
+        
+        # Warm-up forward/backward
+        if use_amp:
+            with autocast():
+                loss = diffusion.loss(x_sig, geom, label)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss = diffusion.loss(x_sig, geom, label)
+            loss.backward()
+            optimizer.step()
+        
+        optimizer.zero_grad()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        
+        # Actual benchmark
+        data_iter = iter(dataloader)
+        
+        for step in range(num_steps):
+            # I/O timing
+            io_start = time.time()
+            try:
+                x_sig, geom, label, _ = next(data_iter)
+            except StopIteration:
+                break
+            io_end = time.time()
+            io_times.append(io_end - io_start)
+            
+            # Move to device
+            x_sig = x_sig.to(device)
+            if geom.ndim == 2:
+                geom = geom.unsqueeze(0).expand(x_sig.size(0), -1, -1)
+            geom = geom.to(device)
+            label = label.to(device)
+            
+            # Get GPU utilization before forward
+            gpu_util, gpu_mem = get_gpu_utilization()
+            gpu_utils.append(gpu_util)
+            gpu_mems.append(gpu_mem)
+            
+            # Forward pass timing
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            forward_start = time.time()
+            
+            if use_amp:
+                with autocast():
+                    loss = diffusion.loss(x_sig, geom, label)
+            else:
+                loss = diffusion.loss(x_sig, geom, label)
+            
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            forward_end = time.time()
+            forward_times.append(forward_end - forward_start)
+            
+            # Backward pass timing
+            backward_start = time.time()
+            if use_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+            
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            backward_end = time.time()
+            backward_times.append(backward_end - backward_start)
+            
+            # Optimizer step timing
+            optimizer_start = time.time()
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            optimizer.zero_grad()
+            
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            optimizer_end = time.time()
+            optimizer_times.append(optimizer_end - optimizer_start)
+            
+            results['steps_tested'] += 1
+        
+        # Get peak memory
+        if torch.cuda.is_available():
+            peak_memory = torch.cuda.max_memory_allocated() / 1024**3
+        else:
+            peak_memory = 0.0
+        
+        # Calculate statistics
+        if io_times:
+            results['io_time_mean'] = np.mean(io_times)
+            results['io_time_std'] = np.std(io_times)
+            results['forward_time_mean'] = np.mean(forward_times)
+            results['forward_time_std'] = np.std(forward_times)
+            results['backward_time_mean'] = np.mean(backward_times)
+            results['backward_time_std'] = np.std(backward_times)
+            results['optimizer_time_mean'] = np.mean(optimizer_times)
+            results['optimizer_time_std'] = np.std(optimizer_times)
+            results['total_time_per_step'] = (
+                results['io_time_mean'] + 
+                results['forward_time_mean'] + 
+                results['backward_time_mean'] + 
+                results['optimizer_time_mean']
+            )
+            results['samples_per_second'] = batch_size / results['total_time_per_step']
+            results['gpu_util_mean'] = np.mean(gpu_utils) if gpu_utils else 0.0
+            results['gpu_mem_mean'] = np.mean(gpu_mems) if gpu_mems else 0.0
+            results['peak_memory_gb'] = peak_memory
+            
+            # Print results
+            print(f"\n📊 Results:")
+            print(f"  I/O Time:       {results['io_time_mean']*1000:.2f} ± {results['io_time_std']*1000:.2f} ms")
+            print(f"  Forward Time:   {results['forward_time_mean']*1000:.2f} ± {results['forward_time_std']*1000:.2f} ms")
+            print(f"  Backward Time:  {results['backward_time_mean']*1000:.2f} ± {results['backward_time_std']*1000:.2f} ms")
+            print(f"  Optimizer Time: {results['optimizer_time_mean']*1000:.2f} ± {results['optimizer_time_std']*1000:.2f} ms")
+            print(f"  Total/Step:     {results['total_time_per_step']*1000:.2f} ms")
+            print(f"  Throughput:     {results['samples_per_second']:.1f} samples/sec")
+            print(f"  GPU Util:       {results['gpu_util_mean']:.1f}%")
+            print(f"  GPU Memory:     {results['gpu_mem_mean']:.2f} GB (peak: {peak_memory:.2f} GB)")
+            print(f"  ✅ SUCCESS")
+        
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            results['oom_error'] = True
+            results['error'] = "OOM"
+            print(f"  ❌ OUT OF MEMORY")
+        else:
+            results['error'] = str(e)
+            print(f"  ❌ ERROR: {e}")
+    except Exception as e:
+        results['error'] = str(e)
+        print(f"  ❌ ERROR: {e}")
+    finally:
+        # Cleanup
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    
+    return results
+
+
+def generate_optimized_yaml(
+    best_config: Dict,
+    base_config,
+    output_path: str = "configs/optimized_by_benchmark.yaml"
+):
+    """
+    Generate optimized YAML configuration based on benchmark results.
+    
+    Args:
+        best_config: Dictionary with optimal settings
+        base_config: Base configuration to use as template
+        output_path: Where to save the optimized config
+    """
+    from datetime import datetime
+    
+    # Create optimized config based on base config
+    optimized = {
+        'experiment_name': 'optimized_by_benchmark',
+        'description': f'Automatically optimized configuration generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+        
+        'model': {
+            'seq_len': base_config.model.seq_len,
+            'hidden': base_config.model.hidden,
+            'depth': base_config.model.depth,
+            'heads': base_config.model.heads,
+            'dropout': base_config.model.dropout,
+            'fusion': base_config.model.fusion,
+            'label_dim': base_config.model.label_dim,
+            't_embed_dim': base_config.model.t_embed_dim,
+            'mlp_ratio': base_config.model.mlp_ratio,
+            'affine_offsets': base_config.model.affine_offsets,
+            'affine_scales': base_config.model.affine_scales,
+            'label_offsets': base_config.model.label_offsets,
+            'label_scales': base_config.model.label_scales,
+            'time_transform': base_config.model.time_transform,
+            'exclude_zero_time': base_config.model.exclude_zero_time,
+        },
+        
+        'diffusion': {
+            'timesteps': base_config.diffusion.timesteps,
+            'beta_start': base_config.diffusion.beta_start,
+            'beta_end': base_config.diffusion.beta_end,
+            'objective': base_config.diffusion.objective,
+            'schedule': base_config.diffusion.schedule,
+            'use_cfg': base_config.diffusion.use_cfg,
+            'cfg_scale': base_config.diffusion.cfg_scale,
+            'cfg_dropout': base_config.diffusion.cfg_dropout,
+        },
+        
+        'data': {
+            'h5_path': base_config.data.h5_path,
+            'replace_time_inf_with': base_config.data.replace_time_inf_with,
+            'channel_first': True,  # Always True for PyTorch
+            'batch_size': best_config['batch_size'],  # OPTIMIZED!
+            'num_workers': best_config['num_workers'],  # OPTIMIZED!
+            'pin_memory': True,  # Always True for GPU
+            'shuffle': True,  # True for training
+            'train_ratio': base_config.data.train_ratio,
+            'val_ratio': base_config.data.val_ratio,
+            'test_ratio': base_config.data.test_ratio,
+        },
+        
+        'training': {
+            'num_epochs': base_config.training.num_epochs,
+            'learning_rate': best_config.get('suggested_lr', base_config.training.learning_rate),  # OPTIMIZED!
+            'weight_decay': base_config.training.weight_decay,
+            'grad_clip_norm': base_config.training.grad_clip_norm,
+            'optimizer': base_config.training.optimizer,
+            'scheduler': base_config.training.scheduler,
+            'warmup_steps': base_config.training.warmup_steps,
+            'warmup_ratio': base_config.training.warmup_ratio,
+            'cosine_t_max': base_config.training.cosine_t_max,
+            'plateau_patience': base_config.training.plateau_patience,
+            'plateau_factor': base_config.training.plateau_factor,
+            'plateau_min_lr': base_config.training.plateau_min_lr,
+            'plateau_mode': base_config.training.plateau_mode,
+            'plateau_threshold': base_config.training.plateau_threshold,
+            'plateau_cooldown': base_config.training.plateau_cooldown,
+            'step_size': base_config.training.step_size,
+            'step_gamma': base_config.training.step_gamma,
+            'linear_start_factor': base_config.training.linear_start_factor,
+            'linear_end_factor': base_config.training.linear_end_factor,
+            'early_stopping': base_config.training.early_stopping,
+            'early_stopping_patience': base_config.training.early_stopping_patience,
+            'early_stopping_min_delta': base_config.training.early_stopping_min_delta,
+            'early_stopping_mode': base_config.training.early_stopping_mode,
+            'early_stopping_baseline': base_config.training.early_stopping_baseline,
+            'early_stopping_restore_best': base_config.training.early_stopping_restore_best,
+            'early_stopping_verbose': base_config.training.early_stopping_verbose,
+            'log_interval': base_config.training.log_interval,
+            'save_interval': base_config.training.save_interval,
+            'eval_interval': base_config.training.eval_interval,
+            'output_dir': base_config.training.output_dir,
+            'checkpoint_dir': base_config.training.checkpoint_dir,
+            'log_dir': base_config.training.log_dir,
+            'resume_from_checkpoint': base_config.training.resume_from_checkpoint,
+            'use_amp': True,  # OPTIMIZED! Always True for best performance
+            'debug_mode': base_config.training.debug_mode,
+            'detect_anomaly': base_config.training.detect_anomaly,
+            'save_best_only': base_config.training.save_best_only,
+            'gradient_accumulation_steps': base_config.training.gradient_accumulation_steps,
+            'max_grad_norm': base_config.training.max_grad_norm,
+        },
+        
+        'device': 'auto',
+        'seed': base_config.seed,
+        'use_wandb': base_config.use_wandb,
+        'wandb_project': base_config.wandb_project,
+        'wandb_entity': base_config.wandb_entity,
+    }
+    
+    # Add benchmark metadata as comments
+    header_comment = f"""# Optimized Configuration
+# ======================
+# Generated by benchmark_gpu.py on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+#
+# Benchmark Results:
+#   Batch Size:     {best_config['batch_size']}
+#   Workers:        {best_config['num_workers']}
+#   Throughput:     {best_config.get('samples_per_second', 0):.1f} samples/sec
+#   GPU Memory:     {best_config.get('gpu_mem_mean', 0):.2f} GB
+#   GPU Util:       {best_config.get('gpu_util_mean', 0):.1f}%
+#   I/O Time:       {best_config.get('io_time_mean', 0)*1000:.2f} ms
+#   Forward Time:   {best_config.get('forward_time_mean', 0)*1000:.2f} ms
+#   Backward Time:  {best_config.get('backward_time_mean', 0)*1000:.2f} ms
+#
+# This configuration is optimized for your specific hardware!
+# Use this for maximum training speed.
+
+"""
+    
+    # Write to file
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
+    with open(output_path, 'w') as f:
+        f.write(header_comment)
+        yaml.dump(optimized, f, default_flow_style=False, sort_keys=False)
+    
+    print(f"\n💾 Optimized configuration saved to: {output_path}")
+    return output_path
+
+
+def print_summary(all_results: List[Dict], base_config=None, save_yaml: bool = True):
+    """Print comprehensive summary of all benchmark results."""
+    print(f"\n{'='*70}")
+    print("📋 BENCHMARK SUMMARY")
+    print(f"{'='*70}\n")
+    
+    # Filter successful results
+    successful = [r for r in all_results if not r.get('oom_error') and r.get('steps_tested', 0) > 0]
+    
+    if not successful:
+        print("❌ No successful benchmarks!")
+        return None
+    
+    # Print table
+    print(f"{'Batch':>6} {'Workers':>8} {'AMP':>5} {'I/O(ms)':>9} {'Fwd(ms)':>9} {'Bwd(ms)':>9} "
+          f"{'Total(ms)':>10} {'Samples/s':>10} {'GPU%':>6} {'Mem(GB)':>9} {'Status':>10}")
+    print("-" * 110)
+    
+    for r in all_results:
+        if r.get('oom_error'):
+            print(f"{r['batch_size']:>6} {r['num_workers']:>8} {'Yes' if r['use_amp'] else 'No':>5} "
+                  f"{'':>9} {'':>9} {'':>9} {'':>10} {'':>10} {'':>6} {'':>9} {'OOM':>10}")
+        elif r.get('steps_tested', 0) > 0:
+            print(f"{r['batch_size']:>6} {r['num_workers']:>8} {'Yes' if r['use_amp'] else 'No':>5} "
+                  f"{r['io_time_mean']*1000:>9.2f} {r['forward_time_mean']*1000:>9.2f} "
+                  f"{r['backward_time_mean']*1000:>9.2f} {r['total_time_per_step']*1000:>10.2f} "
+                  f"{r['samples_per_second']:>10.1f} {r['gpu_util_mean']:>6.1f} "
+                  f"{r['gpu_mem_mean']:>9.2f} {'✅':>10}")
+        else:
+            print(f"{r['batch_size']:>6} {r['num_workers']:>8} {'Yes' if r['use_amp'] else 'No':>5} "
+                  f"{'':>9} {'':>9} {'':>9} {'':>10} {'':>10} {'':>6} {'':>9} {'❌':>10}")
+    
+    # Find optimal configuration
+    print(f"\n{'='*70}")
+    print("🏆 OPTIMAL CONFIGURATION")
+    print(f"{'='*70}")
+    
+    # Best throughput
+    best_throughput = max(successful, key=lambda x: x['samples_per_second'])
+    print(f"\n🚀 Highest Throughput:")
+    print(f"  Batch Size:     {best_throughput['batch_size']}")
+    print(f"  Workers:        {best_throughput['num_workers']}")
+    print(f"  Mixed Precision: {'Yes' if best_throughput['use_amp'] else 'No'}")
+    print(f"  Throughput:     {best_throughput['samples_per_second']:.1f} samples/sec")
+    print(f"  GPU Memory:     {best_throughput['gpu_mem_mean']:.2f} GB")
+    
+    # Best efficiency (samples per second per GB memory)
+    efficiencies = [(r['samples_per_second'] / max(r['gpu_mem_mean'], 0.1), r) 
+                    for r in successful if r['gpu_mem_mean'] > 0]
+    if efficiencies:
+        _, best_efficiency = max(efficiencies, key=lambda x: x[0])
+        print(f"\n⚡ Best Efficiency (samples/sec/GB):")
+        print(f"  Batch Size:     {best_efficiency['batch_size']}")
+        print(f"  Workers:        {best_efficiency['num_workers']}")
+        print(f"  Mixed Precision: {'Yes' if best_efficiency['use_amp'] else 'No'}")
+        print(f"  Efficiency:     {best_efficiency['samples_per_second']/best_efficiency['gpu_mem_mean']:.1f} samples/sec/GB")
+    
+    # Recommended for training
+    # Filter: reasonable GPU usage (<70%), good throughput
+    good_configs = [r for r in successful 
+                    if r['gpu_mem_mean'] < 55.0 and r['samples_per_second'] > 100]
+    if good_configs:
+        recommended = max(good_configs, key=lambda x: x['samples_per_second'])
+        print(f"\n💡 Recommended for Training:")
+        print(f"  Batch Size:     {recommended['batch_size']}")
+        print(f"  Workers:        {recommended['num_workers']}")
+        print(f"  Mixed Precision: {'Yes' if recommended['use_amp'] else 'No'}")
+        print(f"  Throughput:     {recommended['samples_per_second']:.1f} samples/sec")
+        print(f"  GPU Memory:     {recommended['gpu_mem_mean']:.2f} GB (safe)")
+        print(f"  GPU Util:       {recommended['gpu_util_mean']:.1f}%")
+        
+        # Calculate suggested learning rate (sqrt scaling rule)
+        base_lr = 1e-4
+        base_batch = 128
+        suggested_lr = base_lr * np.sqrt(recommended['batch_size'] / base_batch)
+        recommended['suggested_lr'] = suggested_lr
+        print(f"  Suggested LR:   {suggested_lr:.6f} (sqrt scaling)")
+    else:
+        # Fallback to best throughput
+        recommended = best_throughput
+        base_lr = 1e-4
+        base_batch = 128
+        suggested_lr = base_lr * np.sqrt(recommended['batch_size'] / base_batch)
+        recommended['suggested_lr'] = suggested_lr
+    
+    print(f"\n{'='*70}\n")
+    
+    # Generate optimized YAML
+    if save_yaml and base_config is not None:
+        yaml_path = generate_optimized_yaml(recommended, base_config)
+        print(f"\n✅ Use the optimized config:")
+        print(f"   python scripts/train.py --config {yaml_path} --data-path /path/to/data.h5")
+    
+    return recommended
+
+
+def main():
+    parser = argparse.ArgumentParser(description="GPU Optimization Benchmark")
+    parser.add_argument("--config", type=str, 
+                       default="configs/checking_gpu_optimization.yaml",
+                       help="Path to benchmark configuration file")
+    parser.add_argument("--data-path", type=str, required=True,
+                       help="Path to HDF5 data file")
+    parser.add_argument("--batch-sizes", type=int, nargs="+", default=None,
+                       help="Batch sizes to test (overrides config)")
+    parser.add_argument("--num-workers", type=int, nargs="+", default=None,
+                       help="Number of workers to test (overrides config)")
+    parser.add_argument("--steps", type=int, default=10,
+                       help="Number of steps to test per configuration")
+    parser.add_argument("--device", type=str, default="auto",
+                       help="Device to use")
+    
+    args = parser.parse_args()
+    
+    # Load configuration
+    config = load_config_from_file(args.config)
+    
+    # Set device
+    if args.device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
+    
+    if device == "cpu":
+        print("❌ GPU benchmarking requires CUDA!")
+        return
+    
+    # Get batch sizes to test
+    if args.batch_sizes:
+        batch_sizes = args.batch_sizes
+    elif hasattr(config, 'benchmark') and hasattr(config.benchmark, 'batch_sizes'):
+        batch_sizes = config.benchmark.batch_sizes
+    else:
+        batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+    
+    # Get num_workers to test
+    if args.num_workers:
+        num_workers_list = args.num_workers
+    elif hasattr(config, 'benchmark') and hasattr(config.benchmark, 'num_workers_options'):
+        num_workers_list = config.benchmark.num_workers_options
+    else:
+        num_workers_list = [4]  # Default: only test with 4 workers
+    
+    # Print GPU info
+    print(f"\n{'='*70}")
+    print("🖥️  GPU INFORMATION")
+    print(f"{'='*70}")
+    if torch.cuda.is_available():
+        gpu_info = get_gpu_info()[0]
+        print(f"  GPU:            {gpu_info['name']}")
+        print(f"  Total Memory:   {gpu_info['total_memory_gb']:.2f} GB")
+        print(f"  CUDA Version:   {torch.version.cuda}")
+    print(f"{'='*70}\n")
+    
+    # Run benchmarks
+    all_results = []
+    
+    print(f"🧪 Starting benchmark...")
+    print(f"   Batch sizes: {batch_sizes}")
+    print(f"   Workers: {num_workers_list}")
+    print(f"   Steps per test: {args.steps}\n")
+    
+    # Test each combination
+    for num_workers in num_workers_list:
+        for batch_size in batch_sizes:
+            result = benchmark_batch_size(
+                batch_size=batch_size,
+                config=config,
+                data_path=args.data_path,
+                num_steps=args.steps,
+                device=device,
+                use_amp=True,
+                num_workers=num_workers,
+                pin_memory=True
+            )
+            all_results.append(result)
+            
+            # Stop if we hit OOM
+            if result.get('oom_error'):
+                print(f"\n⚠️  Hit OOM at batch_size={batch_size}, stopping batch size sweep for workers={num_workers}")
+                break
+    
+    # Print summary and generate optimized YAML
+    print_summary(all_results, base_config=config, save_yaml=True)
+
+
+if __name__ == "__main__":
+    main()
+
