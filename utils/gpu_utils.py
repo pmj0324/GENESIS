@@ -147,14 +147,19 @@ def estimate_batch_memory(
     
     input_total = signal_size + geom_size + label_size
     
-    # Activations (more accurate estimate based on depth)
-    # For shallow models (depth=3): ~3-5x input
-    # For deep models (depth=8+): ~10-15x input
-    activation_multiplier = min(15, max(3, depth * 1.5))
+    # Per-sample input size (for clearer reporting)
+    per_sample_mb = (2 * seq_len + 3 * seq_len + 6) * dtype_size / 1024**2
+    
+    # Activations (conservative estimate based on depth and transformer operations)
+    # Transformer has: QKV projections, attention maps, MLP, layer norms
+    # For depth=3: ~8-12x input (conservative)
+    # For depth=6: ~15-20x input
+    # For depth=8+: ~20-30x input
+    activation_multiplier = min(30, max(8, depth * 3))
     activations = input_total * activation_multiplier
     
-    # Gradients for batch (similar to activations, but smaller)
-    gradients_batch = activations * 0.3
+    # Gradients for batch (backward pass, ~same as activations)
+    gradients_batch = activations * 0.5
     
     # Optimizer states (AdamW: ~2x parameters, but amortized over batches)
     # Not included here as it's per-model, not per-batch
@@ -166,6 +171,8 @@ def estimate_batch_memory(
         'activations_gb': activations,
         'gradients_batch_gb': gradients_batch,
         'total_batch_gb': total_batch,
+        'per_sample_mb': per_sample_mb,
+        'per_sample_gb': per_sample_mb / 1024,
     }
 
 
@@ -211,32 +218,35 @@ def recommend_batch_size(
             'reason': 'Model too large for GPU'
         }
     
-    # Binary search for maximum batch size
+    # Binary search for maximum batch size (powers of 2)
+    # Extended range to test higher batch sizes
     batch_sizes = []
-    for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]:
+    for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]:
         batch_mem = estimate_batch_memory(bs, seq_len, mixed_precision=mixed_precision, depth=model_depth)
         total_required = model_mem['total_model_gb'] + batch_mem['total_batch_gb']
         
         if total_required <= gpu_memory_gb * safety_margin:
-            batch_sizes.append(bs)
+            batch_sizes.append((bs, batch_mem, total_required))
     
     if not batch_sizes:
         max_batch = 1
+        max_batch_mem = None
+        max_batch_total = 0
     else:
-        max_batch = batch_sizes[-1]
+        max_batch, max_batch_mem, max_batch_total = batch_sizes[-1]
     
     # Find recommended batch size (2의 거듭제곱 유지)
     # Recommended: ~50-70% of maximum for stability
     target_recommended = int(max_batch * 0.6)
     if target_recommended > 0:
-        recommended = 2 ** (target_recommended.bit_length() - 1)  # Largest power of 2 <= target
+        recommended = 2 ** (int(target_recommended).bit_length() - 1)  # Largest power of 2 <= target
     else:
         recommended = 1
     
     # Safe: ~30-50% of maximum for guaranteed stability
     target_safe = int(max_batch * 0.4)
     if target_safe > 0:
-        safe = 2 ** (target_safe.bit_length() - 1)  # Largest power of 2 <= target
+        safe = 2 ** (int(target_safe).bit_length() - 1)  # Largest power of 2 <= target
     else:
         safe = 1
     
@@ -245,6 +255,8 @@ def recommend_batch_size(
         'recommended': recommended,
         'safe': safe,
         'available_memory_gb': available_for_batch,
+        'max_batch_memory': max_batch_mem,
+        'max_batch_total_gb': max_batch_total,
     }
 
 
@@ -305,10 +317,15 @@ def print_memory_analysis(
     
     # Batch Memory
     print(f"\n📦 Batch Memory (batch_size={batch_size}):")
+    print(f"  Per Sample:       {batch_mem['per_sample_mb']:.2f} MB")
     print(f"  Input Data:       {batch_mem['input_gb']:.4f} GB")
-    print(f"  Activations:      {batch_mem['activations_gb']:.4f} GB (estimate)")
+    print(f"  Activations:      {batch_mem['activations_gb']:.4f} GB (estimate, depth={model_depth})")
     print(f"  Batch Gradients:  {batch_mem['gradients_batch_gb']:.4f} GB (estimate)")
     print(f"  Total Batch:      {batch_mem['total_batch_gb']:.4f} GB (estimate)")
+    
+    # Show per-sample breakdown
+    total_per_sample_mb = batch_mem['total_batch_gb'] * 1024 / batch_size
+    print(f"  Total per Sample: {total_per_sample_mb:.2f} MB (data + activations + grads)")
     
     # Total Usage
     total_usage = model_mem['total_model_gb'] + batch_mem['total_batch_gb']
@@ -349,13 +366,35 @@ def print_memory_analysis(
     print(f"  Mixed Precision:  {'Enabled (float16)' if mixed_precision else 'Disabled (float32)'}")
     print(f"  Memory Saved:     ~{batch_mem['total_batch_gb'] * 0.5:.2f} GB" if mixed_precision else "  (Enable with --use-amp for 2x memory savings)")
     
-    # Additional guidance if actual usage is very low
+    # Detailed guidance based on actual usage and per-sample cost
+    param_count = sum(p.numel() for p in model.parameters())
+    total_per_sample_mb = batch_mem['total_batch_gb'] * 1024 / batch_size
+    
+    print(f"\n📐 Per-Sample Analysis:")
+    print(f"  Input data:       {batch_mem['per_sample_mb']:.2f} MB")
+    print(f"  Total (w/ acts):  {total_per_sample_mb:.2f} MB")
+    print(f"  Samples that fit: ~{int(gpu_info['total_memory_gb'] * 0.7 * 1024 / total_per_sample_mb)} (70% GPU, conservative)")
+    print(f"  Model params:     {param_count:,} (depth={model_depth})")
+    
+    print(f"\n💡 Recommendation:")
     if usage_percent < 5:
-        print(f"\n💡 Note:")
-        print(f"  Actual usage is very low ({usage_percent:.1f}%).")
-        print(f"  This is normal for small models (depth={model_depth}, params={sum(p.numel() for p in model.parameters()):,}).")
-        print(f"  You can safely use larger batch sizes (up to {recommendations['maximum']*4} or more).")
-        print(f"  Larger batches = faster training + more stable gradients!")
+        print(f"  Current usage: Very low ({usage_percent:.1f}%)")
+        print(f"  ✅ Your current batch ({batch_size}) uses only {usage_percent:.1f}% of GPU")
+        print(f"  ⚡ For max speed: Try batch={recommendations['maximum']} (est. {recommendations['max_batch_total_gb']/gpu_info['total_memory_gb']*100:.1f}% GPU)")
+        print(f"  💡 Conservative:  Use batch={recommendations['recommended']}")
+        print(f"  Note: Small model + large GPU = can use very large batches!")
+    elif usage_percent < 30:
+        print(f"  Current usage: Low ({usage_percent:.1f}%)")
+        print(f"  ✅ Can safely increase to batch={recommendations['maximum']}")
+        print(f"  💡 Recommended: batch={recommendations['recommended']}")
+    elif usage_percent < 60:
+        print(f"  Current usage: Moderate ({usage_percent:.1f}%)")
+        print(f"  ✅ Current batch size is reasonable")
+        print(f"  💡 Max safe: batch={recommendations['maximum']}")
+    else:
+        print(f"  Current usage: High ({usage_percent:.1f}%)")
+        print(f"  ⚠️  Reduce to batch={recommendations['recommended']} for safety")
+        print(f"  💡 Very safe: batch={recommendations['safe']}")
     
     print(f"\n{'='*70}\n")
     

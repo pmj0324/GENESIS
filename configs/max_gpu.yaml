@@ -48,7 +48,7 @@ data:
   h5_path: "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
   replace_time_inf_with: 0.0
   channel_first: true
-  batch_size: 2048  # Large batch for GPU utilization
+  batch_size: 4096  # Optimized for 80GB GPU (safe & fast)
   num_workers: 12   # More workers for faster data loading
   pin_memory: true  # Faster GPU transfer
   shuffle: true
@@ -59,7 +59,7 @@ data:
 # Training configuration - OPTIMIZED FOR SPEED
 training:
   num_epochs: 100
-  learning_rate: 0.0002  # Higher LR with large batch
+  learning_rate: 0.0003  # Scaled for larger batch (sqrt rule)
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
