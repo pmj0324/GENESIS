@@ -221,12 +221,18 @@ def recommend_batch_size(
     
     # Find recommended batch size (2의 거듭제곱 유지)
     # Recommended: ~50-70% of maximum for stability
-    target_recommended = max_batch * 0.6
-    recommended = max(1, 2 ** int(target_recommended.bit_length() - 1))  # Largest power of 2 <= target
+    target_recommended = int(max_batch * 0.6)
+    if target_recommended > 0:
+        recommended = 2 ** (target_recommended.bit_length() - 1)  # Largest power of 2 <= target
+    else:
+        recommended = 1
     
     # Safe: ~30-50% of maximum for guaranteed stability
-    target_safe = max_batch * 0.4
-    safe = max(1, 2 ** int(target_safe.bit_length() - 1))  # Largest power of 2 <= target
+    target_safe = int(max_batch * 0.4)
+    if target_safe > 0:
+        safe = 2 ** (target_safe.bit_length() - 1)  # Largest power of 2 <= target
+    else:
+        safe = 1
     
     return {
         'maximum': max_batch,
