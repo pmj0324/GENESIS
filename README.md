@@ -60,6 +60,11 @@ python scripts/train.py \
     --config configs/optimized_by_benchmark.yaml \
     --data-path /path/to/your/data.h5
 
+# Or use default settings (batch_size=512, workers=40, early_stopping=5, cosine_annealing)
+python scripts/train.py \
+    --config configs/default.yaml \
+    --data-path /path/to/your/data.h5
+
 # That's it! No manual tuning needed! 🎉
 ```
 

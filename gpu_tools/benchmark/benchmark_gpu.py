@@ -95,6 +95,8 @@ def benchmark_batch_size(
         'steps_tested': 0,
         'oom_error': False,
         'error': None,
+        'actual_workers': num_workers,  # Will be updated with safe values
+        'actual_pin_memory': pin_memory,  # Will be updated with safe values
     }
     
     try:
@@ -118,22 +120,60 @@ def benchmark_batch_size(
         config.data.pin_memory = pin_memory
         config.training.use_amp = use_amp
         
-        # Create dataloader
+        # Create dataloader with SHM safety
         print("📊 Creating dataloader...")
-        dataloader = make_dataloader(
-            h5_path=data_path,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            shuffle=False,
-            time_transform=config.model.time_transform,
-            exclude_zero_time=config.model.exclude_zero_time,
-        )
+        
+        # Adjust settings for SHM safety
+        safe_pin_memory = pin_memory
+        safe_num_workers = num_workers
+        
+        # If many workers, disable pin_memory to avoid SHM issues
+        if num_workers > 16:
+            safe_pin_memory = False
+            print(f"   ⚠️  Many workers ({num_workers}), disabling pin_memory to avoid SHM issues")
+        
+        # If still many workers, reduce them
+        if num_workers > 32:
+            safe_num_workers = min(32, num_workers)
+            print(f"   ⚠️  Too many workers ({num_workers}), reducing to {safe_num_workers}")
+        
+        try:
+            dataloader = make_dataloader(
+                h5_path=data_path,
+                batch_size=batch_size,
+                num_workers=safe_num_workers,
+                pin_memory=safe_pin_memory,
+                shuffle=False,
+                time_transform=config.model.time_transform,
+                exclude_zero_time=config.model.exclude_zero_time,
+            )
+        except Exception as e:
+            if "shared memory" in str(e).lower() or "shm" in str(e).lower():
+                print(f"   🔧 SHM error detected, retrying with safer settings...")
+                # Fallback: minimal workers, no pin_memory
+                safe_num_workers = min(4, num_workers)
+                safe_pin_memory = False
+                print(f"   📉 Fallback: workers={safe_num_workers}, pin_memory=False")
+                dataloader = make_dataloader(
+                    h5_path=data_path,
+                    batch_size=batch_size,
+                    num_workers=safe_num_workers,
+                    pin_memory=safe_pin_memory,
+                    shuffle=False,
+                    time_transform=config.model.time_transform,
+                    exclude_zero_time=config.model.exclude_zero_time,
+                )
+            else:
+                raise e
         
         # Calculate dataset info
         total_samples = len(dataloader.dataset)
         batches_per_epoch = len(dataloader)
         print(f"   Dataset: {total_samples:,} samples, {batches_per_epoch:,} batches per epoch")
+        
+        # Update results with actual settings used
+        results['actual_workers'] = safe_num_workers
+        results['actual_pin_memory'] = safe_pin_memory
         
         # Create model
         print("🏗️  Creating model...")
@@ -311,6 +351,7 @@ def benchmark_batch_size(
             
             # Print results
             print(f"\n📊 Results:")
+            print(f"  Config:         Workers={safe_num_workers}, PinMemory={safe_pin_memory}, AMP={use_amp}")
             print(f"  I/O Time:       {results['io_time_mean']*1000:.2f} ± {results['io_time_std']*1000:.2f} ms ({results['io_time_mean']:.3f}s)")
             print(f"  Forward Time:   {results['forward_time_mean']*1000:.2f} ± {results['forward_time_std']*1000:.2f} ms ({results['forward_time_mean']:.3f}s)")
             print(f"  Backward Time:  {results['backward_time_mean']*1000:.2f} ± {results['backward_time_std']*1000:.2f} ms ({results['backward_time_mean']:.3f}s)")
@@ -512,7 +553,9 @@ def print_summary(all_results: List[Dict], base_config=None, save_yaml: bool = T
             print(f"{r['batch_size']:>6} {r['num_workers']:>8} {'Yes' if r['use_amp'] else 'No':>5} "
                   f"{'':>9} {'':>9} {'':>9} {'':>10} {'':>10} {'':>6} {'':>9} {'OOM':>10}")
         elif r.get('steps_tested', 0) > 0:
-            print(f"{r['batch_size']:>6} {r['num_workers']:>8} {'Yes' if r['use_amp'] else 'No':>5} "
+            actual_workers = r.get('actual_workers', r['num_workers'])
+            worker_display = f"{actual_workers}({r['num_workers']})" if actual_workers != r['num_workers'] else str(actual_workers)
+            print(f"{r['batch_size']:>6} {worker_display:>8} {'Yes' if r['use_amp'] else 'No':>5} "
                   f"{r['io_time_mean']*1000:>9.2f} {r['forward_time_mean']*1000:>9.2f} "
                   f"{r['backward_time_mean']*1000:>9.2f} {r['total_time_per_step']*1000:>10.2f} "
                   f"{r['samples_per_second']:>10.1f} {r['gpu_util_mean']:>4.1f}→{r['gpu_util_peak']:>3.1f} "

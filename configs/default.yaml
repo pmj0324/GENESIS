@@ -52,8 +52,8 @@ data:
   h5_path: "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
   replace_time_inf_with: 0.0
   channel_first: true
-  batch_size: 128
-  num_workers: 4
+  batch_size: 512
+  num_workers: 40
   pin_memory: true
   shuffle: true
   train_ratio: 0.8
@@ -67,12 +67,12 @@ training:
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
-  scheduler: "cosine"  # Added scheduler for stability
+  scheduler: "cosine"  # Cosine annealing scheduler
   warmup_steps: 1000  # Deprecated, use warmup_ratio
   warmup_ratio: 0.04  # Warmup as 4% of total steps (recommended)
   
   # Scheduler-specific parameters
-  cosine_t_max: null
+  cosine_t_max: 2  # T0 (period) = 2 epochs for cosine annealing
   plateau_patience: 10
   plateau_factor: 0.5
   plateau_min_lr: 1e-6
@@ -86,7 +86,7 @@ training:
   
   # Early stopping
   early_stopping: true
-  early_stopping_patience: 4
+  early_stopping_patience: 5
   early_stopping_min_delta: 1e-4
   early_stopping_mode: "min"
   early_stopping_baseline: null
