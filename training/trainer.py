@@ -143,7 +143,7 @@ class Trainer:
             self.early_stopping = None
         
         # Mixed precision
-        self.scaler = GradScaler('cuda') if AMP_AVAILABLE and config.training.use_amp else None
+        self.scaler = GradScaler() if AMP_AVAILABLE and config.training.use_amp else None
         
         # Resume from checkpoint if specified
         if config.training.resume_from_checkpoint:
