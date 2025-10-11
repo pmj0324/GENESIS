@@ -65,15 +65,23 @@ def create_cosine_scheduler(optimizer: torch.optim.Optimizer, config: TrainingCo
 def create_plateau_scheduler(optimizer: torch.optim.Optimizer, config: TrainingConfig) -> optim.lr_scheduler.ReduceLROnPlateau:
     """Create reduce on plateau scheduler."""
     verbose = getattr(config, 'plateau_verbose', False)
-    return optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode=config.plateau_mode,
-        factor=config.plateau_factor,
-        patience=config.plateau_patience,
-        threshold=config.plateau_threshold,
-        cooldown=config.plateau_cooldown,
-        verbose=verbose
-    )
+    
+    # Build kwargs conditionally (verbose not supported in older PyTorch versions)
+    kwargs = {
+        'optimizer': optimizer,
+        'mode': config.plateau_mode,
+        'factor': config.plateau_factor,
+        'patience': config.plateau_patience,
+        'threshold': config.plateau_threshold,
+        'cooldown': config.plateau_cooldown,
+    }
+    
+    # Add verbose only if supported (PyTorch 2.0+)
+    import inspect
+    if 'verbose' in inspect.signature(optim.lr_scheduler.ReduceLROnPlateau.__init__).parameters:
+        kwargs['verbose'] = verbose
+    
+    return optim.lr_scheduler.ReduceLROnPlateau(**kwargs)
 
 
 def create_step_scheduler(optimizer: torch.optim.Optimizer, config: TrainingConfig) -> optim.lr_scheduler.StepLR:
