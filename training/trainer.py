@@ -220,21 +220,77 @@ class Trainer:
     
     def _setup_data(self):
         """Setup data loaders."""
+        import h5py
+        import numpy as np
+        
+        # Get total number of samples
+        with h5py.File(self.config.data.h5_path, 'r') as f:
+            total_samples = len(f['signal'])
+        
+        # Create indices for train/val/test split
+        indices = np.arange(total_samples)
+        if self.config.data.shuffle:
+            np.random.seed(self.config.seed)
+            np.random.shuffle(indices)
+        
+        # Calculate split sizes
+        train_ratio = self.config.data.train_ratio
+        val_ratio = self.config.data.val_ratio
+        test_ratio = self.config.data.test_ratio
+        
+        train_size = int(total_samples * train_ratio)
+        val_size = int(total_samples * val_ratio)
+        test_size = int(total_samples * test_ratio)
+        
+        # Split indices
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size:train_size + val_size]
+        test_indices = indices[train_size + val_size:train_size + val_size + test_size]
+        
         # Create data loaders
         self.train_loader = make_dataloader(
             h5_path=self.config.data.h5_path,
             batch_size=self.config.data.batch_size,
-            shuffle=self.config.data.shuffle,
+            shuffle=True,  # Shuffle training data
             num_workers=self.config.data.num_workers,
             pin_memory=self.config.data.pin_memory,
             replace_time_inf_with=self.config.data.replace_time_inf_with,
             channel_first=self.config.data.channel_first,
+            indices=train_indices,
+            time_transform=self.config.model.time_transform,
+            exclude_zero_time=self.config.model.exclude_zero_time,
         )
         
-        print(f"Data loader initialized:")
-        print(f"  Dataset size: {len(self.train_loader.dataset)}")
-        print(f"  Batch size: {self.config.data.batch_size}")
-        print(f"  Steps per epoch: {len(self.train_loader)}")
+        self.val_loader = make_dataloader(
+            h5_path=self.config.data.h5_path,
+            batch_size=self.config.data.batch_size,
+            shuffle=False,  # Don't shuffle validation data
+            num_workers=self.config.data.num_workers,
+            pin_memory=self.config.data.pin_memory,
+            replace_time_inf_with=self.config.data.replace_time_inf_with,
+            channel_first=self.config.data.channel_first,
+            indices=val_indices,
+            time_transform=self.config.model.time_transform,
+            exclude_zero_time=self.config.model.exclude_zero_time,
+        )
+        
+        self.test_loader = make_dataloader(
+            h5_path=self.config.data.h5_path,
+            batch_size=self.config.data.batch_size,
+            shuffle=False,  # Don't shuffle test data
+            num_workers=self.config.data.num_workers,
+            pin_memory=self.config.data.pin_memory,
+            replace_time_inf_with=self.config.data.replace_time_inf_with,
+            channel_first=self.config.data.channel_first,
+            indices=test_indices,
+            time_transform=self.config.model.time_transform,
+            exclude_zero_time=self.config.model.exclude_zero_time,
+        )
+        
+        print(f"Data loaders initialized:")
+        print(f"  Train: {len(self.train_loader.dataset)} samples, {len(self.train_loader)} batches")
+        print(f"  Val:   {len(self.val_loader.dataset)} samples, {len(self.val_loader)} batches")
+        print(f"  Test:  {len(self.test_loader.dataset)} samples, {len(self.test_loader)} batches")
     
     def _setup_checkpointing(self):
         """Setup checkpoint manager."""
