@@ -20,8 +20,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Import model classes
-from .pmt_dit import PMTDit
+# Import model classes (alias to avoid shadowing by local legacy class)
+from .pmt_dit import PMTDit as ExternalPMTDit
 
 
 # =============================================================================
@@ -752,7 +752,7 @@ def create_model(config: ArchitectureConfig) -> nn.Module:
     arch_name = config.name.lower()
     
     if arch_name == "dit":
-        return PMTDit(
+        return ExternalPMTDit(
             seq_len=config.seq_len,
             hidden=config.hidden,
             depth=config.depth,
