@@ -155,8 +155,12 @@ class PMTEmbedding(nn.Module):
         return h_combined, h_geo
 
 
-class PMTDit(nn.Module):
-    """DiT-style transformer for PMT signals."""
+class PMTDitLegacy(nn.Module):
+    """DEPRECATED: Legacy DiT-style transformer for PMT signals.
+    
+    This is an old implementation kept for backward compatibility.
+    Use ExternalPMTDit from models/pmt_dit.py for new code.
+    """
     
     def __init__(
         self,

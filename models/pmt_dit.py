@@ -303,23 +303,28 @@ class PMTDit(nn.Module):
         off = self.affine_offset.view(1, 5, 1)
         scl = self.affine_scale.view(1, 5, 1)
 
-        # (x + offset) * scale  (디폴트는 변화 없음)
-        x5 = (x5 + off) * scl
+        # Normalization: (x - offset) / scale
+        # This brings raw values to a normalized range (e.g., -2 to 2)
+        x5 = (x5 - off) / scl
 
         # split back
         x_sig_t = x5[:, 0:2, :]     # (B,2,L)
         geom    = x5[:, 2:5, :]     # (B,3,L)
 
-        # --------- 2) 토큰화/포지션/컨디션 (기존 동일) ---------
+        # --------- 2) Label 정규화 ---------
+        # Normalize labels: (label - offset) / scale
+        label_normalized = (label - self.label_offset) / self.label_scale  # (B, 6)
+        
+        # --------- 3) 토큰화/포지션/컨디션 ---------
         sig = x_sig_t.transpose(1, 2)   # (B,L,2)
         geo = geom.transpose(1, 2)      # (B,L,3)
 
-        tokens = self.embedder(sig, geo, label)  # (B,L,H)
+        tokens = self.embedder(sig, geo, label_normalized)  # (B,L,H)
         tokens = tokens + self.pos               # learned pos emb
 
         te = timestep_embedding(t, self.t_embed_dim)  # (B,t_dim)
         te = self.t_mlp(te)                           # (B,H/2)
-        ye = self.y_mlp(label)                        # (B,H/2)
+        ye = self.y_mlp(label_normalized)            # (B,H/2)
         cond = torch.cat([te, ye], dim=-1)            # (B,H)
 
         h = tokens
