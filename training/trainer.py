@@ -41,7 +41,8 @@ except ImportError:
     WANDB_AVAILABLE = False
 
 try:
-    from torch.cuda.amp import GradScaler, autocast
+    from torch.cuda.amp import GradScaler
+    from torch.amp import autocast
     AMP_AVAILABLE = True
 except ImportError:
     AMP_AVAILABLE = False
@@ -383,7 +384,7 @@ class Trainer:
             
             # Forward pass
             if self.scaler:
-                with autocast():
+                with autocast('cuda'):
                     loss = self.diffusion.loss(x_sig, geom, label)
                     loss = loss / self.config.training.gradient_accumulation_steps
                 

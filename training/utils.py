@@ -467,12 +467,13 @@ class EarlyStopping:
         restore_best_weights: bool = True,
         verbose: bool = True
     ):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.mode = mode
+        # Convert all numeric parameters to proper types
+        self.patience = int(patience)
+        self.min_delta = float(min_delta)
+        self.mode = str(mode)
         self.baseline = baseline
-        self.restore_best_weights = restore_best_weights
-        self.verbose = verbose
+        self.restore_best_weights = bool(restore_best_weights)
+        self.verbose = bool(verbose)
         
         self.counter = 0
         self.best_score = None
