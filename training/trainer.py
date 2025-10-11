@@ -225,7 +225,7 @@ class Trainer:
         
         # Get total number of samples
         with h5py.File(self.config.data.h5_path, 'r') as f:
-            total_samples = len(f['signal'])
+            total_samples = len(f['input'])
         
         # Create indices for train/val/test split
         indices = np.arange(total_samples)
