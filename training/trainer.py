@@ -607,21 +607,10 @@ class Trainer:
             # Train epoch
             epoch_metrics = self.train_epoch(epoch)
             
-            # Update scheduler
-            if self.scheduler:
-                if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                    # Plateau scheduler needs validation loss
-                    if (epoch + 1) % self.config.training.eval_interval == 0:
-                        eval_metrics = self.evaluate()
-                        self.scheduler.step(eval_metrics.get('eval/loss', epoch_metrics['train/epoch_loss']))
-                else:
-                    # Other schedulers step every epoch
-                    self.scheduler.step()
-            
             # Log epoch metrics
             self._log_metrics(epoch_metrics, epoch)
             
-            # Evaluate
+            # Evaluate (for both early stopping and plateau scheduler)
             eval_metrics = {}
             if (epoch + 1) % self.config.training.eval_interval == 0:
                 eval_metrics = self.evaluate()
@@ -629,6 +618,15 @@ class Trainer:
                 current_loss = eval_metrics.get('eval/loss', epoch_metrics['train/epoch_loss'])
             else:
                 current_loss = epoch_metrics['train/epoch_loss']
+            
+            # Update scheduler (after evaluation)
+            if self.scheduler:
+                if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                    # Plateau scheduler needs validation loss
+                    self.scheduler.step(current_loss)
+                else:
+                    # Other schedulers step every epoch
+                    self.scheduler.step()
             
             # Save checkpoint
             is_best = current_loss < self.best_loss

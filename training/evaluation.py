@@ -159,17 +159,26 @@ def compare_generated_vs_real(
     real_time_nonzero = real_denorm[:, 1, :][real_denorm[:, 0, :] > 0]
     gen_time_nonzero = generated_denorm[:, 1, :][generated_denorm[:, 0, :] > 0]
     
-    print(f"\nTime (ns) - Where charge > 0:")
-    print(f"  Real:      mean={real_time_nonzero.mean():.4f} std={real_time_nonzero.std():.4f}")
-    print(f"  Generated: mean={gen_time_nonzero.mean():.4f} std={gen_time_nonzero.std():.4f}")
-    print(f"  Difference: {abs(real_time_nonzero.mean() - gen_time_nonzero.mean()):.4f}")
+    # Filter out inf and nan values for time
+    real_time_valid = real_time_nonzero[torch.isfinite(real_time_nonzero)]
+    gen_time_valid = gen_time_nonzero[torch.isfinite(gen_time_nonzero)]
+    
+    print(f"\nTime (ns) - Where charge > 0 (finite values only):")
+    if len(real_time_valid) > 0 and len(gen_time_valid) > 0:
+        print(f"  Real:      mean={real_time_valid.mean():.4f} std={real_time_valid.std():.4f} (n={len(real_time_valid)})")
+        print(f"  Generated: mean={gen_time_valid.mean():.4f} std={gen_time_valid.std():.4f} (n={len(gen_time_valid)})")
+        print(f"  Difference: {abs(real_time_valid.mean() - gen_time_valid.mean()):.4f}")
+    else:
+        print(f"  Warning: No valid time values found (all inf/nan)")
+        print(f"  Real valid values: {len(real_time_valid)}/{len(real_time_nonzero)}")
+        print(f"  Generated valid values: {len(gen_time_valid)}/{len(gen_time_nonzero)}")
     
     print(f"\n{'='*70}\n")
     
     return {
         'real_charge_mean': real_charge_nonzero.mean().item(),
         'gen_charge_mean': gen_charge_nonzero.mean().item(),
-        'real_time_mean': real_time_nonzero.mean().item(),
-        'gen_time_mean': gen_time_nonzero.mean().item(),
+        'real_time_mean': real_time_valid.mean().item() if len(real_time_valid) > 0 else float('nan'),
+        'gen_time_mean': gen_time_valid.mean().item() if len(gen_time_valid) > 0 else float('nan'),
     }
 
