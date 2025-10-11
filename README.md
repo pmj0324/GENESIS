@@ -1,346 +1,426 @@
-# GENESIS - IceCube Muon Neutrino Event Diffusion Model
+# GENESIS: Generative Neutrino Event Synthesis for IceCube Simulations
 
-A comprehensive framework for generating realistic IceCube neutrino events using diffusion models with multiple architectures and **automatic GPU optimization**.
+**GENESIS** is a diffusion model framework for generating IceCube muon neutrino events. It uses DiT (Diffusion Transformer) architecture with classifier-free guidance to generate realistic PMT signals conditioned on event-level physics parameters.
 
-## 🌟 Features
-
-- **🤖 Automatic GPU Optimization** ⭐ - Finds optimal settings for your hardware automatically!
-- **Multiple Model Architectures**: DiT (Diffusion Transformer), CNN, MLP, Hybrid, ResNet
-- **Advanced Data Processing**: Log transformations (log10, ln), zero-value handling
-- **Beautiful Visualizations**: Modern, elegant, and classic styles with 3D event visualization
-- **Comprehensive Training**: Early stopping, multiple schedulers, mixed precision
-- **Production Ready**: Clean package structure, extensive configuration options
-
-## 🏗️ Architecture
-
-```
-GENESIS/
-├── 📁 models/           # Model architectures and factory
-├── 📁 dataloader/       # Data loading and preprocessing
-├── 📁 training/         # Training pipeline and utilities
-├── 📁 utils/            # Visualization and analysis tools
-├── 📁 configs/          # Configuration files (organized by function)
-│   ├── 📁 models/       # Model-specific configs
-│   ├── 📁 training/     # Training-specific configs
-│   ├── 📁 data/         # Data processing configs
-│   └── 📁 benchmark/    # Benchmark configs
-├── 📁 gpu_tools/        # GPU optimization and analysis tools
-│   ├── 📁 benchmark/    # GPU benchmarking
-│   ├── 📁 analysis/     # GPU analysis
-│   ├── 📁 optimization/ # GPU optimization
-│   └── 📁 utils/        # GPU utilities
-├── 📁 docs/             # Documentation
-├── 📁 scripts/          # All executable scripts
-│   ├── 📁 analysis/     # Model comparison and evaluation
-│   ├── 📁 setup/        # Environment setup scripts
-│   ├── 📁 visualization/ # Data and model visualization
-│   ├── 📄 train.py      # Main training script
-│   └── 📄 sample.py     # Event generation script
-└── 📁 example/          # Example scripts and demos
-```
-
-## 🚀 Quick Start (2 Steps!)
-
-### Step 1: GPU Benchmark (3 min, once) ⭐
-
-```bash
-# Find optimal settings for YOUR hardware automatically!
-python gpu_tools/gpu_optimizer.py benchmark \
-    --quick \
-    --data-path /path/to/your/data.h5
-
-# → Creates configs/optimized_by_benchmark.yaml automatically!
-```
-
-### Step 2: Train with Optimal Settings
-
-```bash
-# Use the auto-generated optimal configuration
-python scripts/train.py \
-    --config configs/optimized_by_benchmark.yaml \
-    --data-path /path/to/your/data.h5
-
-# Or use default settings (plateau scheduler: patience=2, factor=0.7)
-python scripts/train.py \
-    --config configs/default.yaml \
-    --data-path /path/to/your/data.h5
-
-# Or use testing settings (10% data, plateau scheduler)
-python scripts/train.py \
-    --config configs/testing.yaml \
-    --data-path /path/to/your/data.h5
-
-# Or use cosine annealing scheduler (T0=2 epochs)
-python scripts/train.py \
-    --config configs/cosine.yaml \
-    --data-path /path/to/your/data.h5
-
-# That's it! No manual tuning needed! 🎉
-```
-
-### Alternative: Manual Training
-
-```bash
-# Train with default configuration
-python scripts/train.py --data-path /path/to/your/data.h5
-
-# Train with custom config
-python scripts/train.py --config configs/custom.yaml --data-path /path/to/your/data.h5
-```
-
-### 3. Generate Events
-
-```bash
-# Generate 10 events
-python scripts/sample.py --checkpoint checkpoints/best_model.pth --num-samples 10 --visualize
-```
-
-### 4. Visualize Data
-
-```bash
-# Create beautiful histograms (ln is default)
-python scripts/visualization/visualize_data.py -p /path/to/data.h5 --style modern
-
-# Advanced visualization with filtering
-python scripts/visualization/visualize_data.py -p /path/to/data.h5 \
-  --exclude-zero \
-  --min-time 1000 \
-  --style elegant \
-  --logy
-```
-
-### 5. Analysis and Evaluation
-
-```bash
-# Compare different architectures
-python scripts/analysis/compare_architectures.py --data-path /path/to/data.h5
-
-# Evaluate trained model
-python scripts/analysis/evaluate.py --checkpoint /path/to/checkpoint.pth --data-path /path/to/test_data.h5
-```
-
-## 📊 Data Processing
-
-### Time Transformations
-
-The framework uses **log(1 + x)** method for numerical stability:
-
-**Formula:**
-- **Natural Log**: `y = ln(1 + time) / scale` (default)
-- **Log10**: `y = log10(1 + time) / scale`
-- **Inverse**: `time = exp(y × scale) - 1` or `10^(y × scale) - 1`
-
-**Advantages:**
-- ✅ `log(1 + 0) = 0` (natural handling of zero)
-- ✅ No `-inf` issue at zero
-- ✅ Taylor series: `log(1+x) ≈ x` for small x
-- ✅ Smooth transformation near zero
-
-**Options:**
-- **time_transform**: `"ln"` (default), `"log10"`, or `null`
-- **exclude_zero_time**: `true` (recommended for clarity), `false` (simpler)
-  - Note: With `log(1+x)`, both give same result (0.0)
-  - `true` explicitly marks time=0 as "no hit" (physical meaning)
-
-### Configuration Example
-
-```yaml
-model:
-  architecture: dit
-  time_transform: ln         # "ln" (default), "log10", or null
-  exclude_zero_time: true    # Exclude zeros for log transforms
-  fusion: SUM               # "SUM" or "FiLM"
-  
-training:
-  early_stopping: true
-  early_stopping_patience: 5
-  scheduler: cosine
-```
-
-## 🎨 Visualization Styles
-
-Choose from three beautiful visualization styles:
-
-- **Modern** (default): Clean, contemporary design
-- **Elegant**: Sophisticated, refined appearance  
-- **Classic**: Traditional, straightforward style
-
-## 🏛️ Model Architectures
-
-### DiT (Diffusion Transformer)
-- Transformer-based architecture with attention mechanisms
-- FiLM or SUM fusion strategies
-- Best for complex spatial-temporal patterns
-
-### CNN
-- Convolutional neural networks with multi-scale kernels
-- Efficient for local pattern recognition
-- Good balance of performance and speed
-
-### MLP
-- Multi-layer perceptron
-- Simple and fast
-- Good baseline model
-
-### Hybrid
-- Combination of CNN and Transformer
-- Leverages both local and global features
-- High performance but more complex
-
-### ResNet
-- Residual neural networks
-- Deep architectures with skip connections
-- Stable training for deep models
-
-## ⚙️ Advanced Configuration
-
-### Training Options
-
-```yaml
-training:
-  # Learning rate scheduling
-  scheduler: cosine          # "cosine", "plateau", "step", "linear"
-  learning_rate: 1e-4
-  
-  # Early stopping
-  early_stopping: true
-  early_stopping_patience: 5
-  early_stopping_min_delta: 1e-4
-  
-  # Optimization
-  optimizer: AdamW
-  batch_size: 8
-  gradient_accumulation_steps: 1
-  max_grad_norm: 1.0
-  
-  # Mixed precision
-  use_amp: false
-```
-
-### Model Configuration
-
-```yaml
-model:
-  # Architecture
-  architecture: dit
-  hidden: 512
-  depth: 8
-  heads: 8
-  dropout: 0.1
-  
-  # Data processing
-  time_transform: ln
-  exclude_zero_time: true
-  
-  # Normalization
-  affine_offsets: [112.5, 67616.0, 0.0, 0.0, 0.0]
-  affine_scales: [56.25, 33808.0, 500.0, 500.0, 500.0]
-```
-
-## 📈 Training Examples
-
-### Basic Training
-```bash
-python train.py --data-path data/train.h5 --config configs/default.yaml
-```
-
-### Advanced Training with Log Transform
-```bash
-python scripts/train.py \
-  --data-path data/train.h5 \
-  --config configs/ln_transform.yaml \
-  --device cuda
-```
-
-### Resume Training
-```bash
-python scripts/train.py \
-  --data-path data/train.h5 \
-  --resume checkpoints/epoch_10.pth
-```
-
-## 🎯 Generation Examples
-
-### Basic Generation
-```bash
-python scripts/sample.py \
-  --checkpoint checkpoints/best_model.pth \
-  --num-samples 100
-```
-
-### Generation with Visualization
-```bash
-python scripts/sample.py \
-  --checkpoint checkpoints/best_model.pth \
-  --num-samples 10 \
-  --visualize \
-  --output-dir generated_events
-```
-
-## 📊 Data Analysis
-
-### Histogram Analysis
-```bash
-# Basic analysis
-python scripts/visualization/visualize_data.py -p data.h5
-
-# Advanced analysis with filtering (ln is default)
-python scripts/visualization/visualize_data.py \
-  -p data.h5 \
-  --exclude-zero \
-  --min-time 5000 \
-  --style elegant \
-  --bins 300
-```
-
-### Data Health Check
-```bash
-python -c "
-from dataloader import check_dataset_health, make_dataloader
-dataloader = make_dataloader('data.h5', batch_size=32)
-check_dataset_health(dataloader, num_batches=20)
-"
-```
-
-## 🔧 Package Structure
-
-The codebase is organized into clean, modular packages:
-
-- **`models/`**: Model architectures and factory pattern
-- **`dataloader/`**: Data loading with advanced preprocessing
-- **`training/`**: Complete training pipeline with utilities
-- **`utils/`**: Visualization and analysis tools
-- **`configs/`**: YAML configuration files
-
-## 📚 Documentation
-
-- **[Getting Started Guide](docs/GETTING_STARTED.md)**: Complete setup instructions
-- **[Training Guide](docs/TRAINING.md)**: Comprehensive training documentation
-- **[Training Examples](docs/TRAINING_EXAMPLES.md)**: Detailed training examples
-- **[API Reference](docs/API.md)**: Complete API documentation
-
-## 🛠️ Development
-
-### Running Tests
-```bash
-python getting_started.py --skip-sampling
-```
-
-### Code Style
-The codebase follows clean, readable Python practices with comprehensive type hints and documentation.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines and submit pull requests for any improvements.
-
-## 📞 Support
-
-For questions and support, please open an issue in the repository or contact the development team.
+[![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ---
 
-**GENESIS** - Generating realistic neutrino events for IceCube research 🌌
+## 🎯 Features
+
+- **DiT-based Diffusion Model**: State-of-the-art transformer architecture for time-series generation
+- **Classifier-Free Guidance**: Improved sample quality through conditional generation
+- **Multi-Architecture Support**: DiT, CNN, MLP, Hybrid, and ResNet backbones
+- **Task-based Organization**: Easy experiment management with date-based task folders
+- **3D Visualization**: Automatic generation of 3D event visualizations
+- **Flexible Configuration**: YAML-based configuration system
+- **GPU Optimization Tools**: Built-in benchmarking and optimization utilities
+- **Comprehensive Logging**: TensorBoard integration and detailed training logs
+
+---
+
+## 📋 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Usage](#-usage)
+  - [Create a Training Task](#1-create-a-training-task)
+  - [Run Training](#2-run-training)
+  - [Generate Samples](#3-generate-samples)
+- [Project Structure](#-project-structure)
+- [Configuration](#-configuration)
+- [GPU Optimization](#-gpu-optimization)
+- [Documentation](#-documentation)
+- [Citation](#-citation)
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.10+
+- CUDA-capable GPU (recommended)
+- 16GB+ RAM
+- IceCube HDF5 data file
+
+### Installation
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/GENESIS.git
+cd GENESIS
+
+# Create environment with micromamba (recommended)
+micromamba create -f environment.yml
+micromamba activate genesis
+
+# Or use conda/mamba
+conda env create -f environment.yml
+conda activate genesis
+```
+
+### Create Your First Training Task
+
+```bash
+# Create a task folder for today's experiment
+./tasks/create_task.sh 0921_initial_training
+
+# Navigate to task folder
+cd tasks/0921_initial_training
+
+# Review configuration (optional)
+cat config.yaml
+
+# Run training!
+bash run.sh
+```
+
+That's it! Training will start, and all outputs (checkpoints, samples, logs) will be saved in the `outputs/` folder.
+
+---
+
+## 📦 Installation
+
+### Option 1: Micromamba (Recommended)
+
+```bash
+# Install micromamba
+"${SHELL}" <(curl -L micro.mamba.pm/install.sh)
+
+# Create environment
+cd GENESIS
+micromamba create -f environment.yml
+micromamba activate genesis
+```
+
+### Option 2: Conda/Mamba
+
+```bash
+# Create environment
+conda env create -f environment.yml
+conda activate genesis
+```
+
+### Option 3: pip
+
+```bash
+# Create virtual environment
+python3.10 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Verify Installation
+
+```bash
+python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
+```
+
+---
+
+## 📖 Usage
+
+### 1. Create a Training Task
+
+GENESIS organizes experiments using date-based task folders:
+
+```bash
+# Syntax: ./tasks/create_task.sh TASK_NAME [CONFIG_NAME] [DATA_PATH]
+
+# Example: Create task with default config
+./tasks/create_task.sh 0921_initial_training
+
+# Example: Create task with testing config (fast, 10% data)
+./tasks/create_task.sh 0921_quick_test testing
+
+# Example: Create task with custom data path
+./tasks/create_task.sh 0922_high_energy default ~/data/high_energy.h5
+```
+
+This creates a self-contained task folder:
+```
+tasks/0921_initial_training/
+├── config.yaml          # Configuration
+├── run.sh               # Training script
+├── logs/                # Training logs
+└── outputs/             # Checkpoints, samples, plots
+```
+
+### 2. Run Training
+
+```bash
+cd tasks/0921_initial_training
+bash run.sh
+```
+
+**Monitor training:**
+```bash
+# Watch logs
+tail -f logs/train.log
+
+# TensorBoard
+tensorboard --logdir logs/tensorboard
+```
+
+**Training outputs:**
+- `outputs/checkpoints/` - Model checkpoints
+- `outputs/samples/` - Generated samples (NPZ + 3D PNG)
+- `outputs/evaluation/` - Comparison plots
+- `logs/` - Training logs
+
+### 3. Generate Samples
+
+After training, generate samples from your trained model:
+
+```bash
+python scripts/sample.py \
+    --config tasks/0921_initial_training/config.yaml \
+    --checkpoint tasks/0921_initial_training/outputs/checkpoints/best_model.pth \
+    --n-samples 20 \
+    --output-dir tasks/0921_initial_training/outputs/samples
+```
+
+This generates:
+- `sample_XXXX.npz` - Event data in NPZ format
+- `sample_XXXX_3d.png` - 3D visualization of the event
+
+**View 3D visualization interactively:**
+```bash
+python utils/npz_show_event.py -i tasks/0921_initial_training/outputs/samples/sample_0000.npz
+```
+
+---
+
+## 📁 Project Structure
+
+```
+GENESIS/
+├── configs/               # Configuration files
+│   ├── default.yaml       # Default configuration
+│   ├── testing.yaml       # Fast testing (10% data)
+│   ├── cosine.yaml        # Cosine annealing scheduler
+│   ├── models/            # Model-specific configs
+│   ├── training/          # Training-specific configs
+│   └── data/              # Data-specific configs
+├── dataloader/            # Data loading utilities
+├── diffusion/             # Diffusion process implementation
+├── models/                # Model architectures
+│   ├── pmt_dit.py         # DiT model (main)
+│   ├── architectures.py   # Other architectures
+│   └── factory.py         # Model factory
+├── training/              # Training utilities
+│   ├── trainer.py         # Main trainer
+│   ├── schedulers.py      # LR schedulers
+│   ├── evaluation.py      # Evaluation tools
+│   └── logging.py         # Logging utilities
+├── scripts/               # Entry point scripts
+│   ├── train.py           # Training script
+│   └── sample.py          # Sampling script
+├── utils/                 # Utility functions
+│   ├── denormalization.py # Denormalization utilities
+│   ├── visualization.py   # Visualization tools
+│   ├── npz_show_event.py  # 3D event viewer
+│   └── h5_stats.py        # HDF5 data statistics
+├── gpu_tools/             # GPU optimization tools
+│   ├── gpu_optimizer.py   # GPU optimizer
+│   └── benchmark/         # Benchmarking tools
+├── tasks/                 # Training tasks (date-based)
+│   ├── create_task.sh     # Task creation script
+│   └── YYYYMMDD_name/     # Individual task folders
+└── docs/                  # Documentation
+```
+
+---
+
+## ⚙️ Configuration
+
+GENESIS uses YAML configuration files. Key sections:
+
+### Model Configuration
+```yaml
+model:
+  hidden: 512              # Hidden dimension
+  depth: 8                 # Number of transformer layers
+  heads: 8                 # Number of attention heads
+  fusion: "SUM"            # Fusion strategy (SUM/FiLM)
+  affine_scales: [100.0, 10.0, 600.0, 550.0, 550.0]  # Normalization scales
+  time_transform: "ln"     # Time transformation (ln/log10)
+```
+
+### Training Configuration
+```yaml
+training:
+  num_epochs: 100
+  learning_rate: 0.0001
+  batch_size: 512
+  num_workers: 40
+  scheduler: "plateau"     # plateau/cosine/step/linear
+  early_stopping: true
+  early_stopping_patience: 5
+```
+
+### Diffusion Configuration
+```yaml
+diffusion:
+  timesteps: 1000
+  beta_start: 0.0001
+  beta_end: 0.02
+  use_cfg: true            # Classifier-free guidance
+  cfg_scale: 2.0
+```
+
+**Available configurations:**
+- `configs/default.yaml` - Production training
+- `configs/testing.yaml` - Fast testing (10% data)
+- `configs/cosine.yaml` - Cosine annealing scheduler
+- `configs/debug.yaml` - Debug mode
+
+---
+
+## 🔧 GPU Optimization
+
+GENESIS includes built-in GPU optimization tools:
+
+```bash
+# Quick GPU check (fast)
+python gpu_tools/gpu_optimizer.py --mode quick
+
+# Full GPU optimization (finds best settings)
+python gpu_tools/gpu_optimizer.py --mode full
+
+# Custom test
+python gpu_tools/gpu_optimizer.py \
+    --mode quick \
+    --batch-sizes 256 512 1024 \
+    --workers 20 40 60
+```
+
+This will:
+1. Test various batch sizes and worker configurations
+2. Measure throughput and GPU utilization
+3. Generate optimized YAML configuration
+4. Save results to `gpu_tools/benchmark/results/`
+
+---
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the `docs/` folder:
+
+- **[Getting Started Guide](docs/GETTING_STARTED.md)** - Step-by-step tutorial
+- **[Training Guide](docs/TRAINING.md)** - Detailed training instructions
+- **[API Documentation](docs/API.md)** - Code API reference
+- **[GPU Optimization](gpu_tools/README.md)** - GPU benchmarking guide
+- **[Normalization](docs/NORMALIZATION_FINAL.md)** - Data normalization details
+- **[Diffusion Process](docs/DIFFUSION_MODULE.md)** - Diffusion implementation
+
+---
+
+## 🎨 Example Outputs
+
+### Training Progress
+```
+Epoch 50/100: 100%|██████████| 28/28 [00:45<00:00,  1.61s/it]
+  Train Loss: 0.8542
+  Val Loss:   0.8631
+  LR:         7.00e-05
+  Early Stop: patience=0/5
+```
+
+### Generated Samples
+- 3D visualizations showing PMT hits colored by time
+- Scatter plots of charge vs time
+- Comparison with real events
+
+### Evaluation Metrics
+- MSE between generated and real distributions
+- Statistical comparison (mean, std, percentiles)
+- Visual comparison plots
+
+---
+
+## 🐛 Troubleshooting
+
+### CUDA Not Available
+
+```bash
+# Check CUDA
+nvidia-smi
+python -c "import torch; print(torch.cuda.is_available())"
+
+# Reinstall PyTorch with CUDA
+pip install torch==2.0.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+### Memory Issues
+
+```bash
+# Reduce batch size in config.yaml
+batch_size: 256  # Instead of 512
+
+# Reduce number of workers
+num_workers: 20  # Instead of 40
+
+# Use GPU optimizer to find optimal settings
+python gpu_tools/gpu_optimizer.py --mode full
+```
+
+### NaN Loss
+
+Check:
+1. Data normalization parameters in config
+2. Learning rate (try reducing)
+3. Data quality (NaN/Inf in HDF5 file)
+
+---
+
+## 📝 Citation
+
+If you use GENESIS in your research, please cite:
+
+```bibtex
+@software{genesis2024,
+  title={GENESIS: Generative Neutrino Event Synthesis for IceCube Simulations},
+  author={Your Name},
+  year={2024},
+  url={https://github.com/yourusername/GENESIS}
+}
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## 📧 Contact
+
+- **Author**: Minje Park
+- **Email**: pmj032400@naver.com
+- **Institution**: SKKU
+- **GitHub**: [@pmj0324](https://github.com/pmj0324)
+
+---
+
+## 🙏 Acknowledgments
+
+- IceCube Collaboration for the detector simulation data
+- DiT paper authors for the transformer architecture inspiration
+- PyTorch team for the excellent framework
+
+---
+
+**Happy Training! 🚀**

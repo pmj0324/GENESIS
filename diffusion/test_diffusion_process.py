@@ -4,10 +4,23 @@
 Test Diffusion Process
 =======================
 
-Test the complete diffusion forward and reverse process using actual config settings.
+Test the complete diffusion forward process and analyze convergence to Gaussian.
+
+Features:
+- Test forward diffusion process
+- Analyze convergence to Gaussian distribution (with histograms and Q-Q plots)
+- Optional reverse diffusion test
+- Per-channel (charge/time) analysis at each timestep
 
 Usage:
+    # Basic test (forward + reverse)
     python diffusion/test_diffusion_process.py --config configs/testing.yaml --data-path /path/to/data.h5
+    
+    # Forward diffusion analysis only (with Gaussian convergence plots)
+    python diffusion/test_diffusion_process.py --config configs/testing.yaml --data-path /path/to/data.h5 --analyze-only
+    
+    # Custom batch size for analysis
+    python diffusion/test_diffusion_process.py --config configs/testing.yaml --data-path /path/to/data.h5 --analyze-only --analysis-batch-size 1000
 """
 
 import sys
@@ -20,11 +33,13 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from typing import Optional
 
 from config import load_config_from_file
 from models.factory import ModelFactory
 from dataloader.pmt_dataloader import make_dataloader
 from utils.denormalization import denormalize_signal
+from diffusion.analysis import analyze_forward_diffusion
 
 
 def test_diffusion_with_config(config, h5_path: str, n_samples: int = 4):
@@ -284,15 +299,167 @@ def test_diffusion_with_config(config, h5_path: str, n_samples: int = 4):
     print(f"\n{'='*70}\n")
 
 
+def analyze_forward_diffusion_per_channel(
+    config,
+    h5_path: str,
+    analysis_batch_size: Optional[int] = None,
+    timesteps_to_check: Optional[list] = None,
+    save_dir: str = "diffusion_analysis"
+):
+    """
+    Analyze forward diffusion process per channel (charge and time).
+    
+    This generates the histogram + Q-Q plot visualization showing convergence
+    to Gaussian distribution.
+    
+    Args:
+        config: Configuration object
+        h5_path: Path to HDF5 data file
+        analysis_batch_size: Batch size for analysis (if None, use config batch_size)
+        timesteps_to_check: List of timesteps to analyze (if None, use [0, T//4, T//2, 3T//4, T-1])
+        save_dir: Directory to save analysis plots
+    """
+    print("\n" + "="*70)
+    print("🔬 Forward Diffusion Analysis (Gaussian Convergence)")
+    print("="*70)
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Device: {device}")
+    
+    # Print config summary
+    print(f"\n📊 Configuration:")
+    print(f"  Architecture: {config.model.architecture}")
+    print(f"  Hidden: {config.model.hidden}, Depth: {config.model.depth}")
+    print(f"  Diffusion timesteps: {config.diffusion.timesteps}")
+    print(f"  Time transform: {config.model.time_transform}")
+    
+    # Create model and diffusion
+    print(f"\n🏗️  Creating model and diffusion...")
+    model, diffusion = ModelFactory.create_model_and_diffusion(
+        config.model,
+        config.diffusion,
+        device=device
+    )
+    
+    # Load data
+    batch_size = analysis_batch_size if analysis_batch_size is not None else config.data.batch_size
+    print(f"\n📊 Loading data (batch_size={batch_size})...")
+    
+    dataloader = make_dataloader(
+        h5_path=h5_path,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=False,
+        time_transform=config.model.time_transform,
+    )
+    
+    # Collect samples
+    print(f"  Collecting samples for analysis...")
+    num_batches = min(10, len(dataloader))  # Analyze up to 10 batches
+    all_x0 = []
+    
+    for idx, (x_sig, geom, label, _) in enumerate(dataloader):
+        if idx >= num_batches:
+            break
+        all_x0.append(x_sig)
+        print(f"    Batch {idx+1}/{num_batches}: {x_sig.shape[0]} samples")
+    
+    x0 = torch.cat(all_x0, dim=0)  # (N, 2, L)
+    print(f"  ✅ Collected {x0.size(0)} samples total")
+    
+    # Analyze per channel
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+    
+    print(f"\n{'='*70}")
+    print("📈 Analyzing Charge Channel (channel 0)")
+    print(f"{'='*70}")
+    
+    # Analyze charge channel
+    x0_charge = x0[:, 0:1, :].expand(-1, 2, -1)  # Use only charge, duplicate to (N, 2, L)
+    results_charge = analyze_forward_diffusion(
+        x0_charge,
+        diffusion,
+        timesteps_to_check=timesteps_to_check,
+        num_samples=min(10000, x0.size(0)),
+        save_dir=str(save_path / "charge_channel")
+    )
+    
+    print(f"\n{'='*70}")
+    print("📈 Analyzing Time Channel (channel 1)")
+    print(f"{'='*70}")
+    
+    # Analyze time channel
+    x0_time = x0[:, 1:2, :].expand(-1, 2, -1)  # Use only time, duplicate to (N, 2, L)
+    results_time = analyze_forward_diffusion(
+        x0_time,
+        diffusion,
+        timesteps_to_check=timesteps_to_check,
+        num_samples=min(10000, x0.size(0)),
+        save_dir=str(save_path / "time_channel")
+    )
+    
+    # Final summary
+    print(f"\n{'='*70}")
+    print("✅ Analysis Complete!")
+    print(f"{'='*70}")
+    print(f"\n📁 Results saved to:")
+    print(f"  Charge: {save_path / 'charge_channel' / 'diffusion_convergence.png'}")
+    print(f"  Time:   {save_path / 'time_channel' / 'diffusion_convergence.png'}")
+    print(f"\n📊 Summary:")
+    
+    final_t = results_charge[list(results_charge.keys())[-1]]
+    print(f"\n  Charge channel (t={list(results_charge.keys())[-1]}):")
+    print(f"    Mean ≈ 0: {'✅' if abs(final_t['mean']) < 0.1 else '❌'} (|mean|={abs(final_t['mean']):.4f})")
+    print(f"    Std ≈ 1:  {'✅' if abs(final_t['std'] - 1.0) < 0.2 else '❌'} (std={final_t['std']:.4f})")
+    print(f"    Normal:   {'✅' if final_t['is_normal'] else '❌'}")
+    
+    final_t = results_time[list(results_time.keys())[-1]]
+    print(f"\n  Time channel (t={list(results_time.keys())[-1]}):")
+    print(f"    Mean ≈ 0: {'✅' if abs(final_t['mean']) < 0.1 else '❌'} (|mean|={abs(final_t['mean']):.4f})")
+    print(f"    Std ≈ 1:  {'✅' if abs(final_t['std'] - 1.0) < 0.2 else '❌'} (std={final_t['std']:.4f})")
+    print(f"    Normal:   {'✅' if final_t['is_normal'] else '❌'}")
+    
+    print(f"\n{'='*70}\n")
+    
+    return results_charge, results_time
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Test GENESIS diffusion process")
+    parser = argparse.ArgumentParser(
+        description="Test GENESIS diffusion process and analyze convergence to Gaussian",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic test (forward + reverse)
+  python diffusion/test_diffusion_process.py --config configs/testing.yaml
+  
+  # Forward analysis only (with Gaussian convergence plots per channel)
+  python diffusion/test_diffusion_process.py --config configs/testing.yaml --analyze-only
+  
+  # Custom batch size for analysis
+  python diffusion/test_diffusion_process.py --config configs/testing.yaml --analyze-only --analysis-batch-size 1000
+  
+  # Specify timesteps to check
+  python diffusion/test_diffusion_process.py --config configs/testing.yaml --analyze-only --timesteps 0 250 500 750 999
+        """
+    )
     parser.add_argument("--config", type=str, default="configs/testing.yaml",
                        help="Path to configuration file")
     parser.add_argument("--data-path", type=str, 
                        default="/home/work/GENESIS/GENESIS-data/22644_0921_time_shift.h5",
                        help="Path to HDF5 data file")
     parser.add_argument("--n-samples", type=int, default=4,
-                       help="Number of samples to test")
+                       help="Number of samples to test (for reverse diffusion test)")
+    parser.add_argument("--analyze-only", action="store_true",
+                       help="Only run forward diffusion analysis per channel (skip reverse diffusion test)")
+    parser.add_argument("--analysis-batch-size", type=int, default=None,
+                       help="Batch size for analysis (if not specified, use config batch_size)")
+    parser.add_argument("--timesteps", type=int, nargs="+", default=None,
+                       help="Timesteps to check (e.g., --timesteps 0 250 500 750 999)")
+    parser.add_argument("--save-dir", type=str, default="diffusion_analysis",
+                       help="Directory to save analysis results")
     
     args = parser.parse_args()
     
@@ -304,8 +471,24 @@ def main():
     if args.data_path:
         config.data.h5_path = args.data_path
     
-    # Run test
-    test_diffusion_with_config(config, config.data.h5_path, args.n_samples)
+    if args.analyze_only:
+        # Run forward diffusion analysis only (per channel)
+        analyze_forward_diffusion_per_channel(
+            config,
+            config.data.h5_path,
+            analysis_batch_size=args.analysis_batch_size,
+            timesteps_to_check=args.timesteps,
+            save_dir=args.save_dir
+        )
+    else:
+        # Run full test (forward + reverse)
+        test_diffusion_with_config(config, config.data.h5_path, args.n_samples)
+        
+        # Optionally run analysis after test
+        print(f"\n{'='*70}")
+        print("💡 Tip: Run with --analyze-only flag to generate Gaussian convergence plots per channel")
+        print(f"   Example: python diffusion/test_diffusion_process.py --config {args.config} --analyze-only")
+        print(f"{'='*70}\n")
 
 
 if __name__ == "__main__":

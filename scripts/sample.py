@@ -179,30 +179,62 @@ def save_samples(
     labels: torch.Tensor,
     geom: torch.Tensor,
     output_dir: Path,
-    config
+    config,
+    create_3d: bool = True
 ):
-    """Save generated samples as NPZ files."""
+    """
+    Save generated samples as NPZ files and create 3D visualizations.
+    
+    Args:
+        samples: Generated samples (N, 2, L) - [charge, time]
+        labels: Event labels (N, 6) - [Energy, Zenith, Azimuth, X, Y, Z]
+        geom: PMT geometry (N, 3, L) - [x, y, z]
+        output_dir: Output directory
+        config: Configuration object
+        create_3d: If True, create 3D visualizations for each sample
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"\n💾 Saving samples to: {output_dir}")
     
     for i in range(samples.size(0)):
+        # Prepare data in NPZ format (compatible with npz_show_event.py)
         sample_data = {
-            'npe': samples[i, 0, :].cpu().numpy(),
-            'time': samples[i, 1, :].cpu().numpy(),
+            'input': np.stack([
+                samples[i, 0, :].cpu().numpy(),  # charge (NPE)
+                samples[i, 1, :].cpu().numpy()   # time (ns)
+            ], axis=0),  # (2, L)
+            'label': labels[i, :].cpu().numpy(),  # (6,)
             'xpmt': geom[i, 0, :].cpu().numpy(),
             'ypmt': geom[i, 1, :].cpu().numpy(),
             'zpmt': geom[i, 2, :].cpu().numpy(),
-            'label': labels[i, :].cpu().numpy(),
         }
         
-        filename = output_dir / f"sample_{i:04d}.npz"
-        np.savez(filename, **sample_data)
+        # Save NPZ
+        npz_path = output_dir / f"sample_{i:04d}.npz"
+        np.savez(npz_path, **sample_data)
+        
+        # Create 3D visualization
+        if create_3d:
+            try:
+                from utils.visualization import create_3d_event_plot
+                png_path = output_dir / f"sample_{i:04d}_3d.png"
+                create_3d_event_plot(
+                    npz_path=npz_path,
+                    output_path=png_path,
+                    show=False
+                )
+            except Exception as e:
+                print(f"  ⚠️  Warning: Could not create 3D visualization for sample {i}: {e}")
     
     print(f"  ✅ Saved {samples.size(0)} samples as .npz files")
-    print(f"\n  View samples with:")
-    print(f"     python npz-show-event.py {output_dir}/sample_0000.npz")
+    if create_3d:
+        print(f"  ✅ Created {samples.size(0)} 3D visualizations")
+    print(f"\n  📁 Output files:")
+    print(f"     NPZ:  {output_dir}/sample_XXXX.npz")
+    if create_3d:
+        print(f"     PNG:  {output_dir}/sample_XXXX_3d.png")
 
 
 def visualize_samples(samples: torch.Tensor, labels: torch.Tensor, output_dir: Path, n_plot: int = 4):

@@ -1,589 +1,528 @@
 # Getting Started with GENESIS
 
-Welcome to GENESIS - a diffusion model for generating IceCube muon neutrino events! This guide will help you get up and running quickly.
+This guide will walk you through using GENESIS from scratch, from installation to generating your first neutrino events.
 
-## Table of Contents
+---
 
-1. [Overview](#overview)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-4. [Quick Start](#quick-start)
-5. [Understanding the Project](#understanding-the-project)
-6. [Your First Training Run](#your-first-training-run)
-7. [Generating Your First Events](#generating-your-first-events)
-8. [Visualizing Results](#visualizing-results)
-9. [Next Steps](#next-steps)
-10. [Troubleshooting](#troubleshooting)
+## 📋 Table of Contents
 
-## Overview
+1. [Prerequisites](#prerequisites)
+2. [Installation](#installation)
+3. [Verify Setup](#verify-setup)
+4. [Prepare Your Data](#prepare-your-data)
+5. [Your First Training](#your-first-training)
+6. [Monitor Training](#monitor-training)
+7. [Generate Samples](#generate-samples)
+8. [Next Steps](#next-steps)
 
-GENESIS is a conditional diffusion model that generates IceCube PMT (Photo-Multiplier Tube) signals from muon neutrino events. The model learns to generate realistic neutrino event signatures conditioned on event properties like energy, direction, and position.
-
-### What You'll Learn
-
-By the end of this guide, you will:
-- Set up the GENESIS environment
-- Train a diffusion model on neutrino event data
-- Generate new neutrino events
-- Visualize the generated events in 3D
-- Compare different model architectures
+---
 
 ## Prerequisites
 
 ### System Requirements
 
-- **Python**: 3.8 or higher
-- **CUDA**: 11.0 or higher (for GPU training)
-- **Memory**: At least 8GB RAM (16GB+ recommended)
-- **Storage**: At least 5GB free space
-
-### Software Dependencies
-
-- PyTorch 1.12+
-- NumPy, SciPy, Matplotlib
-- H5py (for HDF5 data files)
-- PyYAML (for configuration files)
-- TensorBoard (for training visualization)
-- Weights & Biases (optional, for experiment tracking)
-
-## Installation
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/your-username/GENESIS.git
-cd GENESIS
-```
-
-### 2. Create a Virtual Environment
-
-#### Option A: Using Micromamba (Recommended)
-```bash
-# Create environment from environment.yml (Python 3.10 + CUDA 11.8)
-micromamba env create -f environment.yml
-micromamba activate genesis
-
-# For CUDA support, reinstall PyTorch with CUDA
-pip uninstall torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# Or use the setup script
-./scripts/setup/setup_micromamba.sh
-```
-
-#### Option B: Using Conda
-```bash
-# Using conda (Python 3.10)
-conda create -n genesis python=3.10
-conda activate genesis
-```
-
-#### Option C: Using venv
-```bash
-# Using venv
-python -m venv genesis_env
-source genesis_env/bin/activate  # On Windows: genesis_env\Scripts\activate
-```
-
-### 3. Install Dependencies
-
-#### If using micromamba (environment.yml already includes most dependencies):
-```bash
-# Install the package in development mode
-pip install -e .
-```
-
-#### If using conda or venv:
-```bash
-# Install PyTorch (choose the appropriate version for your system)
-# For CUDA 11.8 (Recommended - most stable):
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# For CUDA 12.1:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# For CPU only:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# Install other dependencies
-pip install -r requirements.txt
-
-# Install the package in development mode
-pip install -e .
-```
-
-### 4. CUDA Support
-
-If you need GPU acceleration, make sure you have:
-
-1. **NVIDIA GPU** with CUDA support
-2. **CUDA drivers** installed (check with `nvidia-smi`)
-3. **PyTorch with CUDA** (see installation options above)
-
-**Verify CUDA installation:**
-```bash
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-**If CUDA is not available:**
-```bash
-# Reinstall PyTorch with CUDA support
-pip uninstall torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-### 5. Verify Installation
-
-```bash
-python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-## Quick Start
-
-### 1. Download Sample Data
-
-First, you'll need some IceCube neutrino event data. If you don't have data yet, you can:
-
-```bash
-# Create a sample data directory
-mkdir -p data
-
-# Download sample data (replace with your actual data path)
-# For now, we'll assume you have data at: /path/to/your/icecube_data.h5
-```
-
-### 2. Run the Quick Start Example
-
-```bash
-python example/quick_start.py
-```
-
-This will:
-- Load a sample configuration
-- Create a small model
-- Run a quick training loop
-- Generate some sample events
-
-### 3. Check the Results
-
-```bash
-# View generated files
-ls -la outputs/
-ls -la checkpoints/
-ls -la logs/
-```
-
-## Understanding the Project
-
-### Project Structure
-
-```
-GENESIS/
-├── dataloader/           # Data loading utilities
-├── models/               # Model architectures
-├── training/             # Training package
-├── utils/                # Utility functions
-├── configs/              # Configuration files
-├── example/              # Example scripts
-├── docs/                 # Documentation
-├── train.py              # Main training script
-├── sample.py             # Sampling script
-└── evaluate.py           # Evaluation script
-```
-
-### Key Concepts
-
-#### 1. **PMT Signals**
-- Each neutrino event generates signals in 5,160 PMTs
-- Each PMT has two values: NPE (Number of Photo-electrons) and timing
-- Data shape: `(batch_size, 2, 5160)`
-
-#### 2. **Event Conditions**
-- Energy, Zenith, Azimuth, X, Y, Z coordinates
-- Used to condition the generation process
-- Data shape: `(batch_size, 6)`
-
-#### 3. **Model Architectures**
-- **DiT**: Diffusion Transformer (best quality)
-- **CNN**: Convolutional Neural Network (fastest)
-- **MLP**: Multi-Layer Perceptron (simplest)
-- **Hybrid**: CNN + Transformer (balanced)
-- **ResNet**: Residual Network (stable)
-
-#### 4. **Learning Rate Schedulers**
-- **Cosine**: Smooth decay with warm restarts
-- **Plateau**: Adaptive reduction based on validation
-- **Step**: Fixed interval reduction
-- **Linear**: Linear decay
-
-## Your First Training Run
-
-### 1. Prepare Your Data
-
-Your data should be in HDF5 format with the following structure:
-
-```python
-# Required datasets in your HDF5 file:
-- input: (N, 2, 5160)  # PMT signals [npe, time]
-- label: (N, 6)        # Event conditions [Energy, Zenith, Azimuth, X, Y, Z]
-- xpmt: (5160,)        # PMT x-coordinates
-- ypmt: (5160,)        # PMT y-coordinates
-- zpmt: (5160,)        # PMT z-coordinates
-```
-
-### 2. Start with a Small Model
-
-```bash
-# Train a small CNN model for quick testing
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --architecture cnn \
-    --hidden 128 \
-    --depth 4 \
-    --epochs 10 \
-    --batch-size 8 \
-    --experiment-name "my_first_training"
-```
-
-### 3. Monitor Training
-
-```bash
-# Start TensorBoard to monitor training
-tensorboard --logdir logs/
-
-# Open http://localhost:6006 in your browser
-```
-
-### 4. Train a Full Model
-
-Once you're comfortable with the setup:
-
-```bash
-# Train a full DiT model
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --architecture dit \
-    --hidden 512 \
-    --depth 8 \
-    --heads 8 \
-    --scheduler cosine \
-    --epochs 100 \
-    --batch-size 8 \
-    --experiment-name "full_dit_model"
-```
-
-## Generating Your First Events
-
-### 1. Generate Events
-
-```bash
-# Generate 100 events using your trained model
-python scripts/sample.py \
-    --checkpoint checkpoints/my_first_training_best.pt \
-    --num-events 100 \
-    --output generated_events.h5
-```
-
-### 2. Generate with Visualization
-
-```bash
-# Generate events with automatic visualization
-python scripts/sample.py \
-    --checkpoint checkpoints/my_first_training_best.pt \
-    --num-events 10 \
-    --output generated_events.h5 \
-    --visualize-batch \
-    --max-visualize 4
-```
-
-## Visualizing Results
-
-### 1. 3D Event Visualization
-
-The generated events are automatically visualized in 3D using the npz-show-event.py format:
-
-```python
-from utils.visualization import create_event_visualizer
-
-# Create visualizer
-visualizer = create_event_visualizer()
-
-# Visualize a single event
-fig, ax = visualizer.visualize_event(
-    pmt_signals, event_conditions, 
-    output_path="my_event.png"
-)
-```
-
-### 2. Batch Visualization
-
-```python
-# Visualize multiple events
-visualizer.visualize_batch(
-    pmt_signals, event_conditions,
-    output_dir="visualizations/"
-)
-```
-
-### 3. Compare Real vs Generated
-
-```python
-# Compare real and generated events
-visualizer.compare_with_real(
-    real_signals, generated_signals,
-    real_conditions, generated_conditions,
-    output_path="comparison.png"
-)
-```
-
-## Next Steps
-
-### 1. Experiment with Different Architectures
-
-```bash
-# Compare different architectures
-python scripts/analysis/compare_architectures.py \
-    --data-path /path/to/your/data.h5 \
-    --architectures dit cnn hybrid
-```
-
-### 2. Try Different Schedulers
-
-```bash
-# Train with different schedulers
-python scripts/train.py --data-path /path/to/your/data.h5 --scheduler cosine
-python scripts/train.py --data-path /path/to/your/data.h5 --scheduler plateau
-python scripts/train.py --data-path /path/to/your/data.h5 --scheduler step
-```
-
-### 3. Advanced Training
-
-```bash
-# Use mixed precision training
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --use-amp \
-    --batch-size 16
-
-# Use early stopping to prevent overfitting
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --early-stopping \
-    --early-stopping-patience 20
-
-# Use Weights & Biases for experiment tracking
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --use-wandb \
-    --wandb-project "icecube-diffusion"
-```
-
-### 4. Evaluate Your Model
-
-```bash
-# Evaluate generated events
-python evaluate.py \
-    --real-data /path/to/your/data.h5 \
-    --generated-data generated_events.h5 \
-    --output evaluation_report.png
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. **Out of Memory (OOM)**
-
-```bash
-# Reduce batch size
-python scripts/train.py --data-path /path/to/your/data.h5 --batch-size 4
-
-# Use smaller model
-python scripts/train.py --data-path /path/to/your/data.h5 --architecture cnn --hidden 128
-
-# Enable mixed precision
-python scripts/train.py --data-path /path/to/your/data.h5 --use-amp
-```
-
-#### 2. **Data Loading Issues**
-
-```bash
-# Check your data format
-python -c "
-import h5py
-with h5py.File('/path/to/your/data.h5', 'r') as f:
-    print('Keys:', list(f.keys()))
-    for key in f.keys():
-        print(f'{key}: {f[key].shape}')
-"
-```
-
-#### 3. **Training Not Converging**
-
-```bash
-# Try different learning rate
-python scripts/train.py --data-path /path/to/your/data.h5 --lr 1e-4
-
-# Use plateau scheduler
-python scripts/train.py --data-path /path/to/your/data.h5 --scheduler plateau
-
-# Enable debug mode
-python scripts/train.py --data-path /path/to/your/data.h5 --debug --epochs 2
-```
-
-#### 4. **CUDA Issues**
-
-```bash
-# Check CUDA installation
-python -c "import torch; print(torch.cuda.is_available())"
-nvidia-smi
-
-# Force CPU usage
-python scripts/train.py --data-path /path/to/your/data.h5 --device cpu
-```
-
-### Getting Help
-
-1. **Check the Documentation**
-   - `docs/TRAINING.md` - Complete training guide
-   - `docs/TRAINING_EXAMPLES.md` - Training examples
-   - `docs/API.md` - API documentation
-
-2. **Run Examples**
-   - `python example/quick_start.py` - Quick start
-   - `python example/training_example.py` - Training examples
-
-3. **Debug Mode**
-   ```bash
-   python scripts/train.py --data-path /path/to/your/data.h5 --debug
-   ```
-
-## Configuration Files
-
-### Using Configuration Files
-
-Instead of command-line arguments, you can use YAML configuration files:
-
-```bash
-# Use a configuration file
-python scripts/train.py --config configs/default.yaml --data-path /path/to/your/data.h5
-
-# Use architecture-specific configs
-python scripts/train.py --config configs/cnn.yaml --data-path /path/to/your/data.h5
-python scripts/train.py --config configs/hybrid.yaml --data-path /path/to/your/data.h5
-```
-
-### Creating Custom Configurations
-
-```yaml
-# my_config.yaml
-experiment_name: "my_custom_experiment"
-description: "Custom configuration for my research"
-
-model:
-  architecture: "dit"
-  hidden: 384
-  depth: 6
-  heads: 6
-
-training:
-  num_epochs: 150
-  learning_rate: 0.0001
-  scheduler: "cosine"
-  batch_size: 12
-
-data:
-  h5_path: "/path/to/your/data.h5"
-  batch_size: 12
-```
-
-## Best Practices
-
-### 1. **Start Small**
-- Begin with small models and short training runs
-- Use debug mode for initial testing
-- Verify data loading before full training
-
-### 2. **Monitor Training**
-- Use TensorBoard for real-time monitoring
-- Set up Weights & Biases for experiment tracking
-- Save checkpoints frequently
-
-### 3. **Experiment Systematically**
-- Try one change at a time
-- Keep detailed logs of experiments
-- Use meaningful experiment names
-
-### 4. **Validate Results**
-- Always evaluate generated events
-- Compare with real data
-- Use multiple metrics
-
-## Example Workflow
-
-Here's a complete example workflow:
-
-```bash
-# 1. Quick test
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --debug \
-    --epochs 2 \
-    --batch-size 2
-
-# 2. Small model training
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --architecture cnn \
-    --hidden 128 \
-    --depth 4 \
-    --epochs 10 \
-    --experiment-name "small_test"
-
-# 3. Generate events
-python scripts/sample.py \
-    --checkpoint checkpoints/small_test_best.pt \
-    --num-events 50 \
-    --output test_events.h5 \
-    --visualize-batch
-
-# 4. Evaluate results
-python evaluate.py \
-    --real-data /path/to/your/data.h5 \
-    --generated-data test_events.h5 \
-    --output test_evaluation.png
-
-# 5. Full training
-python scripts/train.py \
-    --data-path /path/to/your/data.h5 \
-    --architecture dit \
-    --scheduler cosine \
-    --epochs 100 \
-    --experiment-name "full_model"
-```
-
-## Conclusion
-
-Congratulations! You now have a working GENESIS setup. You've learned how to:
-
-- Install and configure the environment
-- Train diffusion models on neutrino event data
-- Generate new events
-- Visualize results
-- Troubleshoot common issues
-
-For more advanced usage, check out the other documentation files in the `docs/` directory. Happy experimenting with neutrino event generation! 🚀
-
-## Additional Resources
-
-- **Main Documentation**: `docs/TRAINING.md`
-- **Training Examples**: `docs/TRAINING_EXAMPLES.md`
-- **API Reference**: `docs/API.md`
-- **Training Package**: `docs/TRAINING_PACKAGE_SUMMARY.md`
-- **GitHub Repository**: [Your Repository URL]
-- **Issues**: [Your Issues URL]
+- **OS**: Linux (Ubuntu 20.04+ recommended) or macOS
+- **Python**: 3.10 or higher
+- **GPU**: NVIDIA GPU with 8GB+ VRAM (recommended)
+  - Training without GPU is possible but very slow
+- **RAM**: 16GB+ recommended
+- **Storage**: 10GB+ for code, models, and outputs
+
+### Required Software
+
+- Git
+- CUDA 11.8 or 12.x (for GPU support)
+- Micromamba, Conda, or Python venv
 
 ---
 
-*If you encounter any issues or have questions, please check the troubleshooting section above or open an issue on GitHub.*
+## Installation
+
+### Step 1: Clone the Repository
+
+```bash
+cd ~
+git clone https://github.com/yourusername/GENESIS.git
+cd GENESIS
+```
+
+### Step 2: Create Environment
+
+**Option A: Micromamba (Recommended - Fast and Lightweight)**
+
+```bash
+# Install micromamba if not installed
+"${SHELL}" <(curl -L micro.mamba.pm/install.sh)
+
+# Create environment
+micromamba create -f environment.yml
+micromamba activate genesis
+```
+
+**Option B: Conda/Mamba**
+
+```bash
+conda env create -f environment.yml
+conda activate genesis
+```
+
+**Option C: pip + venv**
+
+```bash
+python3.10 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Step 3: Verify Installation
+
+```bash
+# Check Python and PyTorch
+python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+
+# Check CUDA (if available)
+python -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}')"
+
+# If CUDA available, check GPU
+nvidia-smi
+```
+
+**Expected output:**
+```
+PyTorch: 2.0.0+cu118
+CUDA Available: True
+```
+
+---
+
+## Verify Setup
+
+### Quick Test
+
+```bash
+# Test that all imports work
+python -c "
+from models import PMTDit
+from diffusion import GaussianDiffusion
+from dataloader import make_dataloader
+from config import load_config_from_file
+print('✅ All imports successful!')
+"
+```
+
+### GPU Test
+
+```bash
+# Run quick GPU check
+python gpu_tools/gpu_optimizer.py --mode quick
+```
+
+This will:
+- Detect your GPU
+- Show available memory
+- Estimate optimal batch size
+
+---
+
+## Prepare Your Data
+
+GENESIS expects HDF5 files with IceCube neutrino event data.
+
+### Data Format
+
+Your HDF5 file should contain:
+
+```python
+{
+    'input': (N, 2, 5160),  # [charge, time] for 5160 PMTs
+    'label': (N, 6),        # [Energy, Zenith, Azimuth, X, Y, Z]
+    'xpmt': (5160,),        # PMT x-coordinates
+    'ypmt': (5160,),        # PMT y-coordinates
+    'zpmt': (5160,),        # PMT z-coordinates
+}
+```
+
+### Check Your Data
+
+```bash
+# View data statistics
+python utils/h5_stats.py ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5
+
+# Visualize a few events
+python utils/h5_reader.py ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5 --show-plots
+```
+
+---
+
+## Your First Training
+
+### Step 1: Create a Training Task
+
+```bash
+# Create task folder for today
+./tasks/create_task.sh 0921_initial_training
+```
+
+This creates a self-contained task folder:
+```
+tasks/0921_initial_training/
+├── config.yaml          # Configuration
+├── run.sh               # Training script
+├── README.md            # Task documentation
+├── logs/                # Will contain training logs
+└── outputs/             # Will contain all outputs
+```
+
+### Step 2: Review Configuration (Optional)
+
+```bash
+cd tasks/0921_initial_training
+cat config.yaml
+```
+
+Key parameters to check:
+```yaml
+data:
+  h5_path: "~/GENESIS/GENESIS-data/22644_0921_time_shift.h5"  # Your data path
+  batch_size: 512
+  num_workers: 40
+
+training:
+  num_epochs: 100
+  learning_rate: 0.0001
+  early_stopping_patience: 5
+
+model:
+  hidden: 16              # Start small for testing
+  depth: 3
+```
+
+**For fast testing:** Use `testing.yaml` config (trains on 10% of data):
+```bash
+cd ..
+./tasks/create_task.sh 0921_quick_test testing
+cd tasks/0921_quick_test
+```
+
+### Step 3: Run Training
+
+```bash
+bash run.sh
+```
+
+You'll see output like:
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 GENESIS Training: 0921_initial_training
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 Loading data from ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5
+🏗️  Creating model: dit
+🚀 Initializing trainer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️  Configuration Loaded
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Model Config:
+  Architecture: dit
+  Hidden: 16, Depth: 3
+  
+Training Config:
+  Epochs: 100
+  Batch size: 512
+  Learning rate: 0.0001
+  
+🎯 Starting training...
+
+Epoch 1/100: 100%|██████████| 28/28 [00:45<00:00,  1.61s/it]
+  Train Loss: 1.2341
+  Val Loss:   1.2456
+  ...
+```
+
+### Step 4: Wait for Training to Complete
+
+Training time depends on:
+- **Data size**: 10% data = ~10 min/epoch, 100% data = ~2 hours/epoch
+- **Model size**: Small (hidden=16) fast, Large (hidden=512) slow
+- **GPU**: RTX 3090 faster than GTX 1080
+- **Early stopping**: May finish before 100 epochs
+
+**Estimated times** (RTX 3090, batch_size=512):
+- Small model (hidden=16, depth=3): ~1 min/epoch
+- Default model (hidden=512, depth=8): ~10 min/epoch
+
+---
+
+## Monitor Training
+
+### Real-time Logs
+
+```bash
+# In another terminal, navigate to your task folder
+cd tasks/0921_initial_training
+
+# Watch training progress
+tail -f logs/train.log
+```
+
+### TensorBoard
+
+```bash
+# Launch TensorBoard
+tensorboard --logdir logs/tensorboard --port 6006
+
+# Open browser to: http://localhost:6006
+```
+
+TensorBoard shows:
+- Training and validation loss curves
+- Learning rate schedule
+- Sample quality over time (if enabled)
+
+### Check Outputs
+
+```bash
+# List checkpoints
+ls -lh outputs/checkpoints/
+
+# View generated samples (created at end of training)
+ls outputs/evaluation/
+```
+
+---
+
+## Generate Samples
+
+Once training is complete, generate samples from your model:
+
+### Basic Sampling
+
+```bash
+python ../../scripts/sample.py \
+    --config config.yaml \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --n-samples 10 \
+    --output-dir outputs/samples
+```
+
+This creates:
+```
+outputs/samples/
+├── sample_0000.npz       # Event data
+├── sample_0000_3d.png    # 3D visualization
+├── sample_0001.npz
+├── sample_0001_3d.png
+...
+```
+
+### View 3D Visualizations
+
+```bash
+# Open PNG files directly
+open outputs/samples/sample_0000_3d.png
+
+# Or create interactive 3D plot
+python ../../utils/npz_show_event.py -i outputs/samples/sample_0000.npz
+```
+
+### Advanced Sampling
+
+```bash
+# Generate many samples
+python ../../scripts/sample.py \
+    --config config.yaml \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --n-samples 100 \
+    --output-dir outputs/samples_large
+
+# Generate with specific random seed (reproducible)
+python ../../scripts/sample.py \
+    --config config.yaml \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --n-samples 20 \
+    --seed 42
+```
+
+---
+
+## Next Steps
+
+### 1. Experiment with Different Configurations
+
+```bash
+# Try different schedulers
+./tasks/create_task.sh 0922_cosine_schedule cosine
+
+# Try different model sizes
+# Edit config.yaml: hidden: 256, depth: 6
+
+# Try different learning rates
+# Edit config.yaml: learning_rate: 0.0002
+```
+
+### 2. Optimize GPU Usage
+
+```bash
+# Find optimal batch size and workers
+python gpu_tools/gpu_optimizer.py --mode full
+
+# This creates: gpu_tools/benchmark/results/optimized_config.yaml
+# Copy settings to your task config
+```
+
+### 3. Train Longer
+
+```bash
+# Edit config.yaml
+num_epochs: 200
+early_stopping_patience: 10
+
+# Resume from checkpoint
+# Edit run.sh, add to train.py arguments:
+--resume outputs/checkpoints/checkpoint_epoch_100.pth
+```
+
+### 4. Evaluate Model Quality
+
+```bash
+# Compare generated vs real events
+python scripts/analysis/evaluate.py \
+    --config config.yaml \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --n-samples 1000
+
+# Analyze distributions
+python scripts/analysis/analyze_diffusion.py \
+    --real-data ~/data/22644_0921_time_shift.h5 \
+    --generated-samples outputs/samples/
+```
+
+### 5. Advanced Training
+
+See detailed guides:
+- [Training Guide](TRAINING.md) - Advanced training techniques
+- [GPU Optimization](../gpu_tools/README.md) - Maximize performance
+- [API Documentation](API.md) - Code reference
+
+---
+
+## Troubleshooting
+
+### Issue: CUDA Not Available
+
+```bash
+# Check CUDA installation
+nvidia-smi
+
+# Reinstall PyTorch with CUDA
+pip uninstall torch torchvision torchaudio
+pip install torch==2.0.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+### Issue: Out of Memory (OOM)
+
+```bash
+# Reduce batch size
+# Edit config.yaml:
+batch_size: 256  # Instead of 512
+
+# Reduce model size
+hidden: 128  # Instead of 512
+depth: 4     # Instead of 8
+
+# Reduce workers
+num_workers: 20  # Instead of 40
+```
+
+### Issue: NaN Loss
+
+Check:
+1. **Data quality**: `python utils/h5_stats.py your_data.h5`
+2. **Learning rate**: Try `learning_rate: 0.00005` (lower)
+3. **Normalization**: Check `affine_scales` in config
+4. **Mixed precision**: Set `use_amp: false` in config
+
+### Issue: Slow Training
+
+```bash
+# Check GPU utilization
+nvidia-smi -l 1  # Updates every second
+
+# If GPU usage < 80%:
+# 1. Increase batch size
+# 2. Increase num_workers
+# 3. Check I/O bottleneck: python gpu_tools/gpu_optimizer.py --mode quick
+```
+
+### Issue: "ModuleNotFoundError"
+
+```bash
+# Ensure you're in project root
+cd ~/GENESIS
+
+# Clear Python cache
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
+
+# Verify imports
+python -c "from models import PMTDit; print('✅ OK')"
+```
+
+---
+
+## Quick Reference
+
+### Common Commands
+
+```bash
+# Create new task
+./tasks/create_task.sh TASK_NAME [CONFIG] [DATA_PATH]
+
+# Run training
+cd tasks/TASK_NAME && bash run.sh
+
+# Monitor logs
+tail -f tasks/TASK_NAME/logs/train.log
+
+# TensorBoard
+tensorboard --logdir tasks/TASK_NAME/logs/tensorboard
+
+# Generate samples
+python scripts/sample.py --config CONFIG --checkpoint CHECKPOINT --n-samples N
+
+# View 3D event
+python utils/npz_show_event.py -i sample.npz
+
+# GPU optimization
+python gpu_tools/gpu_optimizer.py --mode [quick|full]
+```
+
+### Directory Structure
+
+```
+GENESIS/
+├── tasks/                    # Your experiments
+│   └── YYYYMMDD_name/        # Each experiment is self-contained
+│       ├── config.yaml       # Configuration
+│       ├── run.sh            # Run script
+│       ├── logs/             # Training logs
+│       └── outputs/          # All outputs (checkpoints, samples, plots)
+├── scripts/                  # Main entry points
+│   ├── train.py              # Training
+│   └── sample.py             # Sampling
+├── configs/                  # Preset configurations
+└── docs/                     # Documentation
+```
+
+---
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/GENESIS/issues)
+- **Email**: pmj032400@naver.com
+- **Documentation**: See `docs/` folder
+
+---
+
+**Congratulations!** 🎉 You've completed the getting started guide. Happy training!

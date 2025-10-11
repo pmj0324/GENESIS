@@ -9,6 +9,7 @@ format for displaying generated and real neutrino events.
 
 from __future__ import annotations
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,7 +17,67 @@ from matplotlib import colormaps
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from typing import Optional, Tuple, Union, List
+from pathlib import Path
 import torch
+
+
+def create_3d_event_plot(
+    npz_path: Union[str, Path],
+    output_path: Optional[Union[str, Path]] = None,
+    detector_csv: Optional[str] = None,
+    show: bool = False,
+    **kwargs
+):
+    """
+    Create a 3D visualization of an event from NPZ file.
+    
+    This is a wrapper around npz_show_event.show_event() for easy integration.
+    
+    Args:
+        npz_path: Path to NPZ file with 'input' and 'label' keys
+        output_path: Path to save the plot (PNG/PDF/SVG). If None, doesn't save.
+        detector_csv: Path to detector geometry CSV. If None, uses default.
+        show: If True, display the plot with plt.show()
+        **kwargs: Additional arguments passed to show_event()
+    
+    Returns:
+        (fig, ax): matplotlib Figure and Axes3D objects
+        
+    Example:
+        >>> create_3d_event_plot(
+        ...     "outputs/samples/sample_0000.npz",
+        ...     "outputs/samples/sample_0000_3d.png"
+        ... )
+    """
+    # Import npz_show_event module
+    try:
+        from utils.npz_show_event import show_event
+    except ImportError:
+        # Try relative import
+        import sys
+        from pathlib import Path
+        utils_dir = Path(__file__).parent
+        sys.path.insert(0, str(utils_dir))
+        from npz_show_event import show_event
+    
+    # Default detector CSV path
+    if detector_csv is None:
+        detector_csv = str(Path(__file__).parent / "csv" / "detector_geometry.csv")
+    
+    # Call show_event
+    fig, ax = show_event(
+        npz_path=str(npz_path),
+        detector_csv=detector_csv,
+        out_path=str(output_path) if output_path else None,
+        **kwargs
+    )
+    
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    
+    return fig, ax
 
 
 class EventVisualizer:
