@@ -212,7 +212,7 @@ class PMTDit(nn.Module):
         label_offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),  # [Energy, Zenith, Azimuth, X, Y, Z]
         label_scales = (5e7, 1.0, 1.0, 600.0, 550.0, 550.0),
         # Data preprocessing settings
-        time_transform: str = "ln",  # "ln" or "log10" - always use log(1+x)
+        time_transform = "ln",  # "ln" or "log10" - always use log(1+x)
     ):
         super().__init__()
         self.seq_len = seq_len
