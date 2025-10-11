@@ -667,9 +667,9 @@ class Trainer:
             # Get validation loss if available
             if (epoch + 1) % self.config.training.eval_interval == 0:
                 val_loss = eval_metrics.get('eval/loss', 0.0)
-                val_loss_str = f"val_loss={val_loss:.6f}"
+                val_loss_str = f"{val_loss:.6f}"
             else:
-                val_loss_str = "val_loss=N/A"
+                val_loss_str = "N/A"
             
             # Early stopping patience info
             if self.early_stopping is not None:
