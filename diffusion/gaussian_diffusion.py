@@ -214,19 +214,52 @@ class GaussianDiffusion(nn.Module):
         label: torch.Tensor, 
         geom: torch.Tensor, 
         shape: Tuple[int, int, int],
-        return_all_timesteps: bool = False
+        return_all_timesteps: bool = False,
+        denormalize: bool = False
     ) -> torch.Tensor:
         """
         DDPM sampling: generate samples from p(x|c).
         
+        ⚠️ IMPORTANT: Reverse diffusion operates in NORMALIZED space!
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        The reverse diffusion process (T → 0) happens ENTIRELY in normalized space.
+        
+        Step-by-step process:
+        1. x_T ~ N(0, I)                    [normalized space]
+        2. for t in T-1 → 0:
+               x_t → model → eps_hat        [normalized space]
+               x_{t-1} = ddpm_update(x_t)   [normalized space]
+        3. Final x_0                        [normalized space]
+        4. (Optional) Denormalize           [physical units]
+        
+        If denormalize=False (default):
+            Returns x_0 in NORMALIZED space. You must manually denormalize:
+            ```python
+            samples_norm = diffusion.sample(label, geom, shape)
+            norm_params = diffusion.model.get_normalization_params()
+            samples_raw = denormalize_signal(samples_norm, ...)
+            ```
+        
+        If denormalize=True:
+            Automatically denormalizes using model's metadata:
+            ```python
+            samples_raw = diffusion.sample(label, geom, shape, denormalize=True)
+            # Already in physical units (NPE, ns)
+            ```
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
         Args:
-            label: Conditions (B, 6)
-            geom: Geometry (B, 3, L) - kept clean
+            label: Conditions (B, 6) - should be NORMALIZED
+            geom: Geometry (B, 3, L) - should be NORMALIZED
             shape: Output shape (B, 2, L)
             return_all_timesteps: If True, return all intermediate steps
+            denormalize: If True, automatically denormalize using model metadata
         
         Returns:
-            Samples x_0 (B, 2, L) or list of all timesteps if return_all_timesteps=True
+            Samples x_0 (B, 2, L)
+            - If denormalize=False: NORMALIZED space
+            - If denormalize=True: Physical units (NPE, ns)
+            - If return_all_timesteps=True: list of all timesteps
         """
         B, C, L = shape
         assert C == 2 and geom.shape == (B, 3, L), "shape/geom mismatch"
@@ -280,8 +313,69 @@ class GaussianDiffusion(nn.Module):
             if return_all_timesteps:
                 all_samples.append(x)
         
+        # ═══════════════════════════════════════════════════════════════
+        # Denormalization (ONLY at the END, after complete reverse diffusion!)
+        # ═══════════════════════════════════════════════════════════════
+        if denormalize:
+            x = self._denormalize_samples(x)
+            if return_all_timesteps:
+                # Denormalize all timesteps
+                all_samples = [self._denormalize_samples(x_t) for x_t in all_samples]
+        
         if return_all_timesteps:
             return all_samples
+        return x
+    
+    def _denormalize_samples(self, x_norm: torch.Tensor) -> torch.Tensor:
+        """
+        Denormalize samples using model's metadata.
+        
+        Process:
+        1. Get normalization params from model
+        2. Affine inverse: x = (x_norm * scale) + offset
+        3. Time transform inverse: time = exp(time_norm) - 1 or 10^time_norm - 1
+        4. Clamp to prevent overflow
+        
+        Args:
+            x_norm: (B, 2, L) normalized samples
+        
+        Returns:
+            x_raw: (B, 2, L) physical units (NPE, ns)
+        """
+        # Get normalization parameters from model metadata
+        norm_params = self.model.get_normalization_params()
+        
+        offsets = torch.tensor(
+            norm_params['affine_offsets'][:2],  # [charge, time]
+            device=x_norm.device,
+            dtype=x_norm.dtype
+        ).view(1, 2, 1)
+        
+        scales = torch.tensor(
+            norm_params['affine_scales'][:2],  # [charge, time]
+            device=x_norm.device,
+            dtype=x_norm.dtype
+        ).view(1, 2, 1)
+        
+        time_transform = norm_params['time_transform']
+        
+        # Step 1: Affine inverse
+        # x_physical = (x_norm * scale) + offset
+        x = (x_norm * scales) + offsets
+        
+        # Step 2: Time transform inverse (only for time channel)
+        if time_transform == "ln":
+            # Inverse of ln(1+x) is exp(x) - 1
+            x[:, 1, :] = torch.exp(x[:, 1, :]) - 1.0
+        elif time_transform == "log10":
+            # Inverse of log10(1+x) is 10^x - 1
+            x[:, 1, :] = torch.pow(10.0, x[:, 1, :]) - 1.0
+        else:
+            raise ValueError(f"Unknown time_transform: {time_transform}")
+        
+        # Step 3: Clamp time to prevent overflow (exp can produce huge values)
+        x[:, 1, :] = torch.clamp(x[:, 1, :], min=0.0, max=1e8)
+        
         return x
     
     @torch.no_grad()

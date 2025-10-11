@@ -193,11 +193,28 @@ class PMTDit(nn.Module):
       - eps_hat: (B,2,L)   noise prediction for signals
 
     ⚠️ NORMALIZATION POLICY:
-    ---------------------------------
-    - Dataloader에서 정규화 수행 (ln + affine)
-    - Model.forward()는 이미 정규화된 데이터를 받음
-    - affine_* / label_* 파라미터는 메타데이터로만 저장 (샘플링용)
-    - Forward pass에서는 정규화 연산 없음
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    1. Dataloader에서 정규화 수행 (ln + affine)
+    2. Model.forward()는 이미 정규화된 데이터를 받음
+    3. Model.forward()는 정규화를 하지 않음! (성능 최적화)
+    4. affine_* / label_* 파라미터는 METADATA만 저장
+    
+    ❓ 자주 묻는 질문:
+    
+    Q: 왜 Model에 affine 파라미터가 있나요?
+    A: Checkpoint 파일에 정규화 정보를 포함하기 위한 metadata입니다.
+       Forward pass에서는 전혀 사용하지 않습니다!
+       
+    Q: Reverse diffusion 후 denormalization은 자동?
+    A: 아니요! 수동으로 해야 합니다:
+       ```
+       norm_params = model.get_normalization_params()
+       samples_raw = denormalize_signal(samples_norm, 
+                                        norm_params['affine_offsets'],
+                                        norm_params['affine_scales'],
+                                        norm_params['time_transform'])
+       ```
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     channels order = [npe, time, xpmt, ypmt, zpmt]
     """
