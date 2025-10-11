@@ -112,19 +112,25 @@ def denormalize_signal(
             # Forward:  y = ln(1 + x)
             # Inverse:  x = exp(y) - 1
             # Example:  y=0 → x = exp(0) - 1 = 0 (zero time preserved)
+            # NOTE: Clamp to prevent overflow (exp(50) = 5e21, exp(100) = inf)
             if is_torch:
-                time_original = torch.exp(time_channel) - 1.0
+                time_channel_clamped = torch.clamp(time_channel, min=-20, max=20)
+                time_original = torch.exp(time_channel_clamped) - 1.0
             else:
-                time_original = np.exp(time_channel) - 1.0
+                time_channel_clamped = np.clip(time_channel, -20, 20)
+                time_original = np.exp(time_channel_clamped) - 1.0
         elif time_transform == "log10":
             # Inverse of log10(1 + x) is 10^y - 1
             # Forward:  y = log10(1 + x)
             # Inverse:  x = 10^y - 1
             # Example:  y=0 → x = 10^0 - 1 = 0 (zero time preserved)
+            # NOTE: Clamp to prevent overflow (10^20 = 1e20, 10^50 = inf)
             if is_torch:
-                time_original = torch.pow(10.0, time_channel) - 1.0
+                time_channel_clamped = torch.clamp(time_channel, min=-20, max=20)
+                time_original = torch.pow(10.0, time_channel_clamped) - 1.0
             else:
-                time_original = np.power(10.0, time_channel) - 1.0
+                time_channel_clamped = np.clip(time_channel, -20, 20)
+                time_original = np.power(10.0, time_channel_clamped) - 1.0
         else:
             raise ValueError(f"Unknown time_transform: {time_transform}")
         

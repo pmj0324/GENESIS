@@ -25,9 +25,9 @@ def compare_generated_vs_real(
     real_label: torch.Tensor,
     num_samples: int = 4,
     save_dir: Optional[str] = "evaluation",
-    affine_offsets: tuple = (0.0, 0.0, 0.0, 0.0, 0.0),
-    affine_scales: tuple = (100.0, 10.0, 600.0, 550.0, 550.0),
-    time_transform: Optional[str] = "ln"
+    affine_offsets: Optional[tuple] = None,
+    affine_scales: Optional[tuple] = None,
+    time_transform: Optional[str] = None
 ):
     """
     Compare generated samples with real samples.
@@ -39,15 +39,30 @@ def compare_generated_vs_real(
         real_label: Real labels (N, 6)
         num_samples: Number of samples to compare
         save_dir: Directory to save comparison plots
-        affine_offsets: Normalization offsets
-        affine_scales: Normalization scales
-        time_transform: Time transformation type
+        affine_offsets: Normalization offsets (if None, get from model)
+        affine_scales: Normalization scales (if None, get from model)
+        time_transform: Time transformation type (if None, get from model)
     """
     if save_dir:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
     
     device = next(diffusion.parameters()).device
+    
+    # Get normalization parameters from model if not provided
+    if affine_offsets is None or affine_scales is None or time_transform is None:
+        model_offset, model_scale, _, _, model_time_transform, _ = diffusion.get_normalization_params()
+        if affine_offsets is None:
+            affine_offsets = tuple(model_offset.numpy()) if model_offset is not None else (0.0, 0.0, 0.0, 0.0, 0.0)
+        if affine_scales is None:
+            affine_scales = tuple(model_scale.numpy()) if model_scale is not None else (100.0, 10.0, 600.0, 550.0, 550.0)
+        if time_transform is None:
+            time_transform = model_time_transform
+    
+    print(f"\n📊 Using normalization parameters from model:")
+    print(f"  Offsets: {affine_offsets}")
+    print(f"  Scales: {affine_scales}")
+    print(f"  Time transform: {time_transform}")
     N = min(num_samples, real_x_sig.size(0))
     
     # Prepare real samples

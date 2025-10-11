@@ -731,17 +731,14 @@ class Trainer:
             real_batch = next(iter(self.train_loader))
             real_x_sig, real_geom, real_label, _ = real_batch
             
-            # Run comparison
+            # Run comparison (normalization params auto-fetched from model)
             compare_generated_vs_real(
                 self.diffusion,
                 real_x_sig,
                 real_geom,
                 real_label,
                 num_samples=4,
-                save_dir=Path(self.config.training.output_dir) / "final_evaluation",
-                affine_offsets=self.config.model.affine_offsets,
-                affine_scales=self.config.model.affine_scales,
-                time_transform=self.config.model.time_transform
+                save_dir=Path(self.config.training.output_dir) / "final_evaluation"
             )
             
             print("✅ Post-training evaluation complete!")

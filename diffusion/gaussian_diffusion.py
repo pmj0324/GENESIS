@@ -89,6 +89,22 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer("posterior_log_variance_clipped", 
                            torch.log(torch.clamp(posterior_variance, min=1e-20)))
     
+    def get_normalization_params(self):
+        """
+        Get normalization parameters from the model.
+        Returns affine_offset, affine_scale, label_offset, label_scale, time_transform.
+        """
+        if hasattr(self.model, 'affine_offset'):
+            affine_offset = self.model.affine_offset.squeeze().cpu()
+            affine_scale = self.model.affine_scale.squeeze().cpu()
+            label_offset = self.model.label_offset.cpu() if hasattr(self.model, 'label_offset') else None
+            label_scale = self.model.label_scale.cpu() if hasattr(self.model, 'label_scale') else None
+            time_transform = self.model.time_transform if hasattr(self.model, 'time_transform') else None
+            exclude_zero = self.model.exclude_zero_time if hasattr(self.model, 'exclude_zero_time') else True
+            return affine_offset, affine_scale, label_offset, label_scale, time_transform, exclude_zero
+        else:
+            return None, None, None, None, None, True
+    
     def _cosine_beta_schedule(self, timesteps: int, s: float = 0.008) -> torch.Tensor:
         """
         Cosine schedule as proposed in https://arxiv.org/abs/2102.09672
