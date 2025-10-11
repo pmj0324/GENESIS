@@ -20,6 +20,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Import model classes
+from .pmt_dit import PMTDit
+
 
 # =============================================================================
 # Common Components
