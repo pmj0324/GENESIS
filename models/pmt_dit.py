@@ -192,8 +192,14 @@ class PMTDit(nn.Module):
     Output:
       - eps_hat: (B,2,L)   noise prediction for signals
 
-    추가: 채널별 global affine (offset/scale)을 모든 PMT에 동일 적용
-         channels order = [npe, time, xpmt, ypmt, zpmt]
+    ⚠️ NORMALIZATION POLICY:
+    ---------------------------------
+    - Dataloader에서 정규화 수행 (ln + affine)
+    - Model.forward()는 이미 정규화된 데이터를 받음
+    - affine_* / label_* 파라미터는 메타데이터로만 저장 (샘플링용)
+    - Forward pass에서는 정규화 연산 없음
+    
+    channels order = [npe, time, xpmt, ypmt, zpmt]
     """
     def __init__(
         self,
@@ -206,12 +212,12 @@ class PMTDit(nn.Module):
         label_dim: int = 6,
         t_embed_dim: int = 128,
         mlp_ratio: float = 4.0,
-        # 새 인자: 초기 affine 설정 (옵션)
+        # Normalization metadata (NOT used in forward, only for sampling/denormalization)
         affine_offsets = (0.0, 0.0, 0.0, 0.0, 0.0),  # [npe,time,xpmt,ypmt,zpmt]
-        affine_scales  = (1.0, 100000.0, 1.0, 1.0, 1.0),
+        affine_scales  = (1.0, 1.0, 1.0, 1.0, 1.0),   # Default: no normalization
         label_offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),  # [Energy, Zenith, Azimuth, X, Y, Z]
-        label_scales = (5e7, 1.0, 1.0, 600.0, 550.0, 550.0),
-        # Data preprocessing settings
+        label_scales = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),    # Default: no normalization
+        # Data preprocessing settings (metadata only)
         time_transform = "ln",  # "ln" or "log10" - always use log(1+x)
     ):
         super().__init__()
@@ -248,27 +254,35 @@ class PMTDit(nn.Module):
         self.ln_out = nn.LayerNorm(hidden)
         self.out_proj = nn.Linear(hidden, 2)  # (npe,time)만 예측
 
-        # -----------------------------
-        # 새로 추가: per-channel global affine (비학습 버퍼로 등록)
-        # shape: (5,1) -> (1,5,1)로 브로드캐스트되어 (B,5,L)에 적용
-        # -----------------------------
+        # =================================================================
+        # NORMALIZATION METADATA
+        # =================================================================
+        # These parameters are stored for denormalization during sampling.
+        # They are NOT used in forward() - normalization happens in Dataloader.
+        # =================================================================
         off = torch.tensor(affine_offsets, dtype=torch.float32).reshape(5, 1)
         scl = torch.tensor(affine_scales,  dtype=torch.float32).reshape(5, 1)
-        self.register_buffer("affine_offset", off)  # not a parameter (학습 X)
-        self.register_buffer("affine_scale",  scl)
+        self.register_buffer("affine_offset", off)  # metadata (not used in forward)
+        self.register_buffer("affine_scale",  scl)  # metadata (not used in forward)
         
-        # Label normalization parameters
+        # Label normalization parameters (metadata)
         label_off = torch.tensor(label_offsets, dtype=torch.float32)
         label_scl = torch.tensor(label_scales, dtype=torch.float32)
-        self.register_buffer("label_offset", label_off)
-        self.register_buffer("label_scale", label_scl)
+        self.register_buffer("label_offset", label_off)  # metadata
+        self.register_buffer("label_scale", label_scl)   # metadata
 
-    # --------- 새 메소드: affine 설정 ---------
+    # =========================================================================
+    # METADATA MANAGEMENT
+    # =========================================================================
+    
     @torch.no_grad()
     def set_affine(self, offsets, scales):
         """
-        offsets/scales: 길이 5 (npe,time,xpmt,ypmt,zpmt) 의 list/tuple/1D tensor
-        예) model.set_affine(offsets=[0,0,0,0,0], scales=[0.1, 1e-3, 1/500, 1/500, 1/500])
+        Update affine normalization metadata (does NOT affect forward).
+        
+        Args:
+            offsets: Length 5 [npe, time, xpmt, ypmt, zpmt]
+            scales:  Length 5 [npe, time, xpmt, ypmt, zpmt]
         """
         off = torch.as_tensor(offsets, dtype=torch.float32, device=self.affine_offset.device).reshape(5, 1)
         scl = torch.as_tensor(scales,  dtype=torch.float32, device=self.affine_scale.device).reshape(5, 1)
@@ -277,60 +291,79 @@ class PMTDit(nn.Module):
 
     @torch.no_grad()
     def reset_affine(self):
+        """Reset affine parameters to identity (offset=0, scale=1)."""
         self.affine_offset.zero_()
         self.affine_scale.fill_(1.0)
+    
+    def get_normalization_params(self):
+        """
+        Retrieve normalization parameters for denormalization.
+        
+        Returns:
+            dict with keys:
+                - affine_offsets: (5,) numpy array [charge, time, x, y, z]
+                - affine_scales:  (5,) numpy array
+                - label_offsets:  (6,) numpy array [Energy, Zenith, Azimuth, X, Y, Z]
+                - label_scales:   (6,) numpy array
+                - time_transform: str ("ln" or "log10")
+        """
+        return {
+            "affine_offsets": self.affine_offset.squeeze(-1).cpu().numpy(),  # (5,)
+            "affine_scales": self.affine_scale.squeeze(-1).cpu().numpy(),    # (5,)
+            "label_offsets": self.label_offset.cpu().numpy(),                # (6,)
+            "label_scales": self.label_scale.cpu().numpy(),                  # (6,)
+            "time_transform": self.time_transform,
+        }
 
     # ------------------------------------------
-    # forward
+    # forward (No normalization here!)
     # ------------------------------------------
     def forward(self, x_sig_t: torch.Tensor, geom: torch.Tensor, t: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
         """
-        x_sig_t: (B,2,L)
-        geom:    (B,3,L)
-        t:       (B,)
-        label:   (B,6)
-        returns: (B,2,L)
+        Forward pass - expects PRE-NORMALIZED data from dataloader.
+        
+        Args:
+            x_sig_t: (B,2,L) - NORMALIZED signals [charge, time]
+            geom:    (B,3,L) - NORMALIZED geometry [x, y, z]
+            t:       (B,)    - Diffusion timestep
+            label:   (B,6)   - NORMALIZED labels [Energy, Zenith, Azimuth, X, Y, Z]
+        
+        Returns:
+            eps: (B,2,L) - Predicted noise for signals
+        
+        Note: All inputs are already normalized by the dataloader.
+              No normalization is performed here.
         """
         B, Csig, L = x_sig_t.shape
         assert Csig == 2 and L == self.seq_len, f"expected x_sig_t (B,2,{self.seq_len}), got {x_sig_t.shape}"
         assert geom.shape == (B, 3, L), f"expected geom (B,3,{L}), got {geom.shape}"
-
-        # --------- 1) 채널 합쳐서 global affine 적용 ---------
-        # concat -> (B,5,L) in order [npe, time, xpmt, ypmt, zpmt]
-        x5 = torch.cat([x_sig_t, geom], dim=1)  # (B,5,L)
-
-        # broadcast: (5,1) -> (1,5,1) -> (B,5,L)
-        off = self.affine_offset.view(1, 5, 1)
-        scl = self.affine_scale.view(1, 5, 1)
-
-        # Normalization: (x - offset) / scale
-        # This brings raw values to a normalized range (e.g., -2 to 2)
-        x5 = (x5 - off) / scl
-
-        # split back
-        x_sig_t = x5[:, 0:2, :]     # (B,2,L)
-        geom    = x5[:, 2:5, :]     # (B,3,L)
-
-        # --------- 2) Label 정규화 ---------
-        # Normalize labels: (label - offset) / scale
-        label_normalized = (label - self.label_offset) / self.label_scale  # (B, 6)
         
-        # --------- 3) 토큰화/포지션/컨디션 ---------
+        # =================================================================
+        # DATA IS ALREADY NORMALIZED - NO NORMALIZATION HERE
+        # =================================================================
+        # x_sig_t, geom, label are all pre-normalized by the dataloader
+        # We directly use them for model computation
+        # =================================================================
+
+        # --------- 1) 토큰화/포지션/컨디션 ---------
         sig = x_sig_t.transpose(1, 2)   # (B,L,2)
         geo = geom.transpose(1, 2)      # (B,L,3)
 
-        tokens = self.embedder(sig, geo, label_normalized)  # (B,L,H)
+        tokens = self.embedder(sig, geo, label)  # (B,L,H) - label already normalized
         tokens = tokens + self.pos               # learned pos emb
 
         te = timestep_embedding(t, self.t_embed_dim)  # (B,t_dim)
         te = self.t_mlp(te)                           # (B,H/2)
-        ye = self.y_mlp(label_normalized)            # (B,H/2)
+        ye = self.y_mlp(label)                        # (B,H/2) - label already normalized
         cond = torch.cat([te, ye], dim=-1)            # (B,H)
 
+        # --------- 2) Transformer blocks ---------
         h = tokens
         for blk in self.blocks:
             h = blk(h, cond)
         h = self.ln_out(h)
+        
+        # --------- 3) Output projection ---------
         eps = self.out_proj(h).transpose(1, 2)        # (B,2,L)
         return eps
 

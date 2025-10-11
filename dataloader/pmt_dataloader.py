@@ -40,6 +40,11 @@ class PMTSignalsH5(Dataset):
         dtype: np.dtype = np.float32,
         indices: Optional[np.ndarray] = None,  # 서브셋 학습 시 사용
         time_transform: str = "ln",  # "log10" or "ln" - always use log(1+x)
+        # Normalization parameters (applied AFTER time transformation)
+        affine_offsets: Optional[tuple] = None,  # [charge, time, x, y, z]
+        affine_scales: Optional[tuple] = None,   # [charge, time, x, y, z]
+        label_offsets: Optional[tuple] = None,   # [Energy, Zenith, Azimuth, X, Y, Z]
+        label_scales: Optional[tuple] = None,    # [Energy, Zenith, Azimuth, X, Y, Z]
     ):
         super().__init__()
         self.h5_path = os.path.expanduser(h5_path)
@@ -47,6 +52,22 @@ class PMTSignalsH5(Dataset):
         self.channel_first = channel_first
         self.dtype = dtype
         self.time_transform = time_transform
+        
+        # Store normalization parameters
+        # Default: no normalization (offset=0, scale=1)
+        self.affine_offsets = np.array(affine_offsets if affine_offsets is not None 
+                                       else [0.0, 0.0, 0.0, 0.0, 0.0], dtype=self.dtype)
+        self.affine_scales = np.array(affine_scales if affine_scales is not None 
+                                      else [1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype)
+        self.label_offsets = np.array(label_offsets if label_offsets is not None 
+                                      else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=self.dtype)
+        self.label_scales = np.array(label_scales if label_scales is not None 
+                                     else [1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype)
+        
+        # Reshape for broadcasting: (5,) -> (5, 1) for signals+geom
+        self.affine_offsets = self.affine_offsets.reshape(5, 1)
+        self.affine_scales = self.affine_scales.reshape(5, 1)
+        # Labels: (6,) stays (6,) for per-label normalization
 
         # 파일 메타만 먼저 확인 (빠르게)
         with h5py.File(self.h5_path, "r", swmr=True, libver="latest") as f:
@@ -119,12 +140,35 @@ class PMTSignalsH5(Dataset):
         with h5py.File(self.h5_path, "r", swmr=True, libver="latest") as f:
             x_sig_np, y_np = self._read_event(f, real_i)
 
+        # ================================================================
+        # NORMALIZATION APPLIED HERE (once per sample, not per batch)
+        # ================================================================
+        # At this point:
+        #   x_sig_np: (2, L) - [charge_raw, time_transformed]
+        #              - charge is raw NPE
+        #              - time is ln(1+time) or log10(1+time)
+        #   geom_np:  (3, L) - [x, y, z] in raw scale
+        #   y_np:     (6,)   - [Energy, Zenith, Azimuth, X, Y, Z] in raw scale
+        
+        # Concatenate signal + geom -> (5, L)
+        geom_np = self.geom_np  # (3, L)
+        x5_np = np.concatenate([x_sig_np, geom_np], axis=0)  # (5, L)
+        
+        # Apply affine normalization: (x - offset) / scale
+        # Broadcast: (5, 1) with (5, L) -> (5, L)
+        x5_np = (x5_np - self.affine_offsets) / self.affine_scales
+        
+        # Split back
+        x_sig_np = x5_np[0:2, :]  # (2, L)
+        geom_np = x5_np[2:5, :]   # (3, L)
+        
+        # Normalize labels: (6,) - (6,) / (6,) -> (6,)
+        y_np = (y_np - self.label_offsets) / self.label_scales
+        # ================================================================
+
         if not self.channel_first:
             # (L, 2) 로 바꿔달라는 경우
             x_sig_np = np.transpose(x_sig_np, (1, 0))
-
-        # geom은 캐시된 것 사용
-        geom_np = self.geom_np  # (3, L)
 
         x_sig = torch.from_numpy(x_sig_np)     # (2, L) or (L,2)
         geom  = torch.from_numpy(geom_np)      # (3, L)
@@ -287,6 +331,10 @@ def make_dataloader(
     channel_first: bool = True,
     indices: Optional[np.ndarray] = None,
     time_transform: str = "ln",  # "log10" or "ln" - always use log(1+x)
+    affine_offsets: Optional[tuple] = None,
+    affine_scales: Optional[tuple] = None,
+    label_offsets: Optional[tuple] = None,
+    label_scales: Optional[tuple] = None,
 ) -> DataLoader:
     ds = PMTSignalsH5(
         h5_path=h5_path,
@@ -294,6 +342,10 @@ def make_dataloader(
         channel_first=channel_first,
         indices=indices,
         time_transform=time_transform,
+        affine_offsets=affine_offsets,
+        affine_scales=affine_scales,
+        label_offsets=label_offsets,
+        label_scales=label_scales,
     )
     return DataLoader(
         ds,

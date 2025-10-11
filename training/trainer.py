@@ -247,6 +247,18 @@ class Trainer:
         val_indices = indices[train_size:train_size + val_size]
         test_indices = indices[train_size + val_size:train_size + val_size + test_size]
         
+        # =================================================================
+        # NORMALIZATION PARAMETERS
+        # =================================================================
+        # Normalization happens in Dataloader. Get params from data config.
+        # =================================================================
+        # Prefer data config, fall back to model config
+        time_transform = getattr(self.config.data, 'time_transform', self.config.model.time_transform)
+        affine_offsets = getattr(self.config.data, 'affine_offsets', self.config.model.affine_offsets)
+        affine_scales = getattr(self.config.data, 'affine_scales', self.config.model.affine_scales)
+        label_offsets = getattr(self.config.data, 'label_offsets', self.config.model.label_offsets)
+        label_scales = getattr(self.config.data, 'label_scales', self.config.model.label_scales)
+        
         # Create data loaders
         self.train_loader = make_dataloader(
             h5_path=self.config.data.h5_path,
@@ -257,7 +269,11 @@ class Trainer:
             replace_time_inf_with=self.config.data.replace_time_inf_with,
             channel_first=self.config.data.channel_first,
             indices=train_indices,
-            time_transform=self.config.model.time_transform,
+            time_transform=time_transform,
+            affine_offsets=affine_offsets,
+            affine_scales=affine_scales,
+            label_offsets=label_offsets,
+            label_scales=label_scales,
         )
         
         self.val_loader = make_dataloader(
@@ -269,7 +285,11 @@ class Trainer:
             replace_time_inf_with=self.config.data.replace_time_inf_with,
             channel_first=self.config.data.channel_first,
             indices=val_indices,
-            time_transform=self.config.model.time_transform,
+            time_transform=time_transform,
+            affine_offsets=affine_offsets,
+            affine_scales=affine_scales,
+            label_offsets=label_offsets,
+            label_scales=label_scales,
         )
         
         self.test_loader = make_dataloader(
@@ -281,7 +301,11 @@ class Trainer:
             replace_time_inf_with=self.config.data.replace_time_inf_with,
             channel_first=self.config.data.channel_first,
             indices=test_indices,
-            time_transform=self.config.model.time_transform,
+            time_transform=time_transform,
+            affine_offsets=affine_offsets,
+            affine_scales=affine_scales,
+            label_offsets=label_offsets,
+            label_scales=label_scales,
         )
         
         # Calculate statistics

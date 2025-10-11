@@ -111,7 +111,21 @@ class DiffusionConfig:
 
 @dataclass
 class DataConfig:
-    """Configuration for data loading and preprocessing."""
+    """
+    Configuration for data loading and preprocessing.
+    
+    NORMALIZATION POLICY:
+    ---------------------
+    Normalization is applied in the Dataloader, not in the model.
+    
+    Pipeline:
+    1. Load raw data from HDF5
+    2. Apply time transform: ln(1+x) or log10(1+x)
+    3. Apply affine normalization: (x - offset) / scale
+    4. Return normalized data to model
+    
+    The model stores these parameters as metadata for denormalization.
+    """
     
     # Data paths
     h5_path: str = "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
@@ -131,6 +145,20 @@ class DataConfig:
     val_ratio: float = 0.1
     test_ratio: float = 0.1
     
+    # =========================================================================
+    # NORMALIZATION PARAMETERS - Applied in Dataloader
+    # =========================================================================
+    time_transform: str = "ln"  # "ln" or "log10" - always log(1+x)
+    
+    # Affine: [charge, time, x, y, z] - Formula: (x - offset) / scale
+    affine_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)
+    affine_scales: Tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0)
+    
+    # Labels: [Energy, Zenith, Azimuth, X, Y, Z]
+    label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    label_scales: Tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    # =========================================================================
+    
     def __post_init__(self):
         """Convert all parameters to proper types."""
         self.h5_path = str(self.h5_path)
@@ -144,6 +172,18 @@ class DataConfig:
         self.train_ratio = float(self.train_ratio)
         self.val_ratio = float(self.val_ratio)
         self.test_ratio = float(self.test_ratio)
+        
+        # Normalization parameters
+        self.time_transform = str(self.time_transform)
+        # Convert tuples to lists if needed (YAML compatibility)
+        if isinstance(self.affine_offsets, list):
+            self.affine_offsets = tuple(float(x) for x in self.affine_offsets)
+        if isinstance(self.affine_scales, list):
+            self.affine_scales = tuple(float(x) for x in self.affine_scales)
+        if isinstance(self.label_offsets, list):
+            self.label_offsets = tuple(float(x) for x in self.label_offsets)
+        if isinstance(self.label_scales, list):
+            self.label_scales = tuple(float(x) for x in self.label_scales)
 
 
 @dataclass

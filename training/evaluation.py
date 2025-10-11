@@ -51,13 +51,13 @@ def compare_generated_vs_real(
     
     # Get normalization parameters from model if not provided
     if affine_offsets is None or affine_scales is None or time_transform is None:
-        model_offset, model_scale, _, _, model_time_transform = diffusion.get_normalization_params()
+        norm_params = diffusion.get_normalization_params()
         if affine_offsets is None:
-            affine_offsets = tuple(model_offset.numpy()) if model_offset is not None else (0.0, 0.0, 0.0, 0.0, 0.0)
+            affine_offsets = tuple(norm_params['affine_offsets'])
         if affine_scales is None:
-            affine_scales = tuple(model_scale.numpy()) if model_scale is not None else (100.0, 10.0, 600.0, 550.0, 550.0)
+            affine_scales = tuple(norm_params['affine_scales'])
         if time_transform is None:
-            time_transform = model_time_transform
+            time_transform = norm_params['time_transform']
     
     print(f"\n📊 Using normalization parameters from model:")
     print(f"  Offsets: {affine_offsets}")
@@ -89,15 +89,18 @@ def compare_generated_vs_real(
     
     print(f"✅ Generated {N} samples")
     
-    # Process real data: Only reverse time transformation (no affine denormalization needed)
-    # Real data from dataloader is already in raw scale, only time is ln/log10 transformed
-    real_denorm = real_x_sig.clone()
-    if time_transform == "ln":
-        # Reverse: exp(y) - 1
-        real_denorm[:, 1, :] = torch.exp(real_denorm[:, 1, :]) - 1.0
-    elif time_transform == "log10":
-        # Reverse: 10^y - 1
-        real_denorm[:, 1, :] = torch.pow(10.0, real_denorm[:, 1, :]) - 1.0
+    # =================================================================
+    # DENORMALIZATION
+    # =================================================================
+    # Both real and generated data come normalized from dataloader/model.
+    # Apply: affine inverse + time inverse transformation.
+    # =================================================================
+    
+    # Denormalize real data: Full denormalization (affine + time transform)
+    real_denorm = denormalize_signal(
+        real_x_sig, affine_offsets, affine_scales,
+        time_transform=time_transform, channels="signal"
+    )
     
     # Denormalize generated data: Full denormalization (affine + time transform)
     generated_denorm = denormalize_signal(
