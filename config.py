@@ -54,6 +54,32 @@ class ModelConfig:
     # Time transformation
     time_transform: Optional[str] = "ln"  # "log10", "ln", None
     exclude_zero_time: bool = True  # Exclude zero time values (recommended for log transforms)
+    
+    def __post_init__(self):
+        """Convert all parameters to proper types."""
+        # Architecture
+        self.architecture = str(self.architecture)
+        self.seq_len = int(self.seq_len)
+        self.hidden = int(self.hidden)
+        self.depth = int(self.depth)
+        self.heads = int(self.heads)
+        self.dropout = float(self.dropout)
+        self.fusion = str(self.fusion)
+        
+        # Conditioning
+        self.label_dim = int(self.label_dim)
+        self.t_embed_dim = int(self.t_embed_dim)
+        self.mlp_ratio = float(self.mlp_ratio)
+        
+        # CNN/Conv
+        self.kernel_size = int(self.kernel_size)
+        
+        # Time transformation
+        if self.time_transform and self.time_transform not in ["null", "None", ""]:
+            self.time_transform = str(self.time_transform)
+        else:
+            self.time_transform = None
+        self.exclude_zero_time = bool(self.exclude_zero_time) if not isinstance(self.exclude_zero_time, bool) else self.exclude_zero_time
 
 
 @dataclass
@@ -70,6 +96,17 @@ class DiffusionConfig:
     use_cfg: bool = True       # Use classifier-free guidance
     cfg_scale: float = 2.0     # Guidance scale (1.0 = no guidance, higher = stronger)
     cfg_dropout: float = 0.1   # Probability of dropping condition during training
+    
+    def __post_init__(self):
+        """Convert all parameters to proper types."""
+        self.timesteps = int(self.timesteps)
+        self.beta_start = float(self.beta_start)
+        self.beta_end = float(self.beta_end)
+        self.objective = str(self.objective)
+        self.schedule = str(self.schedule)
+        self.use_cfg = bool(self.use_cfg) if not isinstance(self.use_cfg, bool) else self.use_cfg
+        self.cfg_scale = float(self.cfg_scale)
+        self.cfg_dropout = float(self.cfg_dropout)
 
 
 @dataclass
@@ -93,6 +130,20 @@ class DataConfig:
     train_ratio: float = 0.8
     val_ratio: float = 0.1
     test_ratio: float = 0.1
+    
+    def __post_init__(self):
+        """Convert all parameters to proper types."""
+        self.h5_path = str(self.h5_path)
+        if self.replace_time_inf_with is not None:
+            self.replace_time_inf_with = float(self.replace_time_inf_with)
+        self.channel_first = bool(self.channel_first) if not isinstance(self.channel_first, bool) else self.channel_first
+        self.batch_size = int(self.batch_size)
+        self.num_workers = int(self.num_workers)
+        self.pin_memory = bool(self.pin_memory) if not isinstance(self.pin_memory, bool) else self.pin_memory
+        self.shuffle = bool(self.shuffle) if not isinstance(self.shuffle, bool) else self.shuffle
+        self.train_ratio = float(self.train_ratio)
+        self.val_ratio = float(self.val_ratio)
+        self.test_ratio = float(self.test_ratio)
 
 
 @dataclass
@@ -165,6 +216,85 @@ class TrainingConfig:
     # Debugging
     debug_mode: bool = False
     detect_anomaly: bool = False
+    
+    def __post_init__(self):
+        """Convert all parameters to proper types (YAML sometimes parses as strings)."""
+        # Training parameters
+        self.num_epochs = int(self.num_epochs)
+        self.learning_rate = float(self.learning_rate)
+        self.weight_decay = float(self.weight_decay)
+        self.grad_clip_norm = float(self.grad_clip_norm)
+        
+        # Optimizer and scheduler
+        self.optimizer = str(self.optimizer) if self.optimizer else "AdamW"
+        self.scheduler = str(self.scheduler) if self.scheduler and self.scheduler not in ["null", "None", ""] else None
+        self.warmup_steps = int(self.warmup_steps)
+        self.warmup_ratio = float(self.warmup_ratio)
+        
+        # Cosine scheduler
+        if self.cosine_t_max is not None:
+            self.cosine_t_max = int(self.cosine_t_max)
+        
+        # Plateau scheduler
+        self.plateau_patience = int(self.plateau_patience)
+        self.plateau_factor = float(self.plateau_factor)
+        self.plateau_min_lr = float(self.plateau_min_lr)
+        self.plateau_mode = str(self.plateau_mode)
+        self.plateau_threshold = float(self.plateau_threshold)
+        self.plateau_cooldown = int(self.plateau_cooldown)
+        self.plateau_verbose = bool(self.plateau_verbose) if not isinstance(self.plateau_verbose, bool) else self.plateau_verbose
+        
+        # Step scheduler
+        self.step_size = int(self.step_size)
+        self.step_gamma = float(self.step_gamma)
+        
+        # Linear scheduler
+        self.linear_start_factor = float(self.linear_start_factor)
+        self.linear_end_factor = float(self.linear_end_factor)
+        
+        # Early stopping
+        self.early_stopping = bool(self.early_stopping) if not isinstance(self.early_stopping, bool) else self.early_stopping
+        self.early_stopping_patience = int(self.early_stopping_patience)
+        self.early_stopping_min_delta = float(self.early_stopping_min_delta)
+        self.early_stopping_mode = str(self.early_stopping_mode)
+        # Handle baseline
+        if self.early_stopping_baseline is not None and self.early_stopping_baseline not in ["null", "None", ""]:
+            try:
+                self.early_stopping_baseline = float(self.early_stopping_baseline)
+            except (ValueError, TypeError):
+                self.early_stopping_baseline = None
+        else:
+            self.early_stopping_baseline = None
+        self.early_stopping_restore_best = bool(self.early_stopping_restore_best) if not isinstance(self.early_stopping_restore_best, bool) else self.early_stopping_restore_best
+        self.early_stopping_verbose = bool(self.early_stopping_verbose) if not isinstance(self.early_stopping_verbose, bool) else self.early_stopping_verbose
+        
+        # Logging and checkpointing
+        self.log_interval = int(self.log_interval)
+        self.save_interval = int(self.save_interval)
+        self.eval_interval = int(self.eval_interval)
+        self.save_best_only = bool(self.save_best_only) if not isinstance(self.save_best_only, bool) else self.save_best_only
+        
+        # Output directories
+        self.output_dir = str(self.output_dir)
+        self.checkpoint_dir = str(self.checkpoint_dir)
+        self.log_dir = str(self.log_dir)
+        
+        # Resume training
+        if self.resume_from_checkpoint and self.resume_from_checkpoint not in ["null", "None", ""]:
+            self.resume_from_checkpoint = str(self.resume_from_checkpoint)
+        else:
+            self.resume_from_checkpoint = None
+        
+        # Mixed precision
+        self.use_amp = bool(self.use_amp) if not isinstance(self.use_amp, bool) else self.use_amp
+        
+        # Advanced features
+        self.gradient_accumulation_steps = int(self.gradient_accumulation_steps)
+        self.max_grad_norm = float(self.max_grad_norm)
+        
+        # Debugging
+        self.debug_mode = bool(self.debug_mode) if not isinstance(self.debug_mode, bool) else self.debug_mode
+        self.detect_anomaly = bool(self.detect_anomaly) if not isinstance(self.detect_anomaly, bool) else self.detect_anomaly
 
 
 @dataclass

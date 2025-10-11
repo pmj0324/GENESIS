@@ -517,9 +517,37 @@ class Trainer:
         }
     
     def evaluate(self) -> Dict[str, float]:
-        """Evaluate model (placeholder for now)."""
-        # TODO: Implement proper evaluation
-        return {'eval/loss': 0.0}
+        """Evaluate model on validation set."""
+        self.model.eval()
+        
+        val_losses = []
+        
+        with torch.no_grad():
+            for x_sig, geom, label, idx in self.val_loader:
+                # Move to device
+                x_sig = x_sig.to(self.device)
+                geom = geom.to(self.device)
+                label = label.to(self.device)
+                
+                # Handle geometry shape
+                if geom.ndim == 2:  # (3, L)
+                    geom = geom.unsqueeze(0).expand(x_sig.size(0), -1, -1)
+                
+                # Forward pass
+                if self.scaler:
+                    with autocast('cuda'):
+                        loss = self.diffusion.loss(x_sig, geom, label)
+                else:
+                    loss = self.diffusion.loss(x_sig, geom, label)
+                
+                val_losses.append(loss.item())
+        
+        avg_val_loss = np.mean(val_losses)
+        
+        return {
+            'eval/loss': avg_val_loss,
+            'eval/num_batches': len(val_losses)
+        }
     
     def train(self):
         """Main training loop."""
