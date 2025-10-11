@@ -414,63 +414,52 @@ class Trainer:
             if geom.ndim == 2:  # (3, L)
                 geom = geom.unsqueeze(0).expand(x_sig.size(0), -1, -1)
             
-            # Print normalized values for first batch of first epoch
+            # Print data statistics for first batch of first epoch
             if epoch == 0 and step == 0:
                 print(f"\n{'='*70}")
-                print("📊 First Batch - Model Input (After Normalization)")
+                print("📊 First Batch - Data Flow & Normalization")
                 print(f"{'='*70}")
                 
-                # Sample first 128 samples for statistics (regardless of batch size)
+                # Sample first 128 samples for statistics
                 batch_size = x_sig.size(0)
                 sample_size = min(128, batch_size)
-                if batch_size > 128:
-                    print(f"  ℹ️  Showing statistics for first {sample_size} samples (batch_size={batch_size})")
-                else:
-                    print(f"  ℹ️  Batch size: {batch_size}")
+                print(f"  ℹ️  Showing statistics for first {sample_size} samples (batch_size={batch_size})")
                 
-                # Sample data for statistics
+                # Sample data
                 x_sig_sample = x_sig[:sample_size]
                 geom_sample = geom[:sample_size]
                 label_sample = label[:sample_size]
                 
-                # Apply normalization to see what model receives
-                x5 = torch.cat([x_sig_sample, geom_sample], dim=1)  # (sample_size, 5, L)
+                # These are ALREADY NORMALIZED by dataloader!
+                print(f"\n  📥 Data from Dataloader (ALREADY NORMALIZED):")
+                print(f"     Charge: [{x_sig_sample[:, 0, :].min():.6f}, {x_sig_sample[:, 0, :].max():.6f}] "
+                      f"mean={x_sig_sample[:, 0, :].mean():.6f}")
+                print(f"     Time:   [{x_sig_sample[:, 1, :].min():.6f}, {x_sig_sample[:, 1, :].max():.6f}] "
+                      f"mean={x_sig_sample[:, 1, :].mean():.6f}")
+                print(f"     X PMT:  [{geom_sample[:, 0, :].min():.6f}, {geom_sample[:, 0, :].max():.6f}] "
+                      f"mean={geom_sample[:, 0, :].mean():.6f}")
+                print(f"     Y PMT:  [{geom_sample[:, 1, :].min():.6f}, {geom_sample[:, 1, :].max():.6f}] "
+                      f"mean={geom_sample[:, 1, :].mean():.6f}")
+                print(f"     Z PMT:  [{geom_sample[:, 2, :].min():.6f}, {geom_sample[:, 2, :].max():.6f}] "
+                      f"mean={geom_sample[:, 2, :].mean():.6f}")
                 
-                # Get normalization parameters from model
-                if hasattr(self.model, 'affine_offset'):
-                    off = self.model.affine_offset.view(1, 5, 1)
-                    scl = self.model.affine_scale.view(1, 5, 1)
-                    x5_norm = (x5 - off) / scl
-                    
-                    print(f"\n  Normalized Signals + Geometry (n={sample_size}):")
-                    print(f"    Charge (ch 0): [{x5_norm[:, 0, :].min():.6f}, {x5_norm[:, 0, :].max():.6f}] "
-                          f"mean={x5_norm[:, 0, :].mean():.6f} std={x5_norm[:, 0, :].std():.6f}")
-                    print(f"    Time   (ch 1): [{x5_norm[:, 1, :].min():.6f}, {x5_norm[:, 1, :].max():.6f}] "
-                          f"mean={x5_norm[:, 1, :].mean():.6f} std={x5_norm[:, 1, :].std():.6f}")
-                    print(f"    X PMT  (ch 2): [{x5_norm[:, 2, :].min():.6f}, {x5_norm[:, 2, :].max():.6f}] "
-                          f"mean={x5_norm[:, 2, :].mean():.6f} std={x5_norm[:, 2, :].std():.6f}")
-                    print(f"    Y PMT  (ch 3): [{x5_norm[:, 3, :].min():.6f}, {x5_norm[:, 3, :].max():.6f}] "
-                          f"mean={x5_norm[:, 3, :].mean():.6f} std={x5_norm[:, 3, :].std():.6f}")
-                    print(f"    Z PMT  (ch 4): [{x5_norm[:, 4, :].min():.6f}, {x5_norm[:, 4, :].max():.6f}] "
-                          f"mean={x5_norm[:, 4, :].mean():.6f} std={x5_norm[:, 4, :].std():.6f}")
+                print(f"\n  🏷️  Labels from Dataloader (ALREADY NORMALIZED):")
+                label_names = ['Energy', 'Zenith', 'Azimuth', 'X', 'Y', 'Z']
+                for ch_idx, name in enumerate(label_names):
+                    print(f"     {name:8s}: [{label_sample[:, ch_idx].min():.6f}, {label_sample[:, ch_idx].max():.6f}] "
+                          f"mean={label_sample[:, ch_idx].mean():.6f}")
                 
-                # Label normalization
-                if hasattr(self.model, 'label_offset'):
-                    label_off = self.model.label_offset.view(1, 6)
-                    label_scl = self.model.label_scale.view(1, 6)
-                    label_norm = (label_sample - label_off) / label_scl
-                    
-                    print(f"\n  Normalized Labels (n={sample_size}):")
-                    label_names = ['Energy', 'Zenith', 'Azimuth', 'X', 'Y', 'Z']
-                    for ch_idx, name in enumerate(label_names):
-                        print(f"    {name:8s} (ch {ch_idx}): [{label_norm[:, ch_idx].min():.6f}, {label_norm[:, ch_idx].max():.6f}] "
-                              f"mean={label_norm[:, ch_idx].mean():.6f} std={label_norm[:, ch_idx].std():.6f}")
+                print(f"\n  📋 Normalization Parameters (metadata in model):")
+                print(f"     Signal+Geometry offsets: {self.model.affine_offset.squeeze().cpu().numpy()}")
+                print(f"     Signal+Geometry scales:  {self.model.affine_scale.squeeze().cpu().numpy()}")
+                print(f"     Label offsets: {self.model.label_offset.cpu().numpy()}")
+                print(f"     Label scales:  {self.model.label_scale.cpu().numpy()}")
                 
-                print(f"\n  Normalization Parameters:")
-                print(f"    Signal+Geometry offsets: {self.model.affine_offset.squeeze().cpu().numpy()}")
-                print(f"    Signal+Geometry scales:  {self.model.affine_scale.squeeze().cpu().numpy()}")
-                print(f"    Label offsets: {self.model.label_offset.cpu().numpy()}")
-                print(f"    Label scales:  {self.model.label_scale.cpu().numpy()}")
+                print(f"\n  ⚠️  IMPORTANT:")
+                print(f"     1. Dataloader applies: time_transform (ln) → affine normalization")
+                print(f"     2. Model receives ALREADY NORMALIZED data")
+                print(f"     3. Model does NOT normalize in forward()")
+                print(f"     4. Normalization params are metadata for denormalization")
                 print(f"{'='*70}\n")
             
             # Forward pass

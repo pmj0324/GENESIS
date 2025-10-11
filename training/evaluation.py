@@ -51,7 +51,15 @@ def compare_generated_vs_real(
     
     # Get normalization parameters from model if not provided
     if affine_offsets is None or affine_scales is None or time_transform is None:
-        norm_params = diffusion.get_normalization_params()
+        # Get model from diffusion wrapper
+        if hasattr(diffusion, 'model'):
+            model = diffusion.model
+        elif hasattr(diffusion, 'get_normalization_params'):
+            model = diffusion
+        else:
+            raise ValueError("Cannot find model with normalization params")
+        
+        norm_params = model.get_normalization_params()
         if affine_offsets is None:
             affine_offsets = tuple(norm_params['affine_offsets'])
         if affine_scales is None:

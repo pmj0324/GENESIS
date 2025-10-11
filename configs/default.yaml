@@ -16,10 +16,11 @@ model:
   mlp_ratio: 4.0
   
   # Normalization metadata (for denormalization during sampling)
-  affine_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
-  affine_scales: [100.0, 10.0, 600.0, 550.0, 550.0]
-  label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]
+  # Formula: (x - offset) / scale → [0, 1]
+  affine_offsets: [0.0, 0.0, -600.0, -550.0, -550.0]  # [charge, time, x, y, z]
+  affine_scales: [200.0, 10.0, 1200.0, 1100.0, 1100.0]
+  label_offsets: [0.0, 0.0, 0.0, -600.0, -550.0, -550.0]  # [Energy, Zenith, Azimuth, X, Y, Z]
+  label_scales: [100000000.0, 3.14159, 6.28318, 1200.0, 1100.0, 1100.0]
   time_transform: "ln"
 
 # Diffusion configuration
@@ -48,12 +49,13 @@ data:
   val_ratio: 0.1
   test_ratio: 0.1
   
-  # Normalization (applied in Dataloader)
-  time_transform: "ln"  # "ln" or "log10"
-  affine_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]  # [charge, time, x, y, z]
-  affine_scales: [100.0, 10.0, 600.0, 550.0, 550.0]
-  label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # [Energy, Zenith, Azimuth, X, Y, Z]
-  label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]
+  # Normalization (applied in Dataloader) - Normalize to [0, 1]
+  # Formula: (x - offset) / scale
+  time_transform: "ln"  # "ln" or "log10" - applied BEFORE affine
+  affine_offsets: [0.0, 0.0, -600.0, -550.0, -550.0]  # [charge, time_ln, x, y, z]
+  affine_scales: [200.0, 10.0, 1200.0, 1100.0, 1100.0]
+  label_offsets: [0.0, 0.0, 0.0, -600.0, -550.0, -550.0]  # [Energy, Zenith, Azimuth, X, Y, Z]
+  label_scales: [100000000.0, 3.14159, 6.28318, 1200.0, 1100.0, 1100.0]
 
 # Training configuration
 training:

@@ -17,10 +17,10 @@ model:
   mlp_ratio: 4.0
   
   # Normalization metadata (for denormalization)
-  affine_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
-  affine_scales: [100.0, 10.0, 600.0, 550.0, 550.0]
-  label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]
+  affine_offsets: [0.0, 0.0, -600.0, -550.0, -550.0]
+  affine_scales: [200.0, 10.0, 1200.0, 1100.0, 1100.0]
+  label_offsets: [0.0, 0.0, 0.0, -600.0, -550.0, -550.0]
+  label_scales: [100000000.0, 3.14159, 6.28318, 1200.0, 1100.0, 1100.0]
   time_transform: "ln"
 
 # Diffusion configuration
@@ -49,12 +49,12 @@ data:
   val_ratio: 0.01    # 1% for validation
   test_ratio: 0.01   # 1% for testing
   
-  # Normalization (applied in Dataloader)
+  # Normalization (applied in Dataloader) - Normalize to [0, 1]
   time_transform: "ln"
-  affine_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
-  affine_scales: [100.0, 10.0, 600.0, 550.0, 550.0]
-  label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]
+  affine_offsets: [0.0, 0.0, -600.0, -550.0, -550.0]
+  affine_scales: [200.0, 10.0, 1200.0, 1100.0, 1100.0]
+  label_offsets: [0.0, 0.0, 0.0, -600.0, -550.0, -550.0]
+  label_scales: [100000000.0, 3.14159, 6.28318, 1200.0, 1100.0, 1100.0]
 
 # Training configuration
 training:
