@@ -209,11 +209,16 @@ class PMTDit(nn.Module):
         # 새 인자: 초기 affine 설정 (옵션)
         affine_offsets = (0.0, 0.0, 0.0, 0.0, 0.0),  # [npe,time,xpmt,ypmt,zpmt]
         affine_scales  = (1.0, 100000.0, 1.0, 1.0, 1.0),
+        label_offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),  # [Energy, Zenith, Azimuth, X, Y, Z]
+        label_scales = (5e7, 1.0, 1.0, 600.0, 550.0, 550.0),
+        # Data preprocessing settings
+        time_transform: str = "ln",  # "ln" or "log10" - always use log(1+x)
     ):
         super().__init__()
         self.seq_len = seq_len
         self.hidden = hidden
         self.t_embed_dim = t_embed_dim
+        self.time_transform = time_transform
 
         # --- token embedder (기존과 동일) ---
         self.embedder = PMTEmbedding(
@@ -251,6 +256,12 @@ class PMTDit(nn.Module):
         scl = torch.tensor(affine_scales,  dtype=torch.float32).reshape(5, 1)
         self.register_buffer("affine_offset", off)  # not a parameter (학습 X)
         self.register_buffer("affine_scale",  scl)
+        
+        # Label normalization parameters
+        label_off = torch.tensor(label_offsets, dtype=torch.float32)
+        label_scl = torch.tensor(label_scales, dtype=torch.float32)
+        self.register_buffer("label_offset", label_off)
+        self.register_buffer("label_scale", label_scl)
 
     # --------- 새 메소드: affine 설정 ---------
     @torch.no_grad()

@@ -51,9 +51,10 @@ class ModelConfig:
     label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
     label_scales: Tuple[float, ...] = (5e7, 1.0, 1.0, 600.0, 550.0, 550.0)  # [Energy, Zenith, Azimuth, X, Y, Z]
     
-    # Time transformation
-    time_transform: Optional[str] = "ln"  # "log10", "ln", None
-    exclude_zero_time: bool = True  # Exclude zero time values (recommended for log transforms)
+    # Time transformation: Always use log(1+x) to handle zeros naturally
+    # - "ln": ln(1+x) - natural log, ln(1+0)=0
+    # - "log10": log10(1+x) - base-10 log, log10(1+0)=0
+    time_transform: Optional[str] = "ln"  # "log10" or "ln"
     
     def __post_init__(self):
         """Convert all parameters to proper types."""
@@ -78,8 +79,7 @@ class ModelConfig:
         if self.time_transform and self.time_transform not in ["null", "None", ""]:
             self.time_transform = str(self.time_transform)
         else:
-            self.time_transform = None
-        self.exclude_zero_time = bool(self.exclude_zero_time) if not isinstance(self.exclude_zero_time, bool) else self.exclude_zero_time
+            self.time_transform = "ln"  # Default to ln
 
 
 @dataclass

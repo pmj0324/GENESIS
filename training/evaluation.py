@@ -51,7 +51,7 @@ def compare_generated_vs_real(
     
     # Get normalization parameters from model if not provided
     if affine_offsets is None or affine_scales is None or time_transform is None:
-        model_offset, model_scale, _, _, model_time_transform, _ = diffusion.get_normalization_params()
+        model_offset, model_scale, _, _, model_time_transform = diffusion.get_normalization_params()
         if affine_offsets is None:
             affine_offsets = tuple(model_offset.numpy()) if model_offset is not None else (0.0, 0.0, 0.0, 0.0, 0.0)
         if affine_scales is None:

@@ -741,6 +741,7 @@ class ArchitectureConfig:
     affine_scales: Tuple[float, ...] = (100.0, 10.0, 600.0, 550.0, 550.0)
     label_offsets: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     label_scales: Tuple[float, ...] = (50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0)
+    time_transform: str = "ln"  # "ln" or "log10" - always use log(1+x)
 
 
 def create_model(config: ArchitectureConfig) -> nn.Module:
@@ -762,6 +763,7 @@ def create_model(config: ArchitectureConfig) -> nn.Module:
             affine_scales=config.affine_scales,
             label_offsets=config.label_offsets,
             label_scales=config.label_scales,
+            time_transform=config.time_transform,
         )
     elif arch_name == "cnn":
         return PMTCNN(

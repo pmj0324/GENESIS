@@ -41,6 +41,7 @@ class ModelFactory:
             affine_scales=model_config.affine_scales,
             label_offsets=model_config.label_offsets,
             label_scales=model_config.label_scales,
+            time_transform=model_config.time_transform,
         )
         return _create_arch_model(arch_config)
     

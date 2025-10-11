@@ -15,9 +15,8 @@ model:
   t_embed_dim: 128
   mlp_ratio: 4.0
   
-  # Time transformation
+  # Time transformation: Always use log(1+x)
   time_transform: "ln"  # Natural log transformation
-  exclude_zero_time: true  # Exclude zero time values
   
   # Signal + Geometry affine normalization: [charge, time, x, y, z]
   # Formula: (x - offset) / scale → charge/time[-2,2], pos[-1,1]

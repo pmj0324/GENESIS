@@ -99,11 +99,10 @@ class GaussianDiffusion(nn.Module):
             affine_scale = self.model.affine_scale.squeeze().cpu()
             label_offset = self.model.label_offset.cpu() if hasattr(self.model, 'label_offset') else None
             label_scale = self.model.label_scale.cpu() if hasattr(self.model, 'label_scale') else None
-            time_transform = self.model.time_transform if hasattr(self.model, 'time_transform') else None
-            exclude_zero = self.model.exclude_zero_time if hasattr(self.model, 'exclude_zero_time') else True
-            return affine_offset, affine_scale, label_offset, label_scale, time_transform, exclude_zero
+            time_transform = self.model.time_transform if hasattr(self.model, 'time_transform') else "ln"
+            return affine_offset, affine_scale, label_offset, label_scale, time_transform
         else:
-            return None, None, None, None, None, True
+            return None, None, None, None, "ln"
     
     def _cosine_beta_schedule(self, timesteps: int, s: float = 0.008) -> torch.Tensor:
         """

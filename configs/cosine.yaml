@@ -22,17 +22,11 @@ model:
   label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]  # Normalize Energy and positions
   
-  # Time transformation: log(1 + x) method
+  # Time transformation: Always use log(1+x) - handles zeros naturally
   # - Formula: ln(1 + time) or log10(1 + time)
-  # - Advantage: log(1+0)=0 naturally, no -inf issue
-  # - Inverse: exp(y)-1 or 10^y-1
-  time_transform: "ln"  # "log10" or "ln" or null
-  
-  # Exclude zero time: Optional with log(1+x) method
-  # - Both True/False give same result (0.0) with log(1+x)
-  # - True: Explicitly marks time=0 as "no hit" (recommended for clarity)
-  # - False: Simpler, all values treated uniformly
-  exclude_zero_time: true
+  # - log(1 + 0) = 0 (zeros handled naturally, no special case needed)
+  # - Inverse: exp(y) - 1 or 10^y - 1
+  time_transform: "ln"  # "log10" or "ln"
 
 # Diffusion configuration
 diffusion:

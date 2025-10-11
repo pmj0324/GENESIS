@@ -27,9 +27,8 @@ model:
   label_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   label_scales: [50000000.0, 1.0, 1.0, 600.0, 550.0, 550.0]  # Normalize Energy and positions
   
-  # Time transformation
-  time_transform: "ln"  # "log10", "ln", or null
-  exclude_zero_time: true  # Exclude zero time values (recommended for log transforms)
+  # Time transformation: Always use log(1+x)
+  time_transform: "ln"  # "log10" or "ln"
 
 # Diffusion configuration
 diffusion:

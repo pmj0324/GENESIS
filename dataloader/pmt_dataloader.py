@@ -39,8 +39,7 @@ class PMTSignalsH5(Dataset):
         channel_first: bool = True,  # (2, L) 형태로 반환. False면 (L, 2)
         dtype: np.dtype = np.float32,
         indices: Optional[np.ndarray] = None,  # 서브셋 학습 시 사용
-        time_transform: Optional[str] = "ln",  # "log10", "ln", None
-        exclude_zero_time: bool = True,  # 0값 제외 여부 (로그 변환 시 True 권장)
+        time_transform: str = "ln",  # "log10" or "ln" - always use log(1+x)
     ):
         super().__init__()
         self.h5_path = os.path.expanduser(h5_path)
@@ -48,7 +47,6 @@ class PMTSignalsH5(Dataset):
         self.channel_first = channel_first
         self.dtype = dtype
         self.time_transform = time_transform
-        self.exclude_zero_time = exclude_zero_time
 
         # 파일 메타만 먼저 확인 (빠르게)
         with h5py.File(self.h5_path, "r", swmr=True, libver="latest") as f:
@@ -95,36 +93,18 @@ class PMTSignalsH5(Dataset):
             t[mask_invalid_time] = replacement_val
             x_sig[1, :] = t
         
-        # Time transformation (log10 or ln)
-        # Uses log(1 + x) instead of log(x) for better numerical stability:
-        #   - log(1 + 0) = 0 (natural, no special handling needed)
-        #   - No -inf issue at x=0
-        #   - Inverse: exp(y) - 1 or 10^y - 1
-        #   - Taylor series: log(1+x) ≈ x for small x (linear-like near 0)
-        if self.time_transform is not None:
-            # exclude_zero_time option:
-            # While log(1+x) handles x=0 naturally, we still mark zeros explicitly because:
-            #   1. Physical meaning: time=0 means "no hit" (different from small time)
-            #   2. Data quality: explicit separation of no-hit vs actual-hit PMTs
-            #   3. Future flexibility: allows different handling of zeros if needed
-            # Note: With log(1+x), this is optional and both True/False give same result (0.0)
-            if self.exclude_zero_time:
-                # Mark 0 values as NaN for explicit tracking
-                t_zero_mask = (t == 0.0)
-                t[t_zero_mask] = np.nan
-            
-            # Apply log transform: ln(1 + x) or log10(1 + x)
-            if self.time_transform == "log10":
-                t = np.log10(1.0 + t)  # log10(1+0)=0, log10(1+135232)≈5.13
-            elif self.time_transform == "ln":
-                t = np.log(1.0 + t)    # ln(1+0)=0, ln(1+135232)≈11.82
-            
-            # Replace NaN values (from excluded zeros) with 0.0
-            t_nan_mask = ~np.isfinite(t)
-            if t_nan_mask.any():
-                # log(1+0) = 0, so zeros naturally map to 0.0
-                t[t_nan_mask] = 0.0
-            x_sig[1, :] = t
+        # Time transformation: Always use log(1+x)
+        # - log(1 + 0) = 0 (zeros handled naturally)
+        # - No -inf issue
+        # - Inverse: exp(y) - 1 or 10^y - 1
+        if self.time_transform == "log10":
+            t = np.log10(1.0 + t)  # log10(1+0)=0, log10(1+10000)≈4
+        elif self.time_transform == "ln":
+            t = np.log(1.0 + t)    # ln(1+0)=0, ln(1+10000)≈9.2
+        else:
+            raise ValueError(f"time_transform must be 'ln' or 'log10', got {self.time_transform}")
+        
+        x_sig[1, :] = t
         
         # Handle inf/nan in labels
         mask_invalid_label = ~np.isfinite(y)
@@ -306,8 +286,7 @@ def make_dataloader(
     replace_time_inf_with: Optional[float] = None,
     channel_first: bool = True,
     indices: Optional[np.ndarray] = None,
-    time_transform: Optional[str] = "ln",
-    exclude_zero_time: bool = True,
+    time_transform: str = "ln",  # "log10" or "ln" - always use log(1+x)
 ) -> DataLoader:
     ds = PMTSignalsH5(
         h5_path=h5_path,
@@ -315,7 +294,6 @@ def make_dataloader(
         channel_first=channel_first,
         indices=indices,
         time_transform=time_transform,
-        exclude_zero_time=exclude_zero_time,
     )
     return DataLoader(
         ds,

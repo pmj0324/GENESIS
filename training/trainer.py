@@ -258,7 +258,6 @@ class Trainer:
             channel_first=self.config.data.channel_first,
             indices=train_indices,
             time_transform=self.config.model.time_transform,
-            exclude_zero_time=self.config.model.exclude_zero_time,
         )
         
         self.val_loader = make_dataloader(
@@ -271,7 +270,6 @@ class Trainer:
             channel_first=self.config.data.channel_first,
             indices=val_indices,
             time_transform=self.config.model.time_transform,
-            exclude_zero_time=self.config.model.exclude_zero_time,
         )
         
         self.test_loader = make_dataloader(
@@ -284,7 +282,6 @@ class Trainer:
             channel_first=self.config.data.channel_first,
             indices=test_indices,
             time_transform=self.config.model.time_transform,
-            exclude_zero_time=self.config.model.exclude_zero_time,
         )
         
         # Calculate statistics
@@ -562,8 +559,7 @@ class Trainer:
             print(f"  Fusion: {self.config.model.fusion}")
             print(f"  Signal+Geometry scales: {self.config.model.affine_scales}")
             print(f"  Label scales: {self.config.model.label_scales}")
-            print(f"  Time transform: {self.config.model.time_transform}")
-            print(f"  Exclude zero time: {self.config.model.exclude_zero_time}")
+            print(f"  Time transform: {self.config.model.time_transform} (always log(1+x))")
             
             print(f"\nDiffusion Config:")
             print(f"  Timesteps: {self.config.diffusion.timesteps}")
