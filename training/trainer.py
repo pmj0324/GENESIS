@@ -476,6 +476,18 @@ class Trainer:
             print(f"  CFG Scale: {getattr(self.config.diffusion, 'cfg_scale', 1.0)}")
             print(f"  CFG Dropout: {getattr(self.config.diffusion, 'cfg_dropout', 0.0)}")
             
+            print(f"\nData Config:")
+            # Calculate dataset sizes
+            total_samples = len(self.train_loader.dataset) + len(self.val_loader.dataset) + len(self.test_loader.dataset)
+            train_samples = len(self.train_loader.dataset)
+            val_samples = len(self.val_loader.dataset)
+            test_samples = len(self.test_loader.dataset)
+            
+            print(f"  Total samples: {total_samples:,}")
+            print(f"  Train: {train_samples:,} ({train_samples/total_samples*100:.1f}%) - {len(self.train_loader):,} batches")
+            print(f"  Val:   {val_samples:,} ({val_samples/total_samples*100:.1f}%) - {len(self.val_loader):,} batches")
+            print(f"  Test:  {test_samples:,} ({test_samples/total_samples*100:.1f}%) - {len(self.test_loader):,} batches")
+            
             print(f"\nTraining Config:")
             print(f"  Epochs: {self.config.training.num_epochs}")
             print(f"  Batch size: {self.config.data.batch_size}")

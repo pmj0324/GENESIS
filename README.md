@@ -65,6 +65,11 @@ python scripts/train.py \
     --config configs/default.yaml \
     --data-path /path/to/your/data.h5
 
+# Or use testing settings (10% data for fast testing)
+python scripts/train.py \
+    --config configs/testing.yaml \
+    --data-path /path/to/your/data.h5
+
 # That's it! No manual tuning needed! 🎉
 ```
 
