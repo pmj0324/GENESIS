@@ -89,12 +89,17 @@ def compare_generated_vs_real(
     
     print(f"✅ Generated {N} samples")
     
-    # Denormalize for visualization
-    real_denorm = denormalize_signal(
-        real_x_sig, affine_offsets, affine_scales,
-        time_transform=time_transform, channels="signal"
-    )
+    # Process real data: Only reverse time transformation (no affine denormalization needed)
+    # Real data from dataloader is already in raw scale, only time is ln/log10 transformed
+    real_denorm = real_x_sig.clone()
+    if time_transform == "ln":
+        # Reverse: exp(y) - 1
+        real_denorm[:, 1, :] = torch.exp(real_denorm[:, 1, :]) - 1.0
+    elif time_transform == "log10":
+        # Reverse: 10^y - 1
+        real_denorm[:, 1, :] = torch.pow(10.0, real_denorm[:, 1, :]) - 1.0
     
+    # Denormalize generated data: Full denormalization (affine + time transform)
     generated_denorm = denormalize_signal(
         generated_x_sig, affine_offsets, affine_scales,
         time_transform=time_transform, channels="signal"
