@@ -143,7 +143,7 @@ class Trainer:
             self.early_stopping = None
         
         # Mixed precision
-        self.scaler = GradScaler() if AMP_AVAILABLE and config.training.use_amp else None
+        self.scaler = GradScaler('cuda') if AMP_AVAILABLE and config.training.use_amp else None
         
         # Resume from checkpoint if specified
         if config.training.resume_from_checkpoint:
@@ -287,10 +287,24 @@ class Trainer:
             exclude_zero_time=self.config.model.exclude_zero_time,
         )
         
-        print(f"Data loaders initialized:")
-        print(f"  Train: {len(self.train_loader.dataset)} samples, {len(self.train_loader)} batches")
-        print(f"  Val:   {len(self.val_loader.dataset)} samples, {len(self.val_loader)} batches")
-        print(f"  Test:  {len(self.test_loader.dataset)} samples, {len(self.test_loader)} batches")
+        # Calculate statistics
+        train_samples = len(self.train_loader.dataset)
+        val_samples = len(self.val_loader.dataset)
+        test_samples = len(self.test_loader.dataset)
+        used_samples = train_samples + val_samples + test_samples
+        unused_samples = total_samples - used_samples
+        
+        print(f"\n{'='*70}")
+        print(f"📊 Dataset Information")
+        print(f"{'='*70}")
+        print(f"  Total samples in file: {total_samples:,}")
+        print(f"  Samples for training:  {used_samples:,} ({used_samples/total_samples*100:.1f}%)")
+        print(f"  Unused samples:        {unused_samples:,} ({unused_samples/total_samples*100:.1f}%)")
+        print(f"\n  Split breakdown:")
+        print(f"    Train: {train_samples:,} ({train_samples/total_samples*100:.1f}%) - {len(self.train_loader):,} batches")
+        print(f"    Val:   {val_samples:,} ({val_samples/total_samples*100:.1f}%) - {len(self.val_loader):,} batches")
+        print(f"    Test:  {test_samples:,} ({test_samples/total_samples*100:.1f}%) - {len(self.test_loader):,} batches")
+        print(f"{'='*70}\n")
     
     def _setup_checkpointing(self):
         """Setup checkpoint manager."""
@@ -532,17 +546,7 @@ class Trainer:
             print(f"  CFG Scale: {getattr(self.config.diffusion, 'cfg_scale', 1.0)}")
             print(f"  CFG Dropout: {getattr(self.config.diffusion, 'cfg_dropout', 0.0)}")
             
-            print(f"\nData Config:")
-            # Calculate dataset sizes
-            total_samples = len(self.train_loader.dataset) + len(self.val_loader.dataset) + len(self.test_loader.dataset)
-            train_samples = len(self.train_loader.dataset)
-            val_samples = len(self.val_loader.dataset)
-            test_samples = len(self.test_loader.dataset)
-            
-            print(f"  Total samples: {total_samples:,}")
-            print(f"  Train: {train_samples:,} ({train_samples/total_samples*100:.1f}%) - {len(self.train_loader):,} batches")
-            print(f"  Val:   {val_samples:,} ({val_samples/total_samples*100:.1f}%) - {len(self.val_loader):,} batches")
-            print(f"  Test:  {test_samples:,} ({test_samples/total_samples*100:.1f}%) - {len(self.test_loader):,} batches")
+            # Data Config removed - already shown in Dataset Information section above
             
             print(f"\nTraining Config:")
             print(f"  Epochs: {self.config.training.num_epochs}")
@@ -618,6 +622,7 @@ class Trainer:
             self._log_metrics(epoch_metrics, epoch)
             
             # Evaluate
+            eval_metrics = {}
             if (epoch + 1) % self.config.training.eval_interval == 0:
                 eval_metrics = self.evaluate()
                 self._log_metrics(eval_metrics, epoch)
@@ -633,7 +638,7 @@ class Trainer:
             if (epoch + 1) % 10 == 0:  # Save every 10 epochs
                 self._save_checkpoint(epoch, epoch_metrics, is_best)
             
-            # Early stopping check
+            # Early stopping check (using validation loss)
             if self.early_stopping is not None:
                 should_stop = self.early_stopping(
                     current_score=current_loss,
@@ -642,8 +647,8 @@ class Trainer:
                 )
                 
                 if should_stop:
-                    print(f"\n🛑 Early stopping triggered at epoch {epoch}")
-                    print(f"Best score: {self.early_stopping.best_score:.6f} at epoch {self.early_stopping.best_epoch}")
+                    print(f"\n🛑 Early stopping triggered at epoch {epoch+1}")
+                    print(f"Best val loss: {self.early_stopping.best_score:.6f} at epoch {self.early_stopping.best_epoch+1}")
                     
                     # Restore best weights if configured
                     if self.config.training.early_stopping_restore_best:
@@ -654,7 +659,35 @@ class Trainer:
                     self._save_checkpoint(epoch, epoch_metrics, is_best=False, suffix='early_stop')
                     break
             
-            print(f"Epoch {epoch+1} completed: loss={epoch_metrics['train/epoch_loss']:.6f}")
+            # Print epoch summary
+            epoch_time = epoch_metrics['train/epoch_time']
+            train_loss = epoch_metrics['train/epoch_loss']
+            current_lr = self.optimizer.param_groups[0]['lr']
+            
+            # Get validation loss if available
+            if (epoch + 1) % self.config.training.eval_interval == 0:
+                val_loss = eval_metrics.get('eval/loss', 0.0)
+                val_loss_str = f"val_loss={val_loss:.6f}"
+            else:
+                val_loss_str = "val_loss=N/A"
+            
+            # Early stopping patience info
+            if self.early_stopping is not None:
+                patience_used = self.early_stopping.counter
+                patience_total = self.early_stopping.patience
+                patience_str = f"patience={patience_used}/{patience_total}"
+            else:
+                patience_str = "patience=N/A"
+            
+            print(f"\n{'='*70}")
+            print(f"📊 Epoch {epoch+1}/{self.config.training.num_epochs} Summary")
+            print(f"{'='*70}")
+            print(f"  Time:       {epoch_time:.2f}s")
+            print(f"  LR:         {current_lr:.2e}")
+            print(f"  Train Loss: {train_loss:.6f}")
+            print(f"  Val Loss:   {val_loss_str}")
+            print(f"  Early Stop: {patience_str}")
+            print(f"{'='*70}\n")
         
         # Save final checkpoint if training completed normally
         if epoch + 1 == self.config.training.num_epochs:

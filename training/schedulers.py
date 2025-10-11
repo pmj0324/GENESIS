@@ -64,15 +64,15 @@ def create_cosine_scheduler(optimizer: torch.optim.Optimizer, config: TrainingCo
 
 def create_plateau_scheduler(optimizer: torch.optim.Optimizer, config: TrainingConfig) -> optim.lr_scheduler.ReduceLROnPlateau:
     """Create reduce on plateau scheduler."""
+    verbose = getattr(config, 'plateau_verbose', False)
     return optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode=config.plateau_mode,
         factor=config.plateau_factor,
         patience=config.plateau_patience,
-        min_lr=config.plateau_min_lr,
         threshold=config.plateau_threshold,
         cooldown=config.plateau_cooldown,
-        verbose=True
+        verbose=verbose
     )
 
 

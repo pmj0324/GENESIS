@@ -10,6 +10,13 @@ Provides a clean interface to the training package.
 import sys
 import os
 import argparse
+import warnings
+
+# Suppress warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*UnsupportedFieldAttributeWarning.*")
+
 import torch
 
 # Add parent directory to path for imports

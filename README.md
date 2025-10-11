@@ -60,14 +60,19 @@ python scripts/train.py \
     --config configs/optimized_by_benchmark.yaml \
     --data-path /path/to/your/data.h5
 
-# Or use default settings (batch_size=512, workers=40, early_stopping=5, cosine_annealing)
+# Or use default settings (plateau scheduler: patience=2, factor=0.7)
 python scripts/train.py \
     --config configs/default.yaml \
     --data-path /path/to/your/data.h5
 
-# Or use testing settings (10% data for fast testing)
+# Or use testing settings (10% data, plateau scheduler)
 python scripts/train.py \
     --config configs/testing.yaml \
+    --data-path /path/to/your/data.h5
+
+# Or use cosine annealing scheduler (T0=2 epochs)
+python scripts/train.py \
+    --config configs/cosine.yaml \
     --data-path /path/to/your/data.h5
 
 # That's it! No manual tuning needed! 🎉

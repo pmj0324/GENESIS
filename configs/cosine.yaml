@@ -1,8 +1,7 @@
-# Testing configuration for GENESIS IceCube diffusion model
-# Fast testing with 10% of data (8% train, 1% val, 1% test)
+# Cosine Annealing configuration for GENESIS IceCube diffusion model
 
-experiment_name: "icecube_diffusion_testing"
-description: "Fast testing configuration with 10% data for quick iteration"
+experiment_name: "icecube_diffusion_cosine"
+description: "Configuration with Cosine Annealing scheduler for periodic LR cycling"
 
 # Model configuration
 model:
@@ -48,7 +47,7 @@ diffusion:
   cfg_scale: 2.0
   cfg_dropout: 0.1
 
-# Data configuration - FAST TESTING MODE
+# Data configuration
 data:
   h5_path: "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
   replace_time_inf_with: 0.0
@@ -57,19 +56,18 @@ data:
   num_workers: 40
   pin_memory: true
   shuffle: true
-  # Fast testing: Use only 10% of data
-  train_ratio: 0.08  # 8% for training
-  val_ratio: 0.01    # 1% for validation
-  test_ratio: 0.01   # 1% for testing
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
 
-# Training configuration
+# Training configuration with Cosine Annealing
 training:
   num_epochs: 100
   learning_rate: 0.0001  # Reduced from 2e-4 to 1e-4
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
-  scheduler: "plateau"  # ReduceLROnPlateau scheduler
+  scheduler: "cosine"  # Cosine Annealing scheduler
   warmup_steps: 1000  # Deprecated, use warmup_ratio
   warmup_ratio: 0.04  # Warmup as 4% of total steps (recommended)
   
