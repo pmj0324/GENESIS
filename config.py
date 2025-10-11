@@ -122,6 +122,7 @@ class TrainingConfig:
     plateau_mode: str = "min"  # "min" or "max"
     plateau_threshold: float = 1e-4
     plateau_cooldown: int = 0
+    plateau_verbose: bool = False
     
     # Step scheduler
     step_size: int = 30
