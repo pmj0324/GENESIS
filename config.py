@@ -161,7 +161,8 @@ class DataConfig:
     
     def __post_init__(self):
         """Convert all parameters to proper types."""
-        self.h5_path = str(self.h5_path)
+        import os
+        self.h5_path = os.path.expanduser(str(self.h5_path))
         if self.replace_time_inf_with is not None:
             self.replace_time_inf_with = float(self.replace_time_inf_with)
         self.channel_first = bool(self.channel_first) if not isinstance(self.channel_first, bool) else self.channel_first
