@@ -40,6 +40,13 @@ class ModelConfig:
     kernel_size: int = 3    # Base kernel size
     kernel_sizes: Tuple[int, ...] = (3, 5, 7, 9)  # Multi-scale kernels (for cnn)
     
+    # C-Dit specific parameters (for architecture="c-dit")
+    classifier_size: int = 128    # Classifier token dimension
+    factor: int = 2               # MLP expansion factor for C-Dit
+    combine: str = "add"          # Signal+geometry combination: "add" or "concat"
+    update_with_classifier: bool = False  # PMT tokens use classifier info
+    n_cls_tokens: int = 1         # Number of classifier tokens
+    
     # Affine normalization (per-channel)
     # Formula: (x - offset) / scale → charge/time to reasonable range, pos[-1,1]
     # Inverse: x_original = (x_normalized * scale) + offset
@@ -74,6 +81,13 @@ class ModelConfig:
         
         # CNN/Conv
         self.kernel_size = int(self.kernel_size)
+        
+        # C-Dit specific
+        self.classifier_size = int(self.classifier_size)
+        self.factor = int(self.factor)
+        self.combine = str(self.combine)
+        self.update_with_classifier = bool(self.update_with_classifier)
+        self.n_cls_tokens = int(self.n_cls_tokens)
         
         # Time transformation
         if self.time_transform and self.time_transform not in ["null", "None", ""]:
