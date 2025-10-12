@@ -22,6 +22,7 @@ import torch.nn.functional as F
 
 # Import model classes (alias to avoid shadowing by local legacy class)
 from .pmt_dit import PMTDit as ExternalPMTDit
+from .pmt_c_dit import PMTCDit
 
 
 # =============================================================================
@@ -766,6 +767,26 @@ def create_model(config: ArchitectureConfig) -> nn.Module:
             label_dim=config.label_dim,
             t_embed_dim=config.t_embed_dim,
             mlp_ratio=config.mlp_ratio,
+            affine_offsets=config.affine_offsets,
+            affine_scales=config.affine_scales,
+            label_offsets=config.label_offsets,
+            label_scales=config.label_scales,
+            time_transform=config.time_transform,
+        )
+    elif arch_name == "c-dit":
+        return PMTCDit(
+            seq_len=config.seq_len,
+            hidden=config.hidden,
+            classifier_size=getattr(config, 'classifier_size', 128),
+            depth=config.depth,
+            heads=config.heads,
+            dropout=config.dropout,
+            factor=getattr(config, 'factor', 2),
+            label_dim=config.label_dim,
+            t_embed_dim=config.t_embed_dim,
+            combine=getattr(config, 'combine', 'add'),
+            update_with_classifier=getattr(config, 'update_with_classifier', True),
+            n_cls_tokens=getattr(config, 'n_cls_tokens', 1),
             affine_offsets=config.affine_offsets,
             affine_scales=config.affine_scales,
             label_offsets=config.label_offsets,
