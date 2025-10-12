@@ -77,6 +77,9 @@ def create_task(task_name: str, config_template: str = "default", base_dir: Path
 source ~/GENESIS/micromamba_env.sh
 micromamba activate genesis
 
+# Suppress ZMQ warnings (optional)
+export PYTHONWARNINGS="ignore"
+
 # Run training (data path from config.yaml)
 python3 ../../scripts/train.py \\
     --config config.yaml \\

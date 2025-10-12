@@ -735,12 +735,13 @@ class Trainer:
         
         try:
             from .evaluation import compare_generated_vs_real
+            from .diffusion_process_viz import visualize_diffusion_steps
             
             # Get a batch of real data for comparison
             real_batch = next(iter(self.train_loader))
             real_x_sig, real_geom, real_label, _ = real_batch
             
-            # Run comparison (normalization params auto-fetched from model)
+            # 1. Compare generated vs real (4 samples)
             compare_generated_vs_real(
                 self.diffusion,
                 real_x_sig,
@@ -748,6 +749,17 @@ class Trainer:
                 real_label,
                 num_samples=4,
                 save_dir=Path(self.config.training.output_dir) / "final_evaluation"
+            )
+            
+            # 2. Visualize diffusion process step-by-step (1 sample)
+            print("\n")
+            visualize_diffusion_steps(
+                self.diffusion,
+                real_x_sig[:1],  # Take only first sample
+                real_geom[:1],
+                real_label[:1],
+                num_steps=10,
+                save_path=Path(self.config.training.output_dir) / "final_evaluation" / "diffusion_process_steps.png"
             )
             
             print("✅ Post-training evaluation complete!")
