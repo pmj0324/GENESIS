@@ -248,9 +248,7 @@ class PMTDit(nn.Module):
             hidden=hidden, dropout=dropout, fusion=fusion, label_dim=label_dim
         )
 
-        # --- learned positional embedding ---
-        self.pos = nn.Parameter(torch.zeros(1, seq_len, hidden))
-        nn.init.trunc_normal_(self.pos, std=0.02)
+        # NOTE: No learnable position embedding - geometry (x,y,z) already provides position info
 
         # --- condition encoders ---
         self.t_mlp = nn.Sequential(
@@ -362,12 +360,12 @@ class PMTDit(nn.Module):
         # We directly use them for model computation
         # =================================================================
 
-        # --------- 1) 토큰화/포지션/컨디션 ---------
+        # --------- 1) 토큰화/컨디션 (No position embedding - geo already contains position) ---------
         sig = x_sig_t.transpose(1, 2)   # (B,L,2)
         geo = geom.transpose(1, 2)      # (B,L,3)
 
         tokens = self.embedder(sig, geo, label)  # (B,L,H) - label already normalized
-        tokens = tokens + self.pos               # learned pos emb
+        # No learned position embedding - geometry (x,y,z) provides position info
 
         te = timestep_embedding(t, self.t_embed_dim)  # (B,t_dim)
         te = self.t_mlp(te)                           # (B,H/2)
