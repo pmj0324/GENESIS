@@ -210,7 +210,6 @@ class TrainingConfig:
     # Plateau scheduler
     plateau_patience: int = 10
     plateau_factor: float = 0.5
-    plateau_min_lr: float = 1e-6
     plateau_mode: str = "min"  # "min" or "max"
     plateau_threshold: float = 1e-4
     plateau_cooldown: int = 0
@@ -279,7 +278,6 @@ class TrainingConfig:
         # Plateau scheduler
         self.plateau_patience = int(self.plateau_patience)
         self.plateau_factor = float(self.plateau_factor)
-        self.plateau_min_lr = float(self.plateau_min_lr)
         self.plateau_mode = str(self.plateau_mode)
         self.plateau_threshold = float(self.plateau_threshold)
         self.plateau_cooldown = int(self.plateau_cooldown)

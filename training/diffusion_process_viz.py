@@ -57,7 +57,7 @@ def visualize_diffusion_steps(
     print("\n📤 Forward Diffusion: Original → Noise")
     print("-"*70)
     
-    total_timesteps = diffusion.timesteps
+    total_timesteps = diffusion.num_timesteps
     step_indices = np.linspace(0, total_timesteps - 1, num_steps, dtype=int)
     
     forward_samples = []

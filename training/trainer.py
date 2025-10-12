@@ -67,7 +67,6 @@ class TrainingConfig:
     cosine_t_max: Optional[int] = None
     plateau_patience: int = 10
     plateau_factor: float = 0.5
-    plateau_min_lr: float = 1e-6
     plateau_mode: str = "min"
     plateau_threshold: float = 1e-4
     plateau_cooldown: int = 0
@@ -665,13 +664,12 @@ class Trainer:
                     # Other schedulers step every epoch
                     self.scheduler.step()
             
-            # Save checkpoint
+            # Save checkpoint only if it's the best
             is_best = current_loss < self.best_loss
             if is_best:
                 self.best_loss = current_loss
-            
-            if (epoch + 1) % 10 == 0:  # Save every 10 epochs
-                self._save_checkpoint(epoch, epoch_metrics, is_best)
+                print(f"  💾 New best model! Val loss: {current_loss:.6f}")
+                self._save_checkpoint(epoch, epoch_metrics, is_best=True)
             
             # Early stopping check (using validation loss)
             if self.early_stopping is not None:
@@ -736,6 +734,7 @@ class Trainer:
         try:
             from .evaluation import compare_generated_vs_real
             from .diffusion_process_viz import visualize_diffusion_steps
+            from .npz_visualization import visualize_sample_as_npz
             
             # Get a batch of real data for comparison
             real_batch = next(iter(self.train_loader))
@@ -760,6 +759,17 @@ class Trainer:
                 real_label[:1],
                 num_steps=10,
                 save_path=Path(self.config.training.output_dir) / "final_evaluation" / "diffusion_process_steps.png"
+            )
+            
+            # 3. NPZ-style 3D visualization (1 sample)
+            print("\n")
+            visualize_sample_as_npz(
+                self.diffusion,
+                real_x_sig[:1],
+                real_geom[:1],
+                real_label[:1],
+                save_path=Path(self.config.training.output_dir) / "final_evaluation" / "generated_sample_3d.png",
+                detector_csv="csv/detector_geometry.csv"
             )
             
             print("✅ Post-training evaluation complete!")
