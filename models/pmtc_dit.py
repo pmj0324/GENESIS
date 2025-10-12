@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-pmt-c-dit.py
+pmtc_dit.py
 
 Classifier-Attention based Diffusion Transformer for PMT signals.
 Based on PmtCModel architecture but adapted for diffusion reconstruction.
@@ -196,7 +196,7 @@ class PMTCDit(nn.Module):
         label_dim: int = 6,
         t_embed_dim: int = 128,
         combine: str = "add",
-        update_with_classifier: bool = True,
+        update_with_classifier: bool = False,
         n_cls_tokens: int = 1,
         # Normalization metadata
         affine_offsets = (0.0, 0.0, 0.0, 0.0, 0.0),

@@ -18,7 +18,7 @@ model:
   
   # C-Dit specific parameters
   combine: "add"                # How to combine signal and geometry ("add" or "concat")
-  update_with_classifier: true  # If true, PMT tokens are updated with classifier info
+  update_with_classifier: false # If true, PMT tokens are updated with classifier info
   n_cls_tokens: 1               # Number of classifier (latent) tokens
   
   # Normalization metadata (for denormalization during sampling)
