@@ -81,10 +81,10 @@ class TrainingConfig:
     save_interval: int = 1000
     eval_interval: int = 500
     
-    # Output directories
-    output_dir: str = "./outputs"
-    checkpoint_dir: str = "./checkpoints"
-    log_dir: str = "./logs"
+    # Output directories (relative to current working directory)
+    output_dir: str = "outputs"
+    checkpoint_dir: str = "checkpoints"
+    log_dir: str = "logs"
     
     # Resume training
     resume_from_checkpoint: Optional[str] = None

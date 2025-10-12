@@ -65,18 +65,6 @@ def create_task(task_name: str, config_template: str = "default", base_dir: Path
     print(f"✓ Copying configuration: {config_template}.yaml")
     shutil.copy(config_file, task_dir / "config.yaml")
     
-    # Extract h5_path from config file (simple text parsing, no yaml needed)
-    h5_path = "~/GENESIS/GENESIS-data/22644_0921_time_shift.h5"  # default
-    try:
-        with open(task_dir / "config.yaml", 'r') as f:
-            for line in f:
-                if 'h5_path:' in line and not line.strip().startswith('#'):
-                    # Extract path from "h5_path: /path/to/file.h5"
-                    h5_path = line.split('h5_path:', 1)[1].strip().strip('"\'')
-                    break
-    except Exception:
-        pass  # Use default if parsing fails
-    
     # Create run.sh
     print("✓ Creating run.sh...")
     run_sh_content = f"""#!/bin/bash
@@ -85,14 +73,13 @@ def create_task(task_name: str, config_template: str = "default", base_dir: Path
 # Task: {task_name}
 # Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-# Data path from config.yaml
-DATA_PATH="{h5_path}"
+# Activate micromamba environment
+source ~/GENESIS/micromamba_env.sh
+micromamba activate genesis
 
-cd {project_root}
-
-python3 scripts/train.py \\
-    --config {task_dir.relative_to(project_root)}/config.yaml \\
-    --data-path "$DATA_PATH" \\
+# Run training (data path from config.yaml)
+python3 ../../scripts/train.py \\
+    --config config.yaml \\
     "$@"
 """
     run_sh_path = task_dir / "run.sh"

@@ -30,8 +30,8 @@ def main():
     parser = argparse.ArgumentParser(description="Train GENESIS IceCube diffusion model")
     parser.add_argument("--config", type=str, default="configs/default.yaml", 
                        help="Path to configuration file")
-    parser.add_argument("--data-path", type=str, required=True,
-                       help="Path to training data HDF5 file")
+    parser.add_argument("--data-path", type=str, default=None,
+                       help="Path to training data HDF5 file (optional, uses config if not specified)")
     parser.add_argument("--device", type=str, default="auto",
                        help="Device to use (auto, cpu, cuda)")
     parser.add_argument("--resume", type=str, default=None,
@@ -60,8 +60,9 @@ def main():
     
     config.device = device
     
-    # Override data path
-    config.data.h5_path = args.data_path
+    # Override data path if specified
+    if args.data_path is not None:
+        config.data.h5_path = args.data_path
     
     # Override resume path if specified
     if args.resume:
@@ -85,7 +86,7 @@ def main():
         config.data.num_workers = args.num_workers
     
     # Create trainer (it will create dataloader and model internally)
-    print(f"📊 Loading data from {args.data_path}")
+    print(f"📊 Loading data from {config.data.h5_path}")
     print(f"🏗️  Creating model: {config.model.architecture}")
     print("🚀 Initializing trainer")
     trainer = create_trainer(config)
