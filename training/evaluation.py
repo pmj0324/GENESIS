@@ -179,13 +179,19 @@ def compare_generated_vs_real(
     print("📊 Statistics Comparison")
     print(f"{'='*70}")
     
+    # Dataset info
+    print(f"\nDataset info:")
+    print(f"  Shape: {real_denorm.shape} (batch, channels[charge/time], PMTs)")
+    print(f"  Total elements: {real_denorm.shape[0]} samples × {real_denorm.shape[2]} PMTs = {real_denorm.shape[0] * real_denorm.shape[2]} PMT readings")
+    
     real_charge_nonzero = real_denorm[:, 0, :][real_denorm[:, 0, :] > 0]
     gen_charge_nonzero = generated_denorm[:, 0, :][generated_denorm[:, 0, :] > 0]
     
     print(f"\nCharge (NPE) - Non-zero values:")
-    print(f"  Real:      mean={real_charge_nonzero.mean():.4f} std={real_charge_nonzero.std():.4f}")
-    print(f"  Generated: mean={gen_charge_nonzero.mean():.4f} std={gen_charge_nonzero.std():.4f}")
+    print(f"  Real:      mean={real_charge_nonzero.mean():.4f} std={real_charge_nonzero.std():.4f} (n={len(real_charge_nonzero)} non-zero)")
+    print(f"  Generated: mean={gen_charge_nonzero.mean():.4f} std={gen_charge_nonzero.std():.4f} (n={len(gen_charge_nonzero)} non-zero)")
     print(f"  Difference: {abs(real_charge_nonzero.mean() - gen_charge_nonzero.mean()):.4f}")
+    print(f"  Sparsity:  Real={100*(1-len(real_charge_nonzero)/(real_denorm.shape[0]*real_denorm.shape[2])):.1f}% zeros, Gen={100*(1-len(gen_charge_nonzero)/(generated_denorm.shape[0]*generated_denorm.shape[2])):.1f}% zeros")
     
     real_time_nonzero = real_denorm[:, 1, :][real_denorm[:, 0, :] > 0]
     gen_time_nonzero = generated_denorm[:, 1, :][generated_denorm[:, 0, :] > 0]
@@ -196,8 +202,8 @@ def compare_generated_vs_real(
     
     print(f"\nTime (ns) - Where charge > 0 (finite values only):")
     if len(real_time_valid) > 0 and len(gen_time_valid) > 0:
-        print(f"  Real:      mean={real_time_valid.mean():.4f} std={real_time_valid.std():.4f} (n={len(real_time_valid)})")
-        print(f"  Generated: mean={gen_time_valid.mean():.4f} std={gen_time_valid.std():.4f} (n={len(gen_time_valid)})")
+        print(f"  Real:      mean={real_time_valid.mean():.4f} std={real_time_valid.std():.4f} (n={len(real_time_valid)} valid)")
+        print(f"  Generated: mean={gen_time_valid.mean():.4f} std={gen_time_valid.std():.4f} (n={len(gen_time_valid)} valid)")
         print(f"  Difference: {abs(real_time_valid.mean() - gen_time_valid.mean()):.4f}")
     else:
         print(f"  Warning: No valid time values found (all inf/nan)")

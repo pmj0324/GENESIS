@@ -66,7 +66,6 @@ training:
   cosine_t_max: null
   plateau_patience: 10
   plateau_factor: 0.5
-  plateau_min_lr: 1e-6
   plateau_mode: "min"
   plateau_threshold: 1e-4
   plateau_cooldown: 0

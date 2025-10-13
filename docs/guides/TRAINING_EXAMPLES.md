@@ -195,7 +195,6 @@ python scripts/train.py \
     --scheduler plateau \
     --plateau-patience 15 \
     --plateau-factor 0.5 \
-    --plateau-min-lr 1e-6 \
     --epochs 300 \
     --experiment-name "plateau_scheduler"
 ```
@@ -206,7 +205,6 @@ config = get_default_config()
 config.training.scheduler = "plateau"
 config.training.plateau_patience = 15
 config.training.plateau_factor = 0.5
-config.training.plateau_min_lr = 1e-6
 config.training.num_epochs = 300
 
 trainer = create_trainer(config)

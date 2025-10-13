@@ -463,7 +463,6 @@ def generate_optimized_yaml(
             'cosine_t_max': base_config.training.cosine_t_max,
             'plateau_patience': base_config.training.plateau_patience,
             'plateau_factor': base_config.training.plateau_factor,
-            'plateau_min_lr': base_config.training.plateau_min_lr,
             'plateau_mode': base_config.training.plateau_mode,
             'plateau_threshold': base_config.training.plateau_threshold,
             'plateau_cooldown': base_config.training.plateau_cooldown,

@@ -171,7 +171,7 @@ def get_scheduler_info() -> Dict[str, Dict[str, Any]]:
             "name": "Reduce on Plateau",
             "description": "Reduces learning rate when metric stops improving",
             "best_for": "When you have validation metrics to monitor",
-            "parameters": ["plateau_patience", "plateau_factor", "plateau_min_lr"],
+            "parameters": ["plateau_patience", "plateau_factor"],
             "advantages": ["Automatic adaptation", "Good for validation-based training"],
             "disadvantages": ["Requires validation metric", "May be too conservative"]
         },
@@ -275,7 +275,6 @@ if __name__ == "__main__":
                 cosine_t_max = 100
                 plateau_patience = 10
                 plateau_factor = 0.5
-                plateau_min_lr = 1e-6
                 plateau_mode = "min"
                 plateau_threshold = 1e-4
                 plateau_cooldown = 0
