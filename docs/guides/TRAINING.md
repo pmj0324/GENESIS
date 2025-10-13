@@ -182,7 +182,11 @@ The repository supports multiple learning rate schedulers:
 ```yaml
 training:
   scheduler: "cosine"
+  # Warmup 설정 요약
+  # - warmup_ratio > 0 이면: total_steps × warmup_ratio 사용
+  # - 그 외: warmup_steps 사용
   warmup_steps: 1000
+  warmup_ratio: 0.04
   # Automatically uses CosineAnnealingLR
 ```
 
@@ -311,7 +315,9 @@ training:
 training:
   optimizer: "AdamW"       # Optimizer type
   scheduler: "cosine"      # Learning rate scheduler
-  warmup_steps: 1000       # Warmup steps
+  # Warmup 설정 (둘 다 제공되며 ratio가 우선)
+  warmup_steps: 1000       # 절대 스텝 수 (ratio가 0이거나 미설정일 때 사용)
+  warmup_ratio: 0.04       # 전체 스텝 대비 비율 (설정되면 이 값이 우선)
   use_amp: true           # Mixed precision training
   log_interval: 50        # Logging frequency
   save_interval: 1000     # Checkpoint frequency

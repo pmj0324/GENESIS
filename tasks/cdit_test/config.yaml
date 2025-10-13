@@ -69,16 +69,27 @@ training:
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
-  scheduler: "plateau"
+  scheduler: "plateau"  # One-of: [plateau, cosine, step, linear]
   warmup_steps: 1000
-  warmup_ratio: 0.04  # 4% warmup
-  
-  # Plateau scheduler
+  warmup_ratio: 0.04
+
+  # When scheduler == "plateau"
   plateau_patience: 2
   plateau_factor: 0.7
   plateau_mode: "min"
   plateau_threshold: 1e-4
   plateau_cooldown: 0
+
+  # (Only used if scheduler == "cosine")
+  # cosine_t_max: 2
+
+  # (Only used if scheduler == "step")
+  # step_size: 30
+  # step_gamma: 0.1
+
+  # (Only used if scheduler == "linear")
+  # linear_start_factor: 1.0
+  # linear_end_factor: 0.0
   
   # Early stopping
   early_stopping: true

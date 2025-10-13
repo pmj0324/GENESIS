@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import time
 import json
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
@@ -150,6 +151,31 @@ class Trainer:
     
     def _setup_logging(self):
         """Setup logging infrastructure."""
+        # Create output directories
+        os.makedirs(self.config.training.output_dir, exist_ok=True)
+        os.makedirs(self.config.training.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.config.training.log_dir, exist_ok=True)
+        
+        # Setup text log file
+        self.log_file_path = os.path.join(self.config.training.log_dir, f"{self.config.experiment_name}_training.txt")
+        self.log_file = open(self.log_file_path, 'w', encoding='utf-8')
+        
+        # Store original print function
+        self.original_print = print
+        
+        # Override print to also write to log file
+        def log_print(*args, **kwargs):
+            # Print to console
+            self.original_print(*args, **kwargs)
+            # Write to log file
+            message = ' '.join(str(arg) for arg in args)
+            self.log_file.write(message + '\n')
+            self.log_file.flush()
+        
+        # Replace global print function
+        import builtins
+        builtins.print = log_print
+        
         # TensorBoard
         self.writer = SummaryWriter(
             log_dir=os.path.join(self.config.training.log_dir, self.config.experiment_name)
@@ -164,10 +190,6 @@ class Trainer:
                 config=self.config.__dict__,
                 dir=self.config.training.log_dir
             )
-        
-        # Create output directories
-        os.makedirs(self.config.training.output_dir, exist_ok=True)
-        os.makedirs(self.config.training.checkpoint_dir, exist_ok=True)
     
     def _setup_model(self):
         """Initialize model and diffusion wrapper."""
@@ -493,7 +515,7 @@ class Trainer:
             epoch_losses.append(loss.item() * self.config.training.gradient_accumulation_steps)
             self.global_step += 1
             
-            # Logging
+            # Logging (step-based, epoch summary handled at epoch end)
             if self.global_step % self.config.training.log_interval == 0:
                 current_lr = self.optimizer.param_groups[0]['lr']
                 metrics = {
@@ -508,13 +530,7 @@ class Trainer:
                     'lr': f"{current_lr:.2e}"
                 })
             
-            # Save checkpoint
-            if self.global_step % self.config.training.save_interval == 0:
-                epoch_metrics = {
-                    'train/epoch_loss': np.mean(epoch_losses),
-                    'train/epoch_time': time.time() - epoch_start_time,
-                }
-                self._save_checkpoint(epoch, epoch_metrics)
+            # Note: Checkpoint saving moved to epoch end (every epoch + best model)
         
         # Calculate epoch metrics
         avg_loss = np.mean(epoch_losses)
@@ -664,12 +680,17 @@ class Trainer:
                     # Other schedulers step every epoch
                     self.scheduler.step()
             
-            # Save checkpoint only if it's the best
+            # Save checkpoint every epoch + best model separately
             is_best = current_loss < self.best_loss
             if is_best:
                 self.best_loss = current_loss
-                print(f"  💾 New best model! Val loss: {current_loss:.6f}")
+                # Use same format as epoch summary for consistency
+                val_loss_display = current_loss if (epoch + 1) % self.config.training.eval_interval == 0 else 0.0
+                print(f"  💾 New best model! Val loss: {val_loss_display:.6f}")
                 self._save_checkpoint(epoch, epoch_metrics, is_best=True)
+            
+            # Save regular checkpoint every epoch
+            self._save_checkpoint(epoch, epoch_metrics, is_best=False)
             
             # Early stopping check (using validation loss)
             if self.early_stopping is not None:
@@ -736,11 +757,13 @@ class Trainer:
             from .diffusion_process_viz import visualize_diffusion_steps
             from .npz_visualization import visualize_sample_as_npz
             
-            # Get a batch of real data for comparison
-            real_batch = next(iter(self.train_loader))
+            # Get a batch of real data for comparison (use test set for final evaluation)
+            real_batch = next(iter(self.test_loader))
             real_x_sig, real_geom, real_label, _ = real_batch
             
-            # 1. Compare generated vs real (4 samples)
+            print("📊 Using test set for final evaluation...")
+            
+            # 1. Compare generated vs real (4 samples from test set)
             compare_generated_vs_real(
                 self.diffusion,
                 real_x_sig,
@@ -750,7 +773,7 @@ class Trainer:
                 save_dir=Path(self.config.training.output_dir) / "final_evaluation"
             )
             
-            # 2. Visualize diffusion process step-by-step (1 sample)
+            # 2. Visualize diffusion process step-by-step (1 sample from test set)
             print("\n")
             visualize_diffusion_steps(
                 self.diffusion,
@@ -761,7 +784,7 @@ class Trainer:
                 save_path=Path(self.config.training.output_dir) / "final_evaluation" / "diffusion_process_steps.png"
             )
             
-            # 3. NPZ-style 3D visualization (1 sample)
+            # 3. NPZ-style 3D visualization (1 sample from test set)
             print("\n")
             visualize_sample_as_npz(
                 self.diffusion,
@@ -781,8 +804,16 @@ class Trainer:
         if self.config.use_wandb and WANDB_AVAILABLE:
             wandb.finish()
         
+        # Close log file and restore original print
+        if hasattr(self, 'log_file'):
+            self.log_file.close()
+        if hasattr(self, 'original_print'):
+            import builtins
+            builtins.print = self.original_print
+        
         print("\n{'='*70}")
         print("🎉 Training completed!")
+        print(f"📝 Training log saved to: {self.log_file_path}")
         print(f"{'='*70}")
 
 
