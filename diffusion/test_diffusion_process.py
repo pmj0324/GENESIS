@@ -40,9 +40,18 @@ from models.factory import ModelFactory
 from dataloader.pmt_dataloader import make_dataloader
 from utils.denormalization import denormalize_signal
 from diffusion.analysis import analyze_forward_diffusion
+from training.diffusion_process_viz import visualize_diffusion_steps
 
 
-def test_diffusion_with_config(config, h5_path: str, n_samples: int = 4):
+def test_diffusion_with_config(
+    config,
+    h5_path: str,
+    n_samples: int = 4,
+    npz_every_timestep: bool = False,
+    detector_csv: str = "csv/detector_geometry.csv",
+    npz_out_dir: str = "outputs/plots",
+    viz_steps: int = 10,
+):
     """
     Test complete diffusion process with config settings.
     
@@ -200,6 +209,31 @@ def test_diffusion_with_config(config, h5_path: str, n_samples: int = 4):
         else:
             print(f"    ✅ Reconstructed signal is clean (normalized space)")
     
+    # Optional: per-timestep NPZ + 3D visualization for a single event
+    if npz_every_timestep:
+        print(f"\n{'='*70}")
+        print("🧩 Step 4.5: Per-timestep NPZ + 3D visualization (single event)")
+        print(f"{'='*70}")
+        try:
+            save_base = Path(npz_out_dir) / "diffusion_process"
+            save_base.mkdir(parents=True, exist_ok=True)
+            # Use the first sample
+            visualize_diffusion_steps(
+                diffusion,
+                x_sig[:1],
+                geom[:1],
+                label[:1],
+                num_steps=viz_steps,
+                save_path=str(save_base / "overview.png"),
+                generate_npz_3d=True,
+                detector_csv=detector_csv,
+                npz_out_dir=str(save_base),
+                npz_all_timesteps=True,
+            )
+            print(f"  ✅ Saved per-timestep NPZ/PNG to: {save_base}")
+        except Exception as e:
+            print(f"  ⚠️  Failed to generate per-timestep NPZ visualization: {e}")
+
     # Test denormalization
     print(f"\n{'='*70}")
     print(f"🔄 Step 5: Denormalization")
@@ -460,6 +494,14 @@ Examples:
                        help="Timesteps to check (e.g., --timesteps 0 250 500 750 999)")
     parser.add_argument("--save-dir", type=str, default="diffusion_analysis",
                        help="Directory to save analysis results")
+    parser.add_argument("--npz-every-timestep", action="store_true",
+                       help="Save NPZ + 3D PNG for every timestep of a single event")
+    parser.add_argument("--detector-csv", type=str, default="csv/detector_geometry.csv",
+                       help="Detector geometry CSV path for 3D plots")
+    parser.add_argument("--npz-out-dir", type=str, default="outputs/plots",
+                       help="Output directory for per-timestep NPZ/PNG")
+    parser.add_argument("--viz-steps", type=int, default=200,
+                       help="Number of representative steps for overview figure")
     
     args = parser.parse_args()
     
@@ -482,7 +524,15 @@ Examples:
         )
     else:
         # Run full test (forward + reverse)
-        test_diffusion_with_config(config, config.data.h5_path, args.n_samples)
+        test_diffusion_with_config(
+            config,
+            config.data.h5_path,
+            args.n_samples,
+            npz_every_timestep=args.npz_every_timestep,
+            detector_csv=args.detector_csv,
+            npz_out_dir=args.npz_out_dir,
+            viz_steps=args.viz_steps,
+        )
         
         # Optionally run analysis after test
         print(f"\n{'='*70}")

@@ -106,106 +106,12 @@ class ModelFactory:
             print("-" * 80)
 
 
-def create_model(
-    architecture: str = "dit",
-    seq_len: int = 5160,
-    hidden: int = 512,
-    depth: int = 8,
-    heads: int = 8,
-    dropout: float = 0.1,
-    fusion: str = "FiLM",
-    label_dim: int = 6,
-    t_embed_dim: int = 128,
-    mlp_ratio: float = 4.0,
-    kernel_size: int = 3,
-    kernel_sizes: tuple = (3, 5, 7, 9),
-    affine_offsets: tuple = (0.0, 0.0, 0.0, 0.0, 0.0),
-    affine_scales: tuple = (1.0, 100000.0, 1.0, 1.0, 1.0),
-    device: Optional[torch.device] = None
-) -> nn.Module:
-    """
-    Convenience function to create a model with specified parameters.
-    
-    Args:
-        architecture: Model architecture ("dit", "cnn", "mlp", "hybrid", "resnet")
-        seq_len: Sequence length (number of PMTs)
-        hidden: Hidden dimension
-        depth: Number of layers/blocks
-        heads: Number of attention heads (for dit/hybrid)
-        dropout: Dropout rate
-        fusion: Fusion strategy for dit ("SUM" or "FiLM")
-        label_dim: Event condition dimension
-        t_embed_dim: Timestep embedding dimension
-        mlp_ratio: MLP expansion ratio
-        kernel_size: Base kernel size for conv layers
-        kernel_sizes: Multi-scale kernel sizes for cnn
-        affine_offsets: Per-channel affine offsets
-        affine_scales: Per-channel affine scales
-        device: Device to move model to
-        
-    Returns:
-        Model instance
-    """
-    model_config = ModelConfig(
-        architecture=architecture,
-        seq_len=seq_len,
-        hidden=hidden,
-        depth=depth,
-        heads=heads,
-        dropout=dropout,
-        fusion=fusion,
-        label_dim=label_dim,
-        t_embed_dim=t_embed_dim,
-        mlp_ratio=mlp_ratio,
-        kernel_size=kernel_size,
-        kernel_sizes=kernel_sizes,
-        affine_offsets=affine_offsets,
-        affine_scales=affine_scales,
-    )
-    
-    model = ModelFactory.create_model_from_config(model_config)
-    
-    if device is not None:
-        model = model.to(device)
-    
-    return model
+# Legacy function removed - use ModelFactory.create_model_from_config instead
+# def create_model(...) -> DEPRECATED
 
 
-def create_diffusion_model(
-    model: nn.Module,
-    timesteps: int = 1000,
-    beta_start: float = 1e-4,
-    beta_end: float = 2e-2,
-    objective: str = "eps",
-    device: Optional[torch.device] = None
-) -> GaussianDiffusion:
-    """
-    Convenience function to create a diffusion wrapper.
-    
-    Args:
-        model: Base model
-        timesteps: Number of diffusion timesteps
-        beta_start: Starting noise schedule
-        beta_end: Ending noise schedule
-        objective: Training objective ("eps" or "x0")
-        device: Device to move diffusion model to
-        
-    Returns:
-        Diffusion wrapper
-    """
-    diffusion_config = ConfigDiffusionConfig(
-        timesteps=timesteps,
-        beta_start=beta_start,
-        beta_end=beta_end,
-        objective=objective,
-    )
-    
-    diffusion = ModelFactory.create_diffusion_wrapper(model, diffusion_config)
-    
-    if device is not None:
-        diffusion = diffusion.to(device)
-    
-    return diffusion
+# Legacy function removed - use ModelFactory.create_diffusion_wrapper instead
+# def create_diffusion_model(...) -> DEPRECATED
 
 
 if __name__ == "__main__":

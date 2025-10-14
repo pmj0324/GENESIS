@@ -23,11 +23,20 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 from tqdm import tqdm
 
+# Optional imports for plotting
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+
 # Project imports
 from dataloader.pmt_dataloader import make_dataloader, check_dataset_health
 from models.factory import ModelFactory
 from diffusion import GaussianDiffusion, DiffusionConfig
-from config import ExperimentConfig, load_config_from_file
+from config import ExperimentConfig
 from utils.gpu_utils import print_memory_analysis, print_gpu_info
 from .schedulers import create_scheduler
 from .logging import setup_logging, LoggingConfig
@@ -378,8 +387,8 @@ class Trainer:
         print(f"Resumed from epoch {self.start_epoch}, step {self.global_step}")
     
     def _save_checkpoint(self, epoch: int, metrics: Dict[str, float], is_best: bool = False, suffix: str = ''):
-        """Save model checkpoint."""
-        checkpoint = {
+        """Save model checkpoint using CheckpointManager."""
+        checkpoint_data = {
             'epoch': epoch,
             'global_step': self.global_step,
             'model_state_dict': self.model.state_dict(),
@@ -390,17 +399,15 @@ class Trainer:
         }
         
         if self.scheduler:
-            checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
+            checkpoint_data['scheduler_state_dict'] = self.scheduler.state_dict()
         
-        # Save early stopping state if enabled
         if self.early_stopping is not None:
-            checkpoint['early_stopping_state_dict'] = self.early_stopping.state_dict()
+            checkpoint_data['early_stopping_state_dict'] = self.early_stopping.state_dict()
         
-        # Add suffix to checkpoint name if provided
-        if suffix:
-            checkpoint['suffix'] = suffix
-        
-        self.checkpoint_manager.save_checkpoint(checkpoint, epoch, is_best, suffix=suffix)
+        metric_value = metrics.get('eval/loss', metrics.get('train/epoch_loss', float('inf')))
+        self.checkpoint_manager.save_checkpoint(
+            checkpoint_data, epoch, is_best, metric_value=metric_value, suffix=suffix
+        )
     
     def _log_metrics(self, metrics: Dict[str, float], step: int):
         """Log metrics to TensorBoard and Wandb."""
@@ -799,6 +806,9 @@ class Trainer:
         except Exception as e:
             print(f"⚠️  Post-training evaluation failed: {e}")
         
+        # Generate training curves
+        self._generate_training_curves()
+        
         # Close logging
         self.writer.close()
         if self.config.use_wandb and WANDB_AVAILABLE:
@@ -814,7 +824,145 @@ class Trainer:
         print("\n{'='*70}")
         print("🎉 Training completed!")
         print(f"📝 Training log saved to: {self.log_file_path}")
+        print(f"📊 Training curves saved to: {Path(self.config.training.output_dir) / 'plots' / 'training_curves.png'}")
+        print(f"📊 Training curves (PDF) saved to: {Path(self.config.training.output_dir) / 'plots' / 'training_curves.pdf'}")
         print(f"{'='*70}")
+
+    def _generate_training_curves(self):
+        """Generate and save training curves."""
+        if not MATPLOTLIB_AVAILABLE:
+            print("⚠️  Matplotlib not available - skipping training curves generation")
+            return
+            
+        try:
+            print("\n📊 Generating training curves...")
+            
+            # Create plots directory
+            plots_dir = Path(self.config.training.output_dir) / "plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Parse training log to extract losses
+            train_losses = []
+            val_losses = []
+            epochs = []
+            
+            if hasattr(self, 'log_file_path') and os.path.exists(self.log_file_path):
+                with open(self.log_file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                for line in lines:
+                    # Parse epoch summary lines
+                    if "Epoch Summary" in line and "Train Loss:" in line and "Val Loss:" in line:
+                        try:
+                            # Extract epoch number
+                            epoch_match = line.split("Epoch ")[1].split("/")[0]
+                            epoch = int(epoch_match)
+                            
+                            # Extract train loss
+                            train_match = line.split("Train Loss: ")[1].split()[0]
+                            train_loss = float(train_match)
+                            
+                            # Extract val loss
+                            val_match = line.split("Val Loss: ")[1].split()[0]
+                            if val_match != "N/A":
+                                val_loss = float(val_match)
+                                
+                                epochs.append(epoch)
+                                train_losses.append(train_loss)
+                                val_losses.append(val_loss)
+                        except (ValueError, IndexError) as e:
+                            continue
+            
+            if len(epochs) == 0:
+                print("⚠️  No epoch data found for plotting")
+                return
+            
+            # Create the plot
+            plt.figure(figsize=(12, 8))
+            
+            # Plot train and val losses
+            plt.plot(epochs, train_losses, 'b-', label='Train Loss', linewidth=2, alpha=0.8)
+            plt.plot(epochs, val_losses, 'r-', label='Val Loss', linewidth=2, alpha=0.8)
+            
+            # Add best val loss point
+            if len(val_losses) > 0:
+                best_epoch_idx = val_losses.index(min(val_losses))
+                best_epoch = epochs[best_epoch_idx]
+                best_val_loss = val_losses[best_epoch_idx]
+                plt.scatter([best_epoch], [best_val_loss], color='red', s=100, 
+                           label=f'Best Val Loss: {best_val_loss:.6f}', zorder=5)
+            
+            # Customize plot
+            plt.xlabel('Epoch', fontsize=12)
+            plt.ylabel('Loss', fontsize=12)
+            plt.title(f'Training Curves - {self.config.experiment_name}', fontsize=14, fontweight='bold')
+            plt.legend(fontsize=11)
+            plt.grid(True, alpha=0.3)
+            
+            # Add statistics text
+            if len(train_losses) > 0 and len(val_losses) > 0:
+                final_train = train_losses[-1]
+                final_val = val_losses[-1]
+                min_val = min(val_losses)
+                
+                stats_text = f'Final Train Loss: {final_train:.6f}\n'
+                stats_text += f'Final Val Loss: {final_val:.6f}\n'
+                stats_text += f'Best Val Loss: {min_val:.6f}\n'
+                stats_text += f'Total Epochs: {len(epochs)}'
+                
+                plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+                        fontsize=10, verticalalignment='top', 
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            
+            # Save plot
+            plot_path = plots_dir / "training_curves.png"
+            plt.tight_layout()
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"✅ Training curves saved to: {plot_path}")
+            
+            # Also save as PDF for better quality
+            plot_pdf_path = plots_dir / "training_curves.pdf"
+            plt.figure(figsize=(12, 8))
+            plt.plot(epochs, train_losses, 'b-', label='Train Loss', linewidth=2, alpha=0.8)
+            plt.plot(epochs, val_losses, 'r-', label='Val Loss', linewidth=2, alpha=0.8)
+            
+            if len(val_losses) > 0:
+                best_epoch_idx = val_losses.index(min(val_losses))
+                best_epoch = epochs[best_epoch_idx]
+                best_val_loss = val_losses[best_epoch_idx]
+                plt.scatter([best_epoch], [best_val_loss], color='red', s=100, 
+                           label=f'Best Val Loss: {best_val_loss:.6f}', zorder=5)
+            
+            plt.xlabel('Epoch', fontsize=12)
+            plt.ylabel('Loss', fontsize=12)
+            plt.title(f'Training Curves - {self.config.experiment_name}', fontsize=14, fontweight='bold')
+            plt.legend(fontsize=11)
+            plt.grid(True, alpha=0.3)
+            
+            if len(train_losses) > 0 and len(val_losses) > 0:
+                final_train = train_losses[-1]
+                final_val = val_losses[-1]
+                min_val = min(val_losses)
+                
+                stats_text = f'Final Train Loss: {final_train:.6f}\n'
+                stats_text += f'Final Val Loss: {final_val:.6f}\n'
+                stats_text += f'Best Val Loss: {min_val:.6f}\n'
+                stats_text += f'Total Epochs: {len(epochs)}'
+                
+                plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+                        fontsize=10, verticalalignment='top', 
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            
+            plt.tight_layout()
+            plt.savefig(plot_pdf_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"✅ Training curves (PDF) saved to: {plot_pdf_path}")
+            
+        except Exception as e:
+            print(f"⚠️  Failed to generate training curves: {e}")
 
 
 def create_trainer(config: ExperimentConfig) -> Trainer:

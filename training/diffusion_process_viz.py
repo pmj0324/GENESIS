@@ -20,8 +20,14 @@ def visualize_diffusion_steps(
     real_x_sig: torch.Tensor,
     real_geom: torch.Tensor,
     real_label: torch.Tensor,
-    num_steps: int = 10,
-    save_path: Optional[str] = None
+    num_steps: int = 200,
+    save_path: Optional[str] = None,
+    # Optional: also output NPZ-style 3D plots (per-timestep) using detector CSV
+    generate_npz_3d: bool = False,
+    detector_csv: str = "csv/detector_geometry.csv",
+    npz_out_dir: Optional[str] = None,
+    # If True, save NPZ/PNG for every timestep (forward + reverse)
+    npz_all_timesteps: bool = False
 ):
     """
     Visualize forward and reverse diffusion process step-by-step for one sample.
@@ -57,12 +63,35 @@ def visualize_diffusion_steps(
     print("\n📤 Forward Diffusion: Original → Noise")
     print("-"*70)
     
-    total_timesteps = diffusion.num_timesteps
+    total_timesteps = diffusion.cfg.timesteps
     step_indices = np.linspace(0, total_timesteps - 1, num_steps, dtype=int)
     
     forward_samples = []
     forward_samples.append(real_x_sig.clone())  # t=0 (original, normalized)
     
+    # Prepare NPZ helper if requested (forward)
+    if generate_npz_3d:
+        try:
+            from utils.npz_show_event import show_event  # local import
+            base_out_dir = Path(npz_out_dir) if npz_out_dir else (Path(save_path).parent if save_path else Path("outputs/plots"))
+            npz_forward_dir = base_out_dir / "npz_per_timestep" / "forward"
+            npz_reverse_dir = base_out_dir / "npz_per_timestep" / "reverse"
+            npz_forward_dir.mkdir(parents=True, exist_ok=True)
+            npz_reverse_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # If visualization cannot be prepared, disable NPZ generation
+            generate_npz_3d = False
+
+    def _save_npz_event(sample_denorm: np.ndarray, step_name: str, out_dir: Path):
+        npz_path = out_dir / f"event_{step_name}.npz"
+        np.savez(npz_path, input=sample_denorm, label=np.zeros(6, dtype=np.float32), info=np.zeros(6, dtype=np.float32))
+        png_path = out_dir / f"event_{step_name}.png"
+        try:
+            show_event(npz_path=str(npz_path), detector_csv=detector_csv, out_path=str(png_path), figure_size=(12, 8))
+            print(f"  ✅ NPZ plot saved: {png_path}")
+        except Exception as e:
+            print(f"  ⚠️  NPZ plot failed ({step_name}): {e}")
+
     for i, t in enumerate(step_indices[1:], 1):
         # Add noise according to forward process
         t_tensor = torch.tensor([t], device=device, dtype=torch.long)
@@ -78,6 +107,11 @@ def visualize_diffusion_steps(
         x_t = sqrt_alphas_cumprod * real_x_sig + sqrt_one_minus_alphas_cumprod * noise
         
         forward_samples.append(x_t)
+        
+        # Optionally save every timestep for forward process
+        if generate_npz_3d and npz_all_timesteps:
+            den = denorm_sample(x_t)
+            _save_npz_event(den, f"forward_t{int(t)}", npz_forward_dir)
         
         # Print statistics (normalized space)
         charge_mean = x_t[0, 0, :].mean().item()
@@ -164,6 +198,11 @@ def visualize_diffusion_steps(
                   f"Time [{x[0, 1, :].min():.4f}, {x[0, 1, :].max():.4f}] "
                   f"mean={time_mean:.4f} std={time_mean:.4f}")
             save_counter += 1
+        
+        # Optionally save every timestep for reverse process
+        if generate_npz_3d and npz_all_timesteps:
+            den = denorm_sample(x)
+            _save_npz_event(den, f"reverse_t{int(t)}", npz_reverse_dir)
     
     # =========================================================================
     # PART 3: Denormalization & Visualization
@@ -279,6 +318,55 @@ def visualize_diffusion_steps(
     print("="*70)
     print("✅ Diffusion process visualization complete!")
     print("="*70 + "\n")
+    
+    # =========================================================================
+    # PART 4 (Optional): NPZ-style 3D visualization per timestep (from CSV)
+    # =========================================================================
+    if generate_npz_3d and not npz_all_timesteps:
+        try:
+            from utils.npz_show_event import show_event
+            print("\n🧩 Creating NPZ-style 3D visualizations (per selected timestep)...")
+            print("-"*70)
+            
+            # Output directory
+            base_out_dir = Path(npz_out_dir) if npz_out_dir else (Path(save_path).parent if save_path else Path("outputs/plots"))
+            out_dir = base_out_dir / "npz_per_timestep"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Helper to save one event
+            def save_npz_event(sample_denorm: np.ndarray, step_name: str):
+                npz_path = out_dir / f"event_{step_name}.npz"
+                np.savez(
+                    npz_path,
+                    input=sample_denorm,  # (2, L)
+                    label=np.zeros(6, dtype=np.float32),
+                    info=np.zeros(6, dtype=np.float32)
+                )
+                png_path = out_dir / f"event_{step_name}.png"
+                try:
+                    show_event(
+                        npz_path=str(npz_path),
+                        detector_csv=detector_csv,
+                        out_path=str(png_path),
+                        figure_size=(12, 8)
+                    )
+                    print(f"  ✅ Saved 3D NPZ plot: {png_path}")
+                except Exception as e:
+                    print(f"  ⚠️  Failed NPZ 3D plot ({step_name}): {e}")
+            
+            # Forward selected timesteps (first = original)
+            for i, sample in enumerate(forward_denorm):
+                step_name = f"forward_t{int(step_indices[i]) if i > 0 else 0}"
+                save_npz_event(sample, step_name)
+            
+            # Reverse selected timesteps
+            for i, sample in enumerate(reverse_denorm):
+                step_name = f"reverse_t{int(reverse_step_indices[i])}"
+                save_npz_event(sample, step_name)
+            
+            print(f"🗂️  NPZ outputs: {out_dir}")
+        except Exception as e:
+            print(f"⚠️  NPZ per-timestep visualization failed: {e}")
     
     return forward_denorm, reverse_denorm
 

@@ -196,7 +196,6 @@ training:
   scheduler: "plateau"
   plateau_patience: 10
   plateau_factor: 0.5
-  plateau_min_lr: 1e-6
   # Automatically uses ReduceLROnPlateau
 ```
 
@@ -447,7 +446,6 @@ training:
   learning_rate: 2e-4
   plateau_patience: 10
   plateau_factor: 0.5
-  plateau_min_lr: 1e-6
 ```
 
 ### Architecture-Specific Tuning
