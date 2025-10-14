@@ -19,7 +19,7 @@ from matplotlib.cm import ScalarMappable
 
 def show_event(
     npz_path: str,
-    detector_csv: str = "./csv/detector_geometry.csv",
+    detector_csv: str = "../configs/detector_geometry.csv",
     out_path: str | None = "./event.png",
     sphere_res: tuple[int, int] = (40, 20),
     base_radius: float = 5.0,

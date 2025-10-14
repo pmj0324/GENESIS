@@ -60,6 +60,11 @@ Quick examples:
       --npz-every-timestep --detector-csv csv/detector_geometry.csv --npz-out-dir outputs/plots
         """
     )
+    # Allow global options BEFORE the task name as well
+    parser.add_argument("--config", type=str, default="configs/testing.yaml",
+                        help="Path to configuration file (default: %(default)s)")
+    parser.add_argument("--data-path", type=str, default=None,
+                        help="Override HDF5 data path (default: use value in YAML)")
 
     # Common (shared) options
     parent = argparse.ArgumentParser(add_help=False)
@@ -89,6 +94,8 @@ Quick examples:
                           help="Detector geometry CSV path for 3D plots")
     p_single.add_argument("--npz-out-dir", type=str, default="outputs/plots",
                           help="Output directory for per-timestep NPZ/PNG")
+    p_single.add_argument("--quick", action="store_true",
+                          help="QUICK mode: only t=0 and t=T-1 for a single sample, with detailed timing logs")
 
     # Task: analyze (batch statistics / QQ)
     p_analyze = subparsers.add_parser(
@@ -123,12 +130,16 @@ Quick examples:
     print(f"Device: {device}")
 
     # Model + diffusion
+    import time
+    t0 = time.perf_counter()
     print(f"\n🏗️  Creating model and diffusion...")
     model, diffusion = ModelFactory.create_model_and_diffusion(
         config.model, config.diffusion, device=device
     )
     model.eval()
     diffusion.eval()
+    t1 = time.perf_counter()
+    print(f"  ⏱️  Model+Diffusion init: {(t1 - t0)*1000:.1f} ms")
 
     # Data (ensure we can access sample-index if task=single)
     if args.task == "single":
@@ -138,6 +149,7 @@ Quick examples:
     else:
         # analyze: respect analysis-batch-size if provided
         batch_size = args.analysis_batch_size if hasattr(args, 'analysis_batch_size') and args.analysis_batch_size is not None else config.data.batch_size
+    t2 = time.perf_counter()
     print(f"\n📊 Loading data (batch_size={batch_size})...")
     dataloader = make_dataloader(
         h5_path=config.data.h5_path,
@@ -147,12 +159,14 @@ Quick examples:
         pin_memory=False,
         time_transform=config.model.time_transform,
     )
+    t3 = time.perf_counter()
 
     x0, geom, label, _ = next(iter(dataloader))
     if args.task == "single":
         # Guard sample index
         si = min(max(0, args.sample_index), x0.size(0) - 1)
         x0_single = x0[si:si+1].to(device)
+        print(f"  ⏱️  Data loaded in {(t3 - t2)*1000:.1f} ms; using sample-index={si}")
 
     if args.task == "single":
         print(f"  Data shape: x_sig={x0.shape} (using sample-index={si})")
@@ -170,9 +184,12 @@ Quick examples:
             if (T-1) not in timesteps_to_check:
                 timesteps_to_check = timesteps_to_check + [T-1]
         else:
-            divs = max(1, int(args.divisions))
-            grid = np.linspace(0, T-1, divs + 1, dtype=int).tolist()
-            timesteps_to_check = sorted(set([0] + grid + [T-1]))
+            if args.quick:
+                timesteps_to_check = [0, T-1]
+            else:
+                divs = max(1, int(args.divisions))
+                grid = np.linspace(0, T-1, divs + 1, dtype=int).tolist()
+                timesteps_to_check = sorted(set([0] + grid + [T-1]))
     else:
         if args.timesteps is not None:
             timesteps_to_check = sorted(set(int(t) for t in args.timesteps))
@@ -189,14 +206,23 @@ Quick examples:
     print(f"  {'Timestep':<10} {'Charge Range':<30} {'Time Range':<30} {'SNR':<10}")
     print(f"  {'-'*80}")
     for t_val in timesteps_to_check:
-        t = torch.full((x0.size(0),), int(t_val), device=device, dtype=torch.long)
-        x_t = diffusion.q_sample(x0, t)
-        charge_range = f"[{x_t[:,0].min():.3f}, {x_t[:,0].max():.3f}]"
-        time_range = f"[{x_t[:,1].min():.3f}, {x_t[:,1].max():.3f}]"
+        tstart = time.perf_counter()
+        # In quick/single mode, operate on the single sample to avoid large tensor ops
+        if args.task == "single":
+            t = torch.full((1,), int(t_val), device=device, dtype=torch.long)
+            x_t = diffusion.q_sample(x0_single, t)
+            charge_range = f"[{x_t[:,0].min():.3f}, {x_t[:,0].max():.3f}]"
+            time_range = f"[{x_t[:,1].min():.3f}, {x_t[:,1].max():.3f}]"
+        else:
+            t = torch.full((x0.size(0),), int(t_val), device=device, dtype=torch.long)
+            x_t = diffusion.q_sample(x0, t)
+            charge_range = f"[{x_t[:,0].min():.3f}, {x_t[:,0].max():.3f}]"
+            time_range = f"[{x_t[:,1].min():.3f}, {x_t[:,1].max():.3f}]"
         sqrt_alpha_bar = diffusion.sqrt_alphas_cumprod[int(t_val)].item()
         sqrt_one_minus = diffusion.sqrt_one_minus_alphas_cumprod[int(t_val)].item()
         snr = sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
-        print(f"  {t_val:<10} {charge_range:<30} {time_range:<30} {snr:<10.4f}")
+        tend = time.perf_counter()
+        print(f"  {t_val:<10} {charge_range:<30} {time_range:<30} {snr:<10.4f}  | ⏱️  q_sample: {(tend - tstart)*1000:.1f} ms")
 
     # Optional: save NPZ/PNG for selected timesteps (single event)
     if getattr(args, 'npz_selected', False):
@@ -208,12 +234,16 @@ Quick examples:
             single = x0_single
             for t_val in timesteps_to_check:
                 t = torch.full((1,), int(t_val), device=device, dtype=torch.long)
+                tt0 = time.perf_counter()
                 x_t = diffusion.q_sample(single, t)
                 npz_path = out_dir / f"forward_t{int(t_val)}.npz"
                 np.savez(npz_path, input=x_t.cpu().numpy()[0], label=np.zeros(6, dtype=np.float32), info=np.zeros(6, dtype=np.float32))
                 png_path = out_dir / f"forward_t{int(t_val)}.png"
                 try:
+                    tt1 = time.perf_counter()
                     show_event(str(npz_path), detector_csv=args.detector_csv, out_path=str(png_path), figure_size=(12,8))
+                    tt2 = time.perf_counter()
+                    print(f"  t={int(t_val)}: ⏱️  q_sample={(tt1-tt0)*1000:.1f} ms, draw={(tt2-tt1)*1000:.1f} ms")
                 except Exception as e:
                     print(f"  ⚠️  3D plot failed at t={t_val}: {e}")
             print(f"  ✅ Saved NPZ/PNG to: {out_dir}")
