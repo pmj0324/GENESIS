@@ -113,37 +113,13 @@ def visualize_event_from_dataloader(
     print(f"\n📂 Loading configuration from: {config_path}")
     config = load_config_from_file(config_path)
     
-    # Prepare normalization parameters
-    affine_offsets = [
-        config.data.charge_offset,
-        config.data.time_offset,
-        config.data.x_offset,
-        config.data.y_offset,
-        config.data.z_offset,
-    ]
-    affine_scales = [
-        config.data.charge_scale,
-        config.data.time_scale,
-        config.data.x_scale,
-        config.data.y_scale,
-        config.data.z_scale,
-    ]
-    label_offsets = [
-        config.data.energy_offset,
-        config.data.zenith_offset,
-        config.data.azimuth_offset,
-        config.data.x_offset,
-        config.data.y_offset,
-        config.data.z_offset,
-    ]
-    label_scales = [
-        config.data.energy_scale,
-        config.data.zenith_scale,
-        config.data.azimuth_scale,
-        config.data.x_scale,
-        config.data.y_scale,
-        config.data.z_scale,
-    ]
+    # Extract normalization parameters from config
+    # affine_offsets/scales: [charge, time, x, y, z]
+    # label_offsets/scales: [Energy, Zenith, Azimuth, X, Y, Z]
+    affine_offsets = list(config.data.affine_offsets)
+    affine_scales = list(config.data.affine_scales)
+    label_offsets = list(config.data.label_offsets)
+    label_scales = list(config.data.label_scales)
     
     # Create dataset
     print(f"📂 Loading dataset from: {config.data.h5_path}")
@@ -183,23 +159,23 @@ def visualize_event_from_dataloader(
     
     # Denormalize signal data
     print(f"\n🔄 Denormalizing data...")
-    print(f"   Charge: offset={config.data.charge_offset}, scale={config.data.charge_scale}")
-    print(f"   Time: offset={config.data.time_offset}, scale={config.data.time_scale}, transform={config.data.time_transform}")
+    print(f"   Charge: offset={affine_offsets[0]}, scale={affine_scales[0]}")
+    print(f"   Time: offset={affine_offsets[1]}, scale={affine_scales[1]}, transform={config.data.time_transform}")
     
     x_sig_denorm = denormalize_signal(
         x_sig_norm,
-        charge_offset=config.data.charge_offset,
-        charge_scale=config.data.charge_scale,
-        time_offset=config.data.time_offset,
-        time_scale=config.data.time_scale,
+        charge_offset=affine_offsets[0],
+        charge_scale=affine_scales[0],
+        time_offset=affine_offsets[1],
+        time_scale=affine_scales[1],
         time_transform=config.data.time_transform,
     )
     
     # Denormalize labels
     labels_denorm = denormalize_labels(
         labels_norm,
-        label_offsets=np.array(label_offsets),
-        label_scales=np.array(label_scales),
+        label_offsets=np.array(label_offsets, dtype=np.float32),
+        label_scales=np.array(label_scales, dtype=np.float32),
     )
     
     # Print event information
