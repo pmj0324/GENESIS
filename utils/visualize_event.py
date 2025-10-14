@@ -12,12 +12,13 @@ visualize_event.py
 from __future__ import annotations
 import argparse
 import sys
+import os
 from pathlib import Path
 import numpy as np
 import torch
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import load_config_from_file
 from dataloader.dataloader import PMTDataset
