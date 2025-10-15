@@ -62,6 +62,7 @@ class ModelConfig:
     # - "ln": ln(1+x) - natural log, ln(1+0)=0
     # - "log10": log10(1+x) - base-10 log, log10(1+0)=0
     time_transform: Optional[str] = "ln"  # "log10" or "ln"
+    exclude_zero_time: bool = True  # Exclude zero time values (recommended for log transforms)
     
     def __post_init__(self):
         """Convert all parameters to proper types."""

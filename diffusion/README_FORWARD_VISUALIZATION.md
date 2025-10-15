@@ -8,15 +8,15 @@
 
 ```
 diffusion/
-├── forward_visualize.py         # 단일 이벤트 forward 디퓨전 시각화
-├── forward_event_visualize.py   # 원본 vs 노이지 신호 비교 시각화
-├── forward_analyze.py           # 배치 단위 통계적 분석
-└── reverse_compare.py           # 역방향 디퓨전 비교 (참고용)
+├── forward_show_event_3D.py     # 단일 이벤트 forward 디퓨전 시각화
+├── forward_show_event_scatter.py # 원본 vs 노이지 신호 비교 시각화
+├── forward_stat_analysis.py     # 배치 단위 통계적 분석
+└── reverse_show_event_3D.py     # 역방향 디퓨전 비교 (참고용)
 ```
 
 ## 📊 모듈별 상세 설명
 
-### 1. `forward_visualize.py` - 단일 이벤트 Forward 디퓨전 시각화
+### 1. `forward_show_event_3D.py` - 단일 이벤트 Forward 디퓨전 시각화
 
 **목적**: 하나의 이벤트가 forward diffusion 과정에서 어떻게 변하는지 시각화
 
@@ -29,20 +29,20 @@ diffusion/
 **사용 예시**:
 ```bash
 # 기본 사용법
-python diffusion/forward_visualize.py \
+python diffusion/forward_show_event_3D.py \
     --config configs/default.yaml \
     --event-index 0 \
     --timesteps 0 250 500 750 999 \
     --save-images
 
 # 빠른 테스트
-python diffusion/forward_visualize.py \
+python diffusion/forward_show_event_3D.py \
     --config configs/default.yaml \
     --event-index 5 \
     --quick
 
 # NPZ 파일도 저장
-python diffusion/forward_visualize.py \
+python diffusion/forward_show_event_3D.py \
     --config configs/default.yaml \
     --event-index 0 \
     --save-npz \
@@ -66,7 +66,7 @@ python diffusion/forward_visualize.py \
 
 ---
 
-### 2. `forward_event_visualize.py` - 원본 vs 노이지 신호 비교
+### 2. `forward_show_event_scatter.py` - 원본 vs 노이지 신호 비교
 
 **목적**: 원본 신호와 노이즈가 추가된 신호를 직접 비교
 
@@ -79,13 +79,13 @@ python diffusion/forward_visualize.py \
 **사용 예시**:
 ```bash
 # 기본 사용법
-python diffusion/forward_event_visualize.py
+python diffusion/forward_show_event_scatter.py
 
 # 설정 파일 지정
-python diffusion/forward_event_visualize.py --config configs/default.yaml
+python diffusion/forward_show_event_scatter.py --config configs/default.yaml
 
 # 샘플 수 조정
-python diffusion/forward_event_visualize.py --num-samples 8
+python diffusion/forward_show_event_scatter.py --num-samples 8
 ```
 
 **CLI 옵션**:
@@ -100,7 +100,7 @@ python diffusion/forward_event_visualize.py --num-samples 8
 
 ---
 
-### 3. `forward_analyze.py` - 배치 단위 통계적 분석
+### 3. `forward_stat_analysis.py` - 배치 단위 통계적 분석
 
 **목적**: 대량의 이벤트에 대한 forward diffusion 과정의 통계적 분석
 
@@ -114,18 +114,18 @@ python diffusion/forward_event_visualize.py --num-samples 8
 **사용 예시**:
 ```bash
 # 기본 배치 분석
-python diffusion/forward_analyze.py \
+python diffusion/forward_stat_analysis.py \
     --config configs/default.yaml \
     --batch-size 100
 
 # 특정 timestep들 분석
-python diffusion/forward_analyze.py \
+python diffusion/forward_stat_analysis.py \
     --config configs/default.yaml \
     --batch-size 200 \
     --timesteps 0 100 200 500 999
 
 # Gaussian 테스트 포함
-python diffusion/forward_analyze.py \
+python diffusion/forward_stat_analysis.py \
     --config configs/default.yaml \
     --batch-size 100 \
     --test-gaussian
@@ -147,7 +147,7 @@ python diffusion/forward_analyze.py \
 
 ---
 
-### 4. `reverse_compare.py` - 역방향 디퓨전 비교 (참고용)
+### 4. `reverse_show_event_3D.py` - 역방향 디퓨전 비교 (참고용)
 
 **목적**: 역방향 디퓨전으로 생성된 샘플과 실제 데이터 비교
 
@@ -173,17 +173,17 @@ export KMP_DUPLICATE_LIB_OK=TRUE
 
 1. **단일 이벤트 시각화**:
    ```bash
-   python diffusion/forward_visualize.py --config configs/default.yaml --event-index 0
+   python diffusion/forward_show_event_3D.py --config configs/default.yaml --event-index 0
    ```
 
 2. **배치 통계 분석**:
    ```bash
-   python diffusion/forward_analyze.py --config configs/default.yaml --batch-size 100
+   python diffusion/forward_stat_analysis.py --config configs/default.yaml --batch-size 100
    ```
 
 3. **신호 비교**:
    ```bash
-   python diffusion/forward_event_visualize.py --config configs/default.yaml
+   python diffusion/forward_show_event_scatter.py --config configs/default.yaml
    ```
 
 ## 📈 출력 해석
