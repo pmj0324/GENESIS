@@ -142,7 +142,7 @@ class DataConfig:
     """
     
     # Data paths
-    h5_path: str = "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
+    h5_path: str = "GENESIS-data/22644_0921.h5"
     
     # Data preprocessing
     replace_time_inf_with: Optional[float] = 0.0  # Replace inf time values

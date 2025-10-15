@@ -99,5 +99,6 @@ dev-logs/
 
 # Data files (uncomment if you don't want to track data)
 .diffusion_analysis/
+GENESIS-data/
 # data/
 # datasets/

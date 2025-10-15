@@ -43,7 +43,7 @@ diffusion:
 
 # Data configuration
 data:
-  h5_path: "/home/work/GENESIS/GENESIS-data/22644_0921.h5"
+  h5_path: "GENESIS-data/22644_0921.h5"
   replace_time_inf_with: 0.0
   channel_first: true
   batch_size: 16
