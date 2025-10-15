@@ -259,9 +259,9 @@ bash run.sh
 GENESIS automatically generates 3D visualizations of sampled events:
 
 ```python
-from utils.visualization import create_3d_event_plot
+from utils.event_visualization.event_show import show_event_from_npz
 
-create_3d_event_plot(
+show_event_from_npz(
     npz_path="sample_0000.npz",
     output_path="sample_0000_3d.png"
 )

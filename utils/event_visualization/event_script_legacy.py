@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import load_config_from_file
 from dataloader.pmt_dataloader import PMTSignalsH5
-from utils.fast_3d_plot import plot_event_3d
+from utils.event_visualization.event_fast import plot_event_fast
 
 
 def denormalize_signal(
@@ -232,7 +232,7 @@ def visualize_event_from_dataloader(
         geometry = np.loadtxt(detector_csv, delimiter=',', skiprows=1, usecols=(1,2,3))
         
         # Direct fast plotting
-        fig, axes = plot_event_3d(
+        fig, axes = plot_event_fast(
             charge_data=x_sig_denorm[0],
             time_data=x_sig_denorm[1],
             geometry=geometry,

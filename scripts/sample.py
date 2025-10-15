@@ -218,9 +218,9 @@ def save_samples(
         # Create 3D visualization
         if create_3d:
             try:
-                from utils.visualization import create_3d_event_plot
+                from utils.event_visualization.event_show import show_event_from_npz
                 png_path = output_dir / f"sample_{i:04d}_3d.png"
-                create_3d_event_plot(
+                show_event_from_npz(
                     npz_path=npz_path,
                     output_path=png_path,
                     show=False

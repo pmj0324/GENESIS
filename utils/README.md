@@ -9,8 +9,8 @@ This directory contains core utility modules for the GENESIS IceCube diffusion m
 | Module | Purpose | Key Functions | Usage |
 |--------|---------|---------------|-------|
 | `denormalization.py` | Convert normalized data back to original scale | `denormalize_signal()`, `denormalize_label()`, `denormalize_full_event()` | Training, sampling, visualization |
-| `fast_3d_plot.py` | Ultra-fast 3D event visualization | `plot_event_3d()`, `plot_event_comparison()` | Forward/reverse diffusion visualization |
-| `npz_show_event.py` | 3D visualization of NPZ event files | `show_event()` | Event inspection, debugging |
+| `fast_3d_plot.py` | Ultra-fast 3D event visualization | `plot_event_fast()`, `plot_event_comparison_fast()` | Forward/reverse diffusion visualization |
+| `event_show.py` | 3D visualization of NPZ event files | `show_event_from_npz()` | Event inspection, debugging |
 | `visualization.py` | High-level visualization utilities | `create_3d_event_plot()`, `EventVisualizer` | Integration layer for visualization |
 
 ### 🆕 New Organized Modules
@@ -138,7 +138,7 @@ x_sig_orig, geom_orig, label_orig = denormalize_full_event(
 
 **Key Functions**:
 
-#### `plot_event_3d(charge_data, time_data, geometry, labels, output_path=None, plot_type="both", ...)`
+#### `plot_event_fast(charge_data, time_data, geometry, labels, output_path=None, plot_type="both", ...)`
 - **Purpose**: Create 3D visualization of IceCube events
 - **Parameters**:
   - `charge_data`: (5160,) charge/NPE values
@@ -154,17 +154,17 @@ x_sig_orig, geom_orig, label_orig = denormalize_full_event(
   - `alpha`: Transparency (default: 0.8)
 - **Returns**: (fig, axes) matplotlib objects
 
-#### `plot_event_comparison(charge_data1, time_data1, charge_data2, time_data2, ...)`
+#### `plot_event_comparison_fast(charge_data1, time_data1, charge_data2, time_data2, ...)`
 - **Purpose**: Compare two events side by side
 - **Parameters**: Similar to `plot_event_3d` but for two events
 - **Returns**: (fig, (ax1, ax2)) matplotlib objects
 
 **Usage Examples**:
 ```python
-from utils.fast_3d_plot import plot_event_3d, plot_event_comparison
+from utils.event_visualization.event_fast import plot_event_fast, plot_event_comparison_fast
 
 # Single event visualization
-fig, axes = plot_event_3d(
+fig, axes = plot_event_fast(
     charge_data=event_charge,      # (5160,)
     time_data=event_time,          # (5160,)
     geometry=detector_geometry,    # (5160, 3)
@@ -175,7 +175,7 @@ fig, axes = plot_event_3d(
 )
 
 # Event comparison
-fig, (ax1, ax2) = plot_event_comparison(
+fig, (ax1, ax2) = plot_event_comparison_fast(
     charge_data1=real_charge, time_data1=real_time,
     charge_data2=gen_charge, time_data2=gen_time,
     geometry=detector_geometry,
@@ -232,7 +232,7 @@ python utils/fast_3d_plot.py \
 
 **Usage Examples**:
 ```python
-from utils.h5_hist import plot_hist_pair
+from utils.h5.h5_hist import plot_hist_pair
 
 # Basic histogram generation
 plot_hist_pair(
@@ -307,17 +307,17 @@ python utils/h5_hist.py -p data/icecube_data.h5 \
 
 **Usage Examples**:
 ```python
-from utils.npz_show_event import show_event
+from utils.event_visualization.event_show import show_event_from_npz
 
 # Basic event visualization
-fig, ax = show_event(
+fig, ax = show_event_from_npz(
     npz_path="outputs/sample_0000.npz",
     detector_csv="configs/detector_geometry.csv",
     out_path="event_visualization.png"
 )
 
 # Advanced visualization with custom settings
-fig, ax = show_event(
+fig, ax = show_event_from_npz(
     npz_path="outputs/sample_0000.npz",
     detector_csv="configs/detector_geometry.csv",
     out_path="custom_event.png",
@@ -366,17 +366,18 @@ fig, ax = show_event(
 
 **Usage Examples**:
 ```python
-from utils.visualization import create_3d_event_plot, EventVisualizer
+from utils.event_visualization.event_show import show_event_from_npz
+from utils.event_visualization.event_fast import plot_event_fast
 
 # Simple wrapper usage
-fig, ax = create_3d_event_plot(
-    "outputs/sample_0000.npz",
-    "outputs/sample_0000_3d.png",
+fig, ax = show_event_from_npz(
+    npz_path="outputs/sample_0000.npz",
+    output_path="outputs/sample_0000_3d.png",
     show=False
 )
 
-# Object-oriented usage
-visualizer = EventVisualizer(
+# Fast plotting usage
+fig, ax = plot_event_fast(
     detector_geometry_path="configs/detector_geometry.csv",
     sphere_resolution=(50, 25),
     base_radius=6.0,
@@ -428,13 +429,13 @@ x_sig_orig, geom_orig, label_orig = denormalize_full_event(
 
 ### 2. Visualize Forward Diffusion Process
 ```python
-from utils.fast_3d_plot import plot_event_3d
+from utils.event_visualization.event_fast import plot_event_fast
 
 # Visualize at different timesteps
 for t in [0, 250, 500, 750, 999]:
     x_t = diffusion.q_sample(x_sig, torch.tensor([t]))
     
-    plot_event_3d(
+    plot_event_fast(
         charge_data=x_t[0, 0].cpu().numpy(),
         time_data=x_t[0, 1].cpu().numpy(),
         geometry=detector_geometry,
@@ -446,7 +447,7 @@ for t in [0, 250, 500, 750, 999]:
 
 ### 3. Analyze Dataset Statistics
 ```python
-from utils.h5_hist import plot_hist_pair
+from utils.h5.h5_hist import plot_hist_pair
 
 # Generate comprehensive dataset analysis
 plot_hist_pair(
@@ -461,7 +462,7 @@ plot_hist_pair(
 
 ### 4. Inspect Generated Samples
 ```python
-from utils.visualization import EventVisualizer
+from utils.event_visualization.event_array import show_event_from_array
 
 # Create visualizer
 viz = EventVisualizer(figure_size=(20, 12))

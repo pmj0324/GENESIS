@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
 """
-GENESIS Data Visualization Script
-================================
+h5_distribution.py
 
-Script for visualizing real data and analyzing data distributions.
+H5 Data Distribution Visualization Script
+========================================
+
+Script for visualizing H5 data distributions and generating histograms.
+Creates beautiful histograms showing charge (NPE) and time distributions
+from HDF5 files with various styling options.
+
+Usage:
+    python h5_distribution.py -p data.h5 --bins 200 --log-time ln --style modern
 """
 
 import sys
 import os
+from pathlib import Path
 
 # Add parent directories to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from utils.h5_hist import plot_hist_pair
+from utils.h5.h5_hist import plot_hist_pair
 import argparse
 
 

@@ -1,20 +1,22 @@
 # Legacy imports for backward compatibility
-from .npz_show_event import show_event
 from .denormalization import (
     denormalize_signal,
     denormalize_label,
     denormalize_full_event,
     denormalize_from_config
 )
-from .fast_3d_plot import plot_event_3d, plot_event_comparison
-from .visualization import create_3d_event_plot, EventVisualizer
+# Legacy fast_3d_plot imports removed - use event_visualization.event_fast instead
+# visualization.py removed - use event_visualization modules instead
 
 # New organized modules
 from .event_visualization import (
     show_event_from_npz,
     show_event_grid,
     show_event_from_array,
-    show_event_from_dataloader
+    show_event_from_dataloader,
+    plot_event_fast,
+    plot_event_comparison_fast,
+    visualize_event_from_dataloader
 )
 from .h5 import (
     plot_hist_pair,
@@ -27,21 +29,19 @@ from .h5 import (
 
 __all__ = [
     # Legacy functions
-    "show_event",
     "denormalize_signal",
     "denormalize_label",
     "denormalize_full_event",
     "denormalize_from_config",
-    "plot_event_3d",
-    "plot_event_comparison",
-    "create_3d_event_plot",
-    "EventVisualizer",
     
     # New event visualization
     "show_event_from_npz",
     "show_event_grid",
     "show_event_from_array", 
     "show_event_from_dataloader",
+    "plot_event_fast",
+    "plot_event_comparison_fast",
+    "visualize_event_from_dataloader",
     
     # H5 utilities
     "plot_hist_pair",

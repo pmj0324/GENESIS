@@ -2,6 +2,11 @@
 """
 npz-show-event.py
 
+DEPRECATED: This module is maintained for backward compatibility only.
+For new code, use utils.event_visualization.event_show instead:
+
+    from utils.event_visualization.event_show import show_event_from_npz
+
 NPZ의 한 이벤트(키: info, label, input)를 3D로 시각화.
 - input[0,:] = NPE       → 구 크기
 - input[1,:] = FirstTime → 색
@@ -30,12 +35,21 @@ def show_event(
     separate_plots: bool = False,  # Create separate NPE and time plots
 ):
     """
+    DEPRECATED: Use utils.event_visualization.event_show.show_event_from_npz instead.
+    
     NPZ 파일(키: info, label, input)을 읽어 3D 시각화를 만듭니다.
     - detector_csv: x,y,z 컬럼이 있는 CSV 경로
     - out_path: 저장 경로 (None이면 저장하지 않음)
     Returns:
         (fig, ax): matplotlib Figure, Axes3D
     """
+    import warnings
+    warnings.warn(
+        "utils.npz_show_event.show_event is deprecated. "
+        "Use utils.event_visualization.event_show.show_event_from_npz instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # --- load geometry ---
     df_geo = pd.read_csv(detector_csv)
     x = np.asarray(df_geo["x"], dtype=np.float32)

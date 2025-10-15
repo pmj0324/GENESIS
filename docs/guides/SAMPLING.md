@@ -218,9 +218,9 @@ sample = sample_neutrino_event(
 Generated samples are automatically visualized in 3D:
 
 ```python
-from utils.visualization import create_3d_event_plot
+from utils.event_visualization.event_show import show_event_from_npz
 
-create_3d_event_plot(
+show_event_from_npz(
     npz_path="sample_0000.npz",
     output_path="sample_0000_3d.png",
     detector_geom_path="detector_geometry.npy"

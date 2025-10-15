@@ -72,7 +72,7 @@ def visualize_diffusion_steps(
     # Prepare NPZ helper if requested (forward)
     if generate_npz_3d:
         try:
-            from utils.npz_show_event import show_event  # local import
+            from utils.event_visualization.event_show import show_event_from_npz  # local import
             base_out_dir = Path(npz_out_dir) if npz_out_dir else (Path(save_path).parent if save_path else Path("outputs/plots"))
             npz_forward_dir = base_out_dir / "npz_per_timestep" / "forward"
             npz_reverse_dir = base_out_dir / "npz_per_timestep" / "reverse"
@@ -87,7 +87,7 @@ def visualize_diffusion_steps(
         np.savez(npz_path, input=sample_denorm, label=np.zeros(6, dtype=np.float32), info=np.zeros(6, dtype=np.float32))
         png_path = out_dir / f"event_{step_name}.png"
         try:
-            show_event(npz_path=str(npz_path), detector_csv=detector_csv, out_path=str(png_path), figure_size=(12, 8))
+            show_event_from_npz(npz_path=str(npz_path), detector_csv=detector_csv, output_path=str(png_path), figure_size=(12, 8))
             print(f"  ✅ NPZ plot saved: {png_path}")
         except Exception as e:
             print(f"  ⚠️  NPZ plot failed ({step_name}): {e}")
@@ -324,7 +324,7 @@ def visualize_diffusion_steps(
     # =========================================================================
     if generate_npz_3d and not npz_all_timesteps:
         try:
-            from utils.npz_show_event import show_event
+            from utils.event_visualization.event_show import show_event_from_npz
             print("\n🧩 Creating NPZ-style 3D visualizations (per selected timestep)...")
             print("-"*70)
             
@@ -344,10 +344,10 @@ def visualize_diffusion_steps(
                 )
                 png_path = out_dir / f"event_{step_name}.png"
                 try:
-                    show_event(
+                    show_event_from_npz(
                         npz_path=str(npz_path),
                         detector_csv=detector_csv,
-                        out_path=str(png_path),
+                        output_path=str(png_path),
                         figure_size=(12, 8)
                     )
                     print(f"  ✅ Saved 3D NPZ plot: {png_path}")

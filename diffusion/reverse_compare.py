@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import load_config_from_file
 from dataloader.pmt_dataloader import PMTSignalsH5
 from models.factory import ModelFactory
-from utils.fast_3d_plot import plot_event_3d, plot_event_comparison
+from utils.event_visualization.event_fast import plot_event_fast, plot_event_comparison_fast
 
 
 def load_model_and_event(config_path: str, pth_path: str, event_index: int):
@@ -278,7 +278,7 @@ def compare_reverse_process(
                 geometry = np.loadtxt(detector_csv, delimiter=',', skiprows=1, usecols=(1,2,3))
                 
                 # Direct fast plotting
-                plot_event_3d(
+                plot_event_fast(
                     charge_data=generated_denorm[0],
                     time_data=generated_denorm[1],
                     geometry=geometry,
@@ -324,7 +324,7 @@ def compare_reverse_process(
                 viz_start = time.perf_counter()
                 
                 # Direct fast plotting
-                plot_event_3d(
+                plot_event_fast(
                     charge_data=real_denorm[0],
                     time_data=real_denorm[1],
                     geometry=geometry,

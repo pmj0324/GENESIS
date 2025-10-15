@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import load_config_from_file
 from dataloader.pmt_dataloader import PMTSignalsH5
 from models.factory import ModelFactory
-from utils.fast_3d_plot import plot_event_3d
+from utils.event_visualization.event_fast import plot_event_fast
 import matplotlib.pyplot as plt
 
 
@@ -318,7 +318,7 @@ def visualize_forward_process(
                     # Denormalized plots (default)
                     if show_denormalized:
                         png_path = output_path / f"forward_t{t_val}_denorm.png"
-                        plot_event_3d(
+                        plot_event_fast(
                             charge_data=x_t_denorm[0],
                             time_data=x_t_denorm[1],
                             geometry=geometry,
@@ -336,7 +336,7 @@ def visualize_forward_process(
                     # Normalized plots (if requested)
                     if show_normalized:
                         png_path = output_path / f"forward_t{t_val}_norm.png"
-                        plot_event_3d(
+                        plot_event_fast(
                             charge_data=x_t_np[0],
                             time_data=x_t_np[1],
                             geometry=geometry,

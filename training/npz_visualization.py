@@ -30,7 +30,7 @@ def visualize_sample_as_npz(
         save_path: Path to save the generated sample visualization
         detector_csv: Path to detector geometry CSV
     """
-    from utils.npz_show_event import show_event
+    from utils.event_visualization.event_show import show_event_from_npz
     
     device = next(diffusion.parameters()).device
     
@@ -124,10 +124,10 @@ def visualize_sample_as_npz(
         # Create 3D visualization
         try:
             print(f"  🎨 Creating 3D visualization...")
-            fig, ax = show_event(
+            fig, ax = show_event_from_npz(
                 npz_path=str(npz_path),
                 detector_csv=detector_csv,
-                out_path=str(save_path),
+                output_path=str(save_path),
                 figure_size=(15, 10)
             )
             print(f"  ✅ Saved 3D visualization to: {save_path}")

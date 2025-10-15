@@ -123,7 +123,7 @@ from utils import (
     denormalize_full_event,
     denormalize_from_config
 )
-from utils.visualization import EventVisualizer
+from utils.event_visualization.event_array import show_event_from_array
 from utils.denormalization import denormalize_signal
 ```
 

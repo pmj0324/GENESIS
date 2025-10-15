@@ -27,7 +27,18 @@ from matplotlib import colormaps
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 
-from .event_show import _find_project_root
+def _find_project_root():
+    """Find the project root directory by looking for .git or configs folder."""
+    from pathlib import Path
+    current = Path.cwd()
+    
+    # Walk up the directory tree
+    for parent in [current] + list(current.parents):
+        if (parent / ".git").exists() or (parent / "configs").exists():
+            return parent
+    
+    # Fallback to current directory
+    return current
 
 
 def show_event_grid(

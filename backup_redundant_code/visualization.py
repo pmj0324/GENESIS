@@ -49,39 +49,32 @@ def create_3d_event_plot(
         ...     "outputs/samples/sample_0000_3d.png"
         ... )
     """
-    # Import npz_show_event module
-    try:
-        from utils.npz_show_event import show_event
-    except ImportError:
-        # Try relative import
-        import sys
-        from pathlib import Path
-        utils_dir = Path(__file__).parent
-        sys.path.insert(0, str(utils_dir))
-        from npz_show_event import show_event
+    # Import new event visualization module
+    from .event_visualization.event_show import show_event_from_npz
     
-    # Default detector CSV path
-    if detector_csv is None:
-        detector_csv = str(Path(__file__).parent / "csv" / "detector_geometry.csv")
-    
-    # Call show_event
-    fig, ax = show_event(
-        npz_path=str(npz_path),
+    # Call show_event_from_npz
+    fig, ax = show_event_from_npz(
+        npz_path=npz_path,
         detector_csv=detector_csv,
-        out_path=str(output_path) if output_path else None,
+        output_path=output_path,
+        show=show,
         **kwargs
     )
-    
-    if show:
-        plt.show()
-    else:
-        plt.close(fig)
     
     return fig, ax
 
 
 class EventVisualizer:
-    """Visualizer for IceCube neutrino events in npz-show-event format."""
+    """
+    Legacy EventVisualizer class.
+    
+    Note: This class is maintained for backward compatibility.
+    For new code, consider using the modules in utils.event_visualization:
+    - event_show.py for NPZ-based visualization
+    - event_array.py for direct array visualization  
+    - event_grid.py for grid layouts
+    - event_dataloader.py for dataloader integration
+    """
     
     def __init__(
         self,
