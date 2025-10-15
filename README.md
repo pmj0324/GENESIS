@@ -1,6 +1,6 @@
 # GENESIS
 
-**Generative IceCube Neutrino Event Synthesis using Diffusion Models**
+**Generative Engine for Neutrino Event Simulation and Infernce System**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
@@ -10,7 +10,7 @@
 
 ## 🎯 Overview
 
-GENESIS is a **diffusion-based generative model** for synthesizing IceCube PMT signals from neutrino events. It uses a **Diffusion Transformer (DiT)** architecture to learn the complex patterns of photomultiplier tube (PMT) responses conditioned on neutrino event properties.
+GENESIS is a **generative model** for synthesizing IceCube PMT signals from neutrino events. It uses a **Diffusion Transformer (DiT)** architecture to learn the complex patterns of photomultiplier tube (PMT) responses conditioned on neutrino event properties.
 
 ### Key Features
 
