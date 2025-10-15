@@ -105,7 +105,10 @@ class DiffusionConfig:
     beta_start: float = 1e-4   # Starting noise schedule
     beta_end: float = 2e-2     # Ending noise schedule
     objective: str = "eps"     # Training objective: "eps" or "x0"
-    schedule: str = "linear"   # Noise schedule: "linear" or "cosine"
+    schedule: str = "linear"   # Noise schedule: "linear", "cosine", "quadratic", "sigmoid"
+    
+    # Schedule-specific parameters
+    cosine_s: float = 0.008    # Small offset for cosine schedule to prevent β_t from being too small
     
     # Classifier-free guidance
     use_cfg: bool = True       # Use classifier-free guidance
@@ -119,6 +122,7 @@ class DiffusionConfig:
         self.beta_end = float(self.beta_end)
         self.objective = str(self.objective)
         self.schedule = str(self.schedule)
+        self.cosine_s = float(self.cosine_s)
         self.use_cfg = bool(self.use_cfg) if not isinstance(self.use_cfg, bool) else self.use_cfg
         self.cfg_scale = float(self.cfg_scale)
         self.cfg_dropout = float(self.cfg_dropout)
