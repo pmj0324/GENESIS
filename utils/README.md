@@ -10,9 +10,71 @@ This directory contains core utility modules for the GENESIS IceCube diffusion m
 |--------|---------|---------------|-------|
 | `denormalization.py` | Convert normalized data back to original scale | `denormalize_signal()`, `denormalize_label()`, `denormalize_full_event()` | Training, sampling, visualization |
 | `fast_3d_plot.py` | Ultra-fast 3D event visualization | `plot_event_3d()`, `plot_event_comparison()` | Forward/reverse diffusion visualization |
-| `h5_hist.py` | Beautiful histogram generation for HDF5 data | `plot_hist_pair()` | Data analysis, statistics |
 | `npz_show_event.py` | 3D visualization of NPZ event files | `show_event()` | Event inspection, debugging |
 | `visualization.py` | High-level visualization utilities | `create_3d_event_plot()`, `EventVisualizer` | Integration layer for visualization |
+
+### 🆕 New Organized Modules
+
+#### Event Visualization (`event_visualization/`)
+| Module | Purpose | Key Functions | Usage |
+|--------|---------|---------------|-------|
+| `event_show.py` | Basic event visualization from NPZ files | `show_event_from_npz()` | Standard NPZ-based visualization |
+| `event_grid.py` | Grid visualization showing NPE and Time separately | `show_event_grid()` | Comparative analysis |
+| `event_array.py` | Direct visualization from NumPy arrays | `show_event_from_array()` | Training loops, real-time visualization |
+| `event_dataloader.py` | Dataloader-integrated visualization | `show_event_from_dataloader()` | Training monitoring, debugging |
+
+#### H5 Utilities (`h5/`)
+| Module | Purpose | Key Functions | Usage |
+|--------|---------|---------------|-------|
+| `h5_hist.py` | Beautiful histogram generation for HDF5 data | `plot_hist_pair()` | Data analysis, statistics |
+| `h5_reader.py` | HDF5 file reading utilities | `read_h5_event()`, `read_h5_batch()` | Data loading, inspection |
+| `h5_stats.py` | Statistical analysis tools | `analyze_h5_dataset()`, `get_dataset_stats()` | Data quality analysis |
+| `h5_time_align.py` | Time alignment utilities | `align_time_data()`, `process_time_series()` | Time data processing |
+
+---
+
+## 🚀 Quick Start Examples
+
+### Event Visualization
+
+```python
+# 1. Basic NPZ visualization
+from utils.event_visualization.event_show import show_event_from_npz
+fig, ax = show_event_from_npz("event.npz", show=True)
+
+# 2. Grid visualization (NPE and Time separate)
+from utils.event_visualization.event_grid import show_event_grid
+fig, axes = show_event_grid("event.npz", grid_layout="side_by_side")
+
+# 3. Direct array visualization (perfect for training loops)
+from utils.event_visualization.event_array import show_event_from_array
+fig, ax = show_event_from_array(npe_array, time_array, geometry, labels)
+
+# 4. Dataloader visualization
+from utils.event_visualization.event_dataloader import show_event_from_dataloader
+fig, ax = show_event_from_dataloader(dataloader, event_index=5)
+```
+
+### H5 Utilities
+
+```python
+# 1. Read H5 data
+from utils.h5.h5_reader import read_h5_event, read_h5_batch
+event_data = read_h5_event("data.h5", event_index=0)
+batch_data = read_h5_batch("data.h5", start_index=0, batch_size=10)
+
+# 2. Statistical analysis
+from utils.h5.h5_stats import analyze_h5_dataset
+stats = analyze_h5_dataset("data.h5", "input", sample_size=1000)
+
+# 3. Time alignment
+from utils.h5.h5_time_align import align_time_data
+aligned_times = align_time_data(time_data, method="first_hit")
+
+# 4. Beautiful histograms
+from utils.h5.h5_hist import plot_hist_pair
+plot_hist_pair("data.h5", output_prefix="analysis")
+```
 
 ---
 
