@@ -148,6 +148,9 @@ def visualize_forward_process(
     print(f"   Timesteps: {timesteps}")
     print(f"   Save images: {save_images}")
     
+    # Start overall timing
+    overall_start = time.perf_counter()
+    
     # Move to device
     x_sig = x_sig.to(device)
     
@@ -178,13 +181,20 @@ def visualize_forward_process(
     print(f"{'-'*80}")
     
     # Process each timestep
+    total_forward_time = 0
+    total_denorm_time = 0
+    total_npz_time = 0
+    total_viz_time = 0
+    
     for t_val in timesteps:
+        timestep_start = time.perf_counter()
         t = torch.full((1,), t_val, device=device, dtype=torch.long)
         
         # Forward diffusion
-        start_time = time.perf_counter()
+        forward_start = time.perf_counter()
         x_t = diffusion.q_sample(x_sig, t)
-        forward_time = time.perf_counter() - start_time
+        forward_time = time.perf_counter() - forward_start
+        total_forward_time += forward_time
         
         # Statistics
         charge = x_t[0, 0].cpu().numpy()  # (5160,)
@@ -202,7 +212,8 @@ def visualize_forward_process(
         
         # Save NPZ and images if requested
         if save_images:
-            # Denormalize for visualization
+            # Step 1: Denormalize for visualization
+            denorm_start = time.perf_counter()
             x_t_denorm = denormalize_signal(
                 x_t[0].cpu().numpy(),
                 charge_offset=config.data.affine_offsets[0],
@@ -211,8 +222,11 @@ def visualize_forward_process(
                 time_scale=config.data.affine_scales[1],
                 time_transform=config.data.time_transform,
             )
+            denorm_time = time.perf_counter() - denorm_start
+            total_denorm_time += denorm_time
             
-            # Save NPZ
+            # Step 2: Save NPZ
+            npz_start = time.perf_counter()
             npz_path = output_path / f"forward_t{t_val}.npz"
             np.savez(
                 npz_path,
@@ -220,8 +234,10 @@ def visualize_forward_process(
                 label=labels_denorm,
                 info=labels_denorm,
             )
+            npz_time = time.perf_counter() - npz_start
+            total_npz_time += npz_time
             
-            # Create 3D visualization
+            # Step 3: Create 3D visualization
             png_path = output_path / f"forward_t{t_val}.png"
             try:
                 viz_start = time.perf_counter()
@@ -232,9 +248,20 @@ def visualize_forward_process(
                     figure_size=(15, 10)
                 )
                 viz_time = time.perf_counter() - viz_start
-                print(f"   ✅ t={t_val}: Forward={forward_time*1000:.1f}ms, Viz={viz_time*1000:.1f}ms")
+                total_viz_time += viz_time
+                
+                # Detailed timing breakdown
+                timestep_total = forward_time + denorm_time + npz_time + viz_time
+                print(f"   ✅ t={t_val}: Forward={forward_time*1000:.1f}ms, "
+                      f"Denorm={denorm_time*1000:.1f}ms, "
+                      f"NPZ={npz_time*1000:.1f}ms, "
+                      f"Viz={viz_time*1000:.1f}ms, "
+                      f"Total={timestep_total*1000:.1f}ms")
             except Exception as e:
                 print(f"   ⚠️  t={t_val}: Visualization failed: {e}")
+        
+        timestep_total = time.perf_counter() - timestep_start
+        print(f"   📊 t={t_val} total time: {timestep_total*1000:.1f}ms")
     
     # Overall statistics
     print(f"\n{'='*80}")
@@ -257,6 +284,21 @@ def visualize_forward_process(
         finite_time = nonzero_orig_time[np.isfinite(nonzero_orig_time)]
         if len(finite_time) > 0:
             print(f"   Time: Mean: {finite_time.mean():.2f}, Std: {finite_time.std():.2f}")
+    
+    # End overall timing
+    overall_time = time.perf_counter() - overall_start
+    
+    # Print detailed timing summary
+    print(f"\n{'='*80}")
+    print(f"⏱️  Detailed Timing Summary")
+    print(f"{'='*80}")
+    print(f"Forward diffusion: {total_forward_time*1000:.1f}ms ({total_forward_time/overall_time*100:.1f}%)")
+    if save_images:
+        print(f"Denormalization:  {total_denorm_time*1000:.1f}ms ({total_denorm_time/overall_time*100:.1f}%)")
+        print(f"NPZ saving:       {total_npz_time*1000:.1f}ms ({total_npz_time/overall_time*100:.1f}%)")
+        print(f"Visualization:    {total_viz_time*1000:.1f}ms ({total_viz_time/overall_time*100:.1f}%)")
+        print(f"Other overhead:   {(overall_time-total_forward_time-total_denorm_time-total_npz_time-total_viz_time)*1000:.1f}ms")
+    print(f"Total time:       {overall_time*1000:.1f}ms (100.0%)")
     
     print(f"\n✅ Forward diffusion visualization complete!")
     if save_images:
