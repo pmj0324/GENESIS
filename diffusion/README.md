@@ -1,17 +1,20 @@
 # Diffusion Module
 
-Comprehensive diffusion implementation for GENESIS, with support for DDPM, DDIM, and future Flow Matching.
+Comprehensive diffusion implementation for GENESIS, with support for DDPM, DDIM, and analysis tools.
 
 ## 📁 Structure
 
 ```
 diffusion/
-├── __init__.py              # Module exports
-├── gaussian_diffusion.py    # DDPM/DDIM implementation
-├── noise_schedules.py       # Noise schedule functions
-├── diffusion_utils.py       # Helper utilities
-├── analysis.py              # Analysis tools
-└── README.md               # This file
+├── __init__.py                    # Module exports
+├── gaussian_diffusion.py          # DDPM/DDIM implementation
+├── noise_schedules.py             # Noise schedule functions
+├── diffusion_utils.py             # Helper utilities
+├── analysis.py                    # Analysis tools
+├── check_forward_diffusion.py     # Forward diffusion checker
+├── reverse_test.py                # Reverse diffusion tester
+├── test_diffusion_process.py      # Complete diffusion tester
+└── README.md                      # This file
 ```
 
 ## 🚀 Quick Start
@@ -20,19 +23,15 @@ diffusion/
 
 ```python
 from diffusion import GaussianDiffusion, DiffusionConfig, create_gaussian_diffusion
-from models import create_model
+from models.factory import ModelFactory
+from config import load_config_from_file
 
-# Create model
-model = create_model(...)
+# Load config
+config = load_config_from_file("configs/default.yaml")
 
-# Create diffusion
-diffusion = create_gaussian_diffusion(
-    model,
-    timesteps=1000,
-    beta_start=1e-4,
-    beta_end=2e-2,
-    objective="eps",  # or "x0"
-    schedule="linear"  # or "cosine"
+# Create model and diffusion
+model, diffusion = ModelFactory.create_model_and_diffusion(
+    config.model, config.diffusion
 )
 
 # Training
@@ -42,18 +41,108 @@ loss = diffusion.loss(x0_sig, geom, label)
 samples = diffusion.sample(label, geom, shape=(B, 2, L))
 ```
 
-### Using Config
+## 🔧 Command-Line Tools
 
-```python
-from config import get_default_config
-from models.factory import ModelFactory
+### 1. Forward Diffusion Check
 
-config = get_default_config()
-model, diffusion = ModelFactory.create_model_and_diffusion(
-    config.model,
-    config.diffusion
-)
+Check if forward diffusion converges to Gaussian distribution:
+
+```bash
+# Single sample analysis (quick)
+python diffusion/check_forward_diffusion.py \
+    --config configs/default.yaml \
+    --sample-index 0 \
+    --quick
+
+# Batch analysis with statistics
+python diffusion/check_forward_diffusion.py \
+    --config configs/default.yaml \
+    analyze \
+    --analysis-batch-size 16 \
+    --timesteps 0 250 500 750 999
+
+# With NPZ/3D visualization
+python diffusion/check_forward_diffusion.py \
+    --config configs/default.yaml \
+    single \
+    --sample-index 42 \
+    --divisions 10 \
+    --npz-selected \
+    --detector-csv configs/detector_geometry.csv
 ```
+
+**Features:**
+- ✅ Forward diffusion process validation
+- ✅ Per-timestep statistics
+- ✅ NPZ file generation for 3D visualization
+- ✅ Quick mode for fast testing
+- ✅ Batch analysis with Q-Q plots
+
+### 2. Reverse Diffusion Test
+
+Test trained model with reverse diffusion sampling:
+
+```bash
+# Basic reverse sampling
+python diffusion/reverse_test.py \
+    --pth-path outputs/best_model.pth \
+    --config configs/default.yaml \
+    --event-index 0
+
+# With intermediate steps
+python diffusion/reverse_test.py \
+    --pth-path outputs/best_model.pth \
+    --config configs/default.yaml \
+    --event-index 42 \
+    --divisions 10 \
+    --save-intermediate
+
+# Custom output directory
+python diffusion/reverse_test.py \
+    --pth-path outputs/best_model.pth \
+    --config configs/default.yaml \
+    --event-index 100 \
+    --output-dir ./my_generated_samples
+```
+
+**Features:**
+- ✅ Load trained model from .pth checkpoint
+- ✅ Generate samples using DDIM sampling
+- ✅ Measure generation time
+- ✅ Save intermediate steps (optional)
+- ✅ NPZ + 3D PNG visualization
+- ✅ Detailed statistics output
+
+### 3. Complete Diffusion Test
+
+Full forward and reverse diffusion testing:
+
+```bash
+# Complete test
+python diffusion/test_diffusion_process.py \
+    --config configs/default.yaml \
+    --data-path ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5
+
+# Forward analysis only
+python diffusion/test_diffusion_process.py \
+    --config configs/default.yaml \
+    --data-path ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5 \
+    --analyze-only
+
+# Custom batch size
+python diffusion/test_diffusion_process.py \
+    --config configs/default.yaml \
+    --data-path ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5 \
+    --analyze-only \
+    --analysis-batch-size 1000
+```
+
+**Features:**
+- ✅ Forward diffusion analysis
+- ✅ Gaussian convergence validation
+- ✅ Statistical tests (KS, Shapiro-Wilk)
+- ✅ Histograms and Q-Q plots
+- ✅ Optional reverse diffusion test
 
 ## 📊 Noise Schedules
 
@@ -140,26 +229,6 @@ results = batch_analysis(
 )
 ```
 
-## 🛠️ Command-Line Tools
-
-### Analyze Diffusion
-
-```bash
-# Basic analysis
-python scripts/analysis/analyze_diffusion.py \
-    --config configs/default.yaml \
-    --data-path /path/to/data.h5 \
-    --output-dir diffusion_analysis
-
-# With schedule visualization
-python scripts/analysis/analyze_diffusion.py \
-    --config configs/default.yaml \
-    --data-path /path/to/data.h5 \
-    --visualize-schedule \
-    --compare-schedules \
-    --output-dir diffusion_analysis
-```
-
 ## 📈 Features
 
 ### Gaussian Diffusion
@@ -170,6 +239,7 @@ python scripts/analysis/analyze_diffusion.py \
 - ✅ **x0-prediction**: Predict clean signal
 - ✅ **Conditional Generation**: Support for labels and geometry
 - ✅ **Multiple Schedules**: Linear, cosine, quadratic, sigmoid
+- ✅ **_extract method**: Extract values for specific timesteps
 
 ### Analysis Tools
 
@@ -177,13 +247,16 @@ python scripts/analysis/analyze_diffusion.py \
 - ✅ **Statistical Tests**: KS test, Shapiro-Wilk test
 - ✅ **Visualization**: Histograms, Q-Q plots, process visualization
 - ✅ **Batch Analysis**: Analyze multiple batches efficiently
+- ✅ **NPZ Generation**: Save samples for 3D visualization
+- ✅ **3D Visualization**: Integration with `npz_show_event.py`
 
-### Noise Schedules
+### Command-Line Tools
 
-- ✅ **Linear**: Original DDPM schedule
-- ✅ **Cosine**: Improved schedule from iDDPM
-- ✅ **Quadratic**: Quadratic beta schedule
-- ✅ **Sigmoid**: Sigmoid-based schedule
+- ✅ **Forward Checker**: `check_forward_diffusion.py`
+- ✅ **Reverse Tester**: `reverse_test.py`
+- ✅ **Complete Tester**: `test_diffusion_process.py`
+- ✅ **Quick Mode**: Fast testing with minimal output
+- ✅ **Intermediate Steps**: Save samples at multiple timesteps
 
 ## 📚 API Reference
 
@@ -202,8 +275,11 @@ class GaussianDiffusion(nn.Module):
     def sample(self, label, geom, shape, return_all_timesteps=False) -> torch.Tensor
         """DDPM sampling"""
     
-    def sample_ddim(self, label, geom, shape, eta=0.0, ddim_steps=50) -> torch.Tensor
+    def ddim_sample(self, label, geom, shape, eta=0.0, ddim_steps=50) -> torch.Tensor
         """DDIM sampling (faster)"""
+    
+    def _extract(self, a, t, x_shape) -> torch.Tensor
+        """Extract values from 1-D tensor for batch of indices"""
 ```
 
 ### DiffusionConfig
@@ -216,6 +292,9 @@ class DiffusionConfig:
     beta_end: float = 2e-2
     objective: str = "eps"      # "eps" or "x0"
     schedule: str = "linear"    # "linear" or "cosine"
+    use_cfg: bool = True        # Classifier-free guidance
+    cfg_scale: float = 2.0      # Guidance scale
+    cfg_dropout: float = 0.1    # CFG dropout rate
 ```
 
 ## 🎯 Examples
@@ -224,8 +303,10 @@ class DiffusionConfig:
 
 ```python
 # Setup
-model = create_model(...)
-diffusion = create_gaussian_diffusion(model, timesteps=1000)
+config = load_config_from_file("configs/default.yaml")
+model, diffusion = ModelFactory.create_model_and_diffusion(
+    config.model, config.diffusion
+)
 optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4)
 
 # Training loop
@@ -253,13 +334,41 @@ with torch.no_grad():
 ```python
 # Faster sampling with DDIM (50 steps instead of 1000)
 with torch.no_grad():
-    samples = diffusion.sample_ddim(
+    samples = diffusion.ddim_sample(
         label=test_labels,
         geom=test_geom,
         shape=(batch_size, 2, 5160),
         eta=0.0,  # Deterministic
         ddim_steps=50
     )
+```
+
+### Example 4: Forward Diffusion Check
+
+```python
+# Check forward diffusion
+from diffusion.check_forward_diffusion import main as check_forward
+
+# Single sample check
+check_forward([
+    "--config", "configs/default.yaml",
+    "--sample-index", "0",
+    "--quick"
+])
+```
+
+### Example 5: Reverse Diffusion Test
+
+```python
+# Test trained model
+from diffusion.reverse_test import main as reverse_test
+
+reverse_test([
+    "--pth-path", "outputs/best_model.pth",
+    "--config", "configs/default.yaml",
+    "--event-index", "0",
+    "--save-intermediate"
+])
 ```
 
 ## 🔬 Validation
@@ -270,12 +379,19 @@ The module includes comprehensive validation tools:
 2. **Statistical Tests**: KS test and Shapiro-Wilk test for normality
 3. **Visual Inspection**: Histograms and Q-Q plots
 4. **Process Visualization**: See how noise is added over time
+5. **NPZ Generation**: Save samples for 3D visualization
+6. **Generation Time**: Measure reverse sampling performance
 
 Run validation:
 ```bash
-python scripts/analysis/analyze_diffusion.py \
-    --config configs/default.yaml \
-    --data-path /path/to/data.h5
+# Forward diffusion check
+python diffusion/check_forward_diffusion.py --config configs/default.yaml
+
+# Reverse diffusion test
+python diffusion/reverse_test.py --pth-path outputs/best_model.pth --config configs/default.yaml
+
+# Complete test
+python diffusion/test_diffusion_process.py --config configs/default.yaml --data-path /path/to/data.h5
 ```
 
 ## 🚧 Future: Flow Matching
@@ -297,6 +413,8 @@ flow/              # Future: Flow Matching
 - **Labels** are also used as conditioning
 - Default objective is **ε-prediction** (predict noise)
 - Default schedule is **linear** (can use cosine for better convergence)
+- All tools support **NPZ generation** for 3D visualization
+- **Quick mode** available for fast testing
 
 ## 🤝 Contributing
 
@@ -311,4 +429,3 @@ When adding new features:
 - DDPM: [Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2006.11239)
 - DDIM: [Denoising Diffusion Implicit Models](https://arxiv.org/abs/2010.02502)
 - iDDPM: [Improved Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2102.09672)
-

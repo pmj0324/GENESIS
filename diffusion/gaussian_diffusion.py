@@ -440,6 +440,22 @@ class GaussianDiffusion(nn.Module):
         
         return x
 
+    def _extract(self, a: torch.Tensor, t: torch.Tensor, x_shape: torch.Size) -> torch.Tensor:
+        """
+        Extract values from a 1-D tensor for a batch of indices.
+        
+        Args:
+            a: 1-D tensor of values
+            t: batch of timestep indices
+            x_shape: shape of the tensor to broadcast to
+            
+        Returns:
+            Extracted values broadcast to x_shape
+        """
+        batch_size = t.shape[0]
+        out = a.gather(-1, t.cpu())
+        return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
+
 
 def create_gaussian_diffusion(
     model: nn.Module,

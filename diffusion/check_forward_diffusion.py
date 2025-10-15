@@ -224,6 +224,7 @@ Quick examples:
         tend = time.perf_counter()
         print(f"  {t_val:<10} {charge_range:<30} {time_range:<30} {snr:<10.4f}  | ⏱️  q_sample: {(tend - tstart)*1000:.1f} ms")
 
+
     # Optional: save NPZ/PNG for selected timesteps (single event)
     if getattr(args, 'npz_selected', False):
         print(f"\n{'-'*70}\n🧩 Saving NPZ + 3D PNG for SELECTED forward timesteps (single event)\n{'-'*70}")

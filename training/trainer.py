@@ -809,6 +809,9 @@ class Trainer:
         # Generate training curves
         self._generate_training_curves()
         
+        # Run forward diffusion test
+        self._run_forward_diffusion_test()
+        
         # Close logging
         self.writer.close()
         if self.config.use_wandb and WANDB_AVAILABLE:
@@ -821,11 +824,12 @@ class Trainer:
             import builtins
             builtins.print = self.original_print
         
-        print("\n{'='*70}")
+        print(f"\n{'='*70}")
         print("🎉 Training completed!")
         print(f"📝 Training log saved to: {self.log_file_path}")
         print(f"📊 Training curves saved to: {Path(self.config.training.output_dir) / 'plots' / 'training_curves.png'}")
         print(f"📊 Training curves (PDF) saved to: {Path(self.config.training.output_dir) / 'plots' / 'training_curves.pdf'}")
+        print(f"📁 All outputs saved in: {self.config.training.output_dir}")
         print(f"{'='*70}")
 
     def _generate_training_curves(self):
@@ -963,6 +967,82 @@ class Trainer:
             
         except Exception as e:
             print(f"⚠️  Failed to generate training curves: {e}")
+
+    def _run_forward_diffusion_test(self):
+        """Run forward diffusion test to verify Gaussian convergence."""
+        try:
+            print("\n🔬 Running forward diffusion test...")
+            
+            # Get a small batch of validation data
+            val_batch = next(iter(self.val_loader))
+            x_sig, geom, labels = val_batch['x_sig'], val_batch['x_geo'], val_batch['labels']
+            
+            # Use only first few samples for efficiency
+            batch_size = min(8, x_sig.size(0))
+            x_sig = x_sig[:batch_size].to(self.device)
+            geom = geom[:batch_size].to(self.device)
+            labels = labels[:batch_size].to(self.device)
+            
+            # Test key timesteps
+            T = self.diffusion.cfg.timesteps
+            test_timesteps = [0, T//4, T//2, (3*T)//4, T-1]
+            
+            print(f"\n📊 Forward Diffusion Statistics (batch_size={batch_size})")
+            print(f"{'Timestep':<10} {'Charge Range':<30} {'Time Range':<30} {'SNR':<10}")
+            print(f"{'-'*80}")
+            
+            for t_val in test_timesteps:
+                t = torch.full((batch_size,), t_val, device=self.device, dtype=torch.long)
+                x_t = self.diffusion.q_sample(x_sig, t)
+                
+                charge_range = f"[{x_t[:,0].min():.3f}, {x_t[:,0].max():.3f}]"
+                time_range = f"[{x_t[:,1].min():.3f}, {x_t[:,1].max():.3f}]"
+                
+                sqrt_alpha_bar = self.diffusion.sqrt_alphas_cumprod[t_val].item()
+                sqrt_one_minus = self.diffusion.sqrt_one_minus_alphas_cumprod[t_val].item()
+                snr = sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
+                
+                print(f"{t_val:<10} {charge_range:<30} {time_range:<30} {snr:<10.4f}")
+            
+            # Per-sample statistics for final timestep
+            print(f"\n📈 Per-Sample Statistics (t={T-1})")
+            print(f"{'Sample':<8} {'Original':<20} {'Final':<20} {'Change':<15}")
+            print(f"{'Index':<8} {'Charge Mean':<10} {'Charge Mean':<10} {'Charge':<7} {'Time':<7}")
+            print(f"{'-'*80}")
+            
+            # Original statistics
+            orig_charge_means = x_sig[:, 0].mean(dim=1)
+            orig_time_means = x_sig[:, 1].mean(dim=1)
+            
+            # Final timestep
+            t_final = torch.full((batch_size,), T-1, device=self.device, dtype=torch.long)
+            x_final = self.diffusion.q_sample(x_sig, t_final)
+            final_charge_means = x_final[:, 0].mean(dim=1)
+            final_time_means = x_final[:, 1].mean(dim=1)
+            
+            # Calculate changes
+            charge_changes = final_charge_means - orig_charge_means
+            time_changes = final_time_means - orig_time_means
+            
+            # Print per-sample stats
+            for i in range(batch_size):
+                print(f"{i:<8} {orig_charge_means[i]:<10.4f} {final_charge_means[i]:<10.4f} {charge_changes[i]:<7.4f} {time_changes[i]:<7.4f}")
+            
+            # Overall statistics
+            print(f"\n📊 Overall Statistics:")
+            print(f"Charge: orig={orig_charge_means.mean():.4f}±{orig_charge_means.std():.4f}, "
+                  f"final={final_charge_means.mean():.4f}±{final_charge_means.std():.4f}")
+            print(f"Time:   orig={orig_time_means.mean():.4f}±{orig_time_means.std():.4f}, "
+                  f"final={final_time_means.mean():.4f}±{final_time_means.std():.4f}")
+            print(f"Changes: charge={charge_changes.mean():.4f}±{charge_changes.std():.4f}, "
+                  f"time={time_changes.mean():.4f}±{time_changes.std():.4f}")
+            
+            print("✅ Forward diffusion test complete!")
+            
+        except Exception as e:
+            print(f"⚠️  Forward diffusion test failed: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def create_trainer(config: ExperimentConfig) -> Trainer:
