@@ -245,7 +245,8 @@ def visualize_forward_process(
                     str(npz_path),
                     detector_csv=detector_csv,
                     out_path=str(png_path),
-                    figure_size=(15, 10)
+                    figure_size=(15, 10),
+                    separate_plots=True  # Create separate NPE and time plots
                 )
                 viz_time = time.perf_counter() - viz_start
                 total_viz_time += viz_time
