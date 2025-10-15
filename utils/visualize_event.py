@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import load_config_from_file
 from dataloader.pmt_dataloader import PMTSignalsH5
-from utils.npz_show_event import show_event
+from utils.fast_3d_plot import plot_event_3d
 
 
 def denormalize_signal(
@@ -223,18 +223,29 @@ def visualize_event_from_dataloader(
         info=labels_denorm,   # Same as label for compatibility
     )
     
-    # Create 3D visualization
+    # Create fast 3D visualization
     png_path = output_path / f"event_{event_index}.png"
-    print(f"🎨 Creating 3D visualization...")
+    print(f"🎨 Creating fast 3D visualization...")
     
     try:
-        fig, ax = show_event(
-            npz_path=str(npz_path),
-            detector_csv=detector_csv,
-            out_path=str(png_path),
-            figure_size=(15, 10)
+        # Load geometry from CSV
+        geometry = np.loadtxt(detector_csv, delimiter=',', skiprows=1, usecols=(1,2,3))
+        
+        # Direct fast plotting
+        fig, axes = plot_event_3d(
+            charge_data=x_sig_denorm[0],
+            time_data=x_sig_denorm[1],
+            geometry=geometry,
+            labels=labels_denorm,
+            output_path=str(png_path),
+            plot_type="both",
+            figure_size=(16, 8),
+            show_detector_hull=True,
+            show_background=True,
+            sphere_size=2.0,
+            alpha=0.8
         )
-        print(f"✅ 3D visualization saved to: {png_path}")
+        print(f"✅ Fast 3D visualization saved to: {png_path}")
     except Exception as e:
         print(f"⚠️  3D visualization failed: {e}")
         import traceback

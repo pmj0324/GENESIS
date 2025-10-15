@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import load_config_from_file
 from dataloader.pmt_dataloader import PMTSignalsH5
 from models.factory import ModelFactory
-from utils.npz_show_event import show_event
+from utils.fast_3d_plot import plot_event_3d, plot_event_comparison
 
 
 def load_model_and_event(config_path: str, pth_path: str, event_index: int):
@@ -273,12 +273,25 @@ def compare_reverse_process(
             gen_png_path = output_path / f"generated_t{t_val}.png"
             try:
                 viz_start = time.perf_counter()
-                show_event(
-                    str(gen_npz_path),
-                    detector_csv=detector_csv,
-                    out_path=str(gen_png_path),
-                    figure_size=(15, 10)
+                
+                # Load geometry from CSV
+                geometry = np.loadtxt(detector_csv, delimiter=',', skiprows=1, usecols=(1,2,3))
+                
+                # Direct fast plotting
+                plot_event_3d(
+                    charge_data=generated_denorm[0],
+                    time_data=generated_denorm[1],
+                    geometry=geometry,
+                    labels=labels_denorm,
+                    output_path=str(gen_png_path),
+                    plot_type="both",
+                    figure_size=(16, 8),
+                    show_detector_hull=True,
+                    show_background=True,
+                    sphere_size=2.0,
+                    alpha=0.8
                 )
+                
                 viz_time = time.perf_counter() - viz_start
                 print(f"   ✅ Generated t={t_val}: Viz={viz_time*1000:.1f}ms")
             except Exception as e:
@@ -309,12 +322,22 @@ def compare_reverse_process(
             real_png_path = output_path / f"real_t{t_val}.png"
             try:
                 viz_start = time.perf_counter()
-                show_event(
-                    str(real_npz_path),
-                    detector_csv=detector_csv,
-                    out_path=str(real_png_path),
-                    figure_size=(15, 10)
+                
+                # Direct fast plotting
+                plot_event_3d(
+                    charge_data=real_denorm[0],
+                    time_data=real_denorm[1],
+                    geometry=geometry,
+                    labels=labels_denorm,
+                    output_path=str(real_png_path),
+                    plot_type="both",
+                    figure_size=(16, 8),
+                    show_detector_hull=True,
+                    show_background=True,
+                    sphere_size=2.0,
+                    alpha=0.8
                 )
+                
                 viz_time = time.perf_counter() - viz_start
                 print(f"   ✅ Real t={t_val}: Viz={viz_time*1000:.1f}ms")
             except Exception as e:
