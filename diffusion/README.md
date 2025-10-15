@@ -17,6 +17,22 @@ diffusion/
 └── README.md                      # This file
 ```
 
+### 📋 File Descriptions
+
+**Core Implementation:**
+- **`gaussian_diffusion.py`**: Main DDPM/DDIM implementation with forward/reverse processes, loss computation, and sampling methods
+- **`noise_schedules.py`**: Noise schedule functions (linear, cosine, quadratic, sigmoid) for beta scheduling
+- **`diffusion_utils.py`**: Helper utilities for noise schedule visualization, value extraction, and batch processing
+
+**Analysis Tools:**
+- **`analysis.py`**: Statistical analysis tools for Gaussian convergence testing, Q-Q plots, and diffusion process visualization
+- **`check_forward_diffusion.py`**: Command-line tool to validate forward diffusion process and check Gaussian convergence
+- **`test_diffusion_process.py`**: Comprehensive testing tool for both forward and reverse diffusion processes
+- **`reverse_test.py`**: Test trained models by generating samples using reverse diffusion with performance timing
+
+**Module Interface:**
+- **`__init__.py`**: Exports all public classes and functions from the diffusion module
+
 ## 🚀 Quick Start
 
 ### Basic Usage
