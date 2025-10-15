@@ -39,6 +39,7 @@ from config import load_config_from_file
 from dataloader.pmt_dataloader import PMTSignalsH5
 from models.factory import ModelFactory
 from utils.fast_3d_plot import plot_event_3d
+import matplotlib.pyplot as plt
 
 
 def load_event_and_diffusion(config_path: str, event_index: int):
@@ -131,6 +132,63 @@ def denormalize_labels(
     return (labels_norm * label_scales) + label_offsets
 
 
+def plot_histograms(
+    charge_data: np.ndarray,
+    time_data: np.ndarray,
+    output_path: Path,
+    t_val: int,
+    title_suffix: str = ""
+):
+    """Create histogram plots for charge and time data."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Charge histogram
+    charge_valid = charge_data[charge_data > 0]
+    if len(charge_valid) > 0:
+        ax1.hist(charge_valid, bins=50, alpha=0.7, color='blue', edgecolor='black')
+        ax1.set_xlabel('NPE')
+        ax1.set_ylabel('Count')
+        ax1.set_title(f'Charge Distribution t={t_val}{title_suffix}')
+        ax1.set_yscale('log')
+        ax1.grid(True, alpha=0.3)
+        
+        # Add statistics
+        mean_charge = np.mean(charge_valid)
+        std_charge = np.std(charge_valid)
+        ax1.axvline(mean_charge, color='red', linestyle='--', label=f'Mean: {mean_charge:.3f}')
+        ax1.axvline(mean_charge + std_charge, color='orange', linestyle='--', alpha=0.7, label=f'±1σ: {std_charge:.3f}')
+        ax1.axvline(mean_charge - std_charge, color='orange', linestyle='--', alpha=0.7)
+        ax1.legend()
+    
+    # Time histogram
+    time_valid = time_data[(time_data > 0) & np.isfinite(time_data)]
+    if len(time_valid) > 0:
+        ax2.hist(time_valid, bins=50, alpha=0.7, color='green', edgecolor='black')
+        ax2.set_xlabel('Time (ns)')
+        ax2.set_ylabel('Count')
+        ax2.set_title(f'Time Distribution t={t_val}{title_suffix}')
+        ax2.set_yscale('log')
+        ax2.grid(True, alpha=0.3)
+        
+        # Add statistics
+        mean_time = np.mean(time_valid)
+        std_time = np.std(time_valid)
+        ax2.axvline(mean_time, color='red', linestyle='--', label=f'Mean: {mean_time:.1f}')
+        ax2.axvline(mean_time + std_time, color='orange', linestyle='--', alpha=0.7, label=f'±1σ: {std_time:.1f}')
+        ax2.axvline(mean_time - std_time, color='orange', linestyle='--', alpha=0.7)
+        ax2.legend()
+    
+    plt.tight_layout()
+    
+    # Save histogram
+    hist_path = output_path / f"histogram_t{t_val}{title_suffix.lower().replace(' ', '_')}.png"
+    fig.savefig(hist_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    
+    print(f"   📊 Histogram saved: {hist_path}")
+    return hist_path
+
+
 def visualize_forward_process(
     x_sig: torch.Tensor,
     geom: torch.Tensor,
@@ -140,6 +198,10 @@ def visualize_forward_process(
     device: torch.device,
     timesteps: list,
     save_images: bool = False,
+    save_npz: bool = False,
+    save_histograms: bool = False,
+    show_normalized: bool = False,
+    show_denormalized: bool = True,
     output_dir: str = "./forward_visualization",
     detector_csv: str = "./configs/detector_geometry.csv",
 ):
@@ -147,6 +209,10 @@ def visualize_forward_process(
     print(f"\n🎨 Visualizing forward diffusion process...")
     print(f"   Timesteps: {timesteps}")
     print(f"   Save images: {save_images}")
+    print(f"   Save NPZ: {save_npz}")
+    print(f"   Save histograms: {save_histograms}")
+    print(f"   Show normalized: {show_normalized}")
+    print(f"   Show denormalized: {show_denormalized}")
     
     # Start overall timing
     overall_start = time.perf_counter()
@@ -225,53 +291,105 @@ def visualize_forward_process(
             denorm_time = time.perf_counter() - denorm_start
             total_denorm_time += denorm_time
             
-            # Step 2: Save NPZ
-            npz_start = time.perf_counter()
-            npz_path = output_path / f"forward_t{t_val}.npz"
-            np.savez(
-                npz_path,
-                input=x_t_denorm,
-                label=labels_denorm,
-                info=labels_denorm,
-            )
-            npz_time = time.perf_counter() - npz_start
-            total_npz_time += npz_time
-            
-            # Step 3: Create fast 3D visualization (no NPZ needed)
-            png_path = output_path / f"forward_t{t_val}.png"
-            try:
-                viz_start = time.perf_counter()
-                
-                # Load geometry from CSV
-                geometry = np.loadtxt(detector_csv, delimiter=',', skiprows=1, usecols=(1,2,3))
-                
-                # Direct fast plotting
-                plot_event_3d(
-                    charge_data=x_t_denorm[0],
-                    time_data=x_t_denorm[1],
-                    geometry=geometry,
-                    labels=labels_denorm,
-                    output_path=str(png_path),
-                    plot_type="both",  # Both NPE and time plots
-                    figure_size=(16, 8),
-                    show_detector_hull=True,
-                    show_background=True,
-                    sphere_size=2.0,
-                    alpha=0.8
+            # Step 2: Save NPZ (if requested)
+            npz_time = 0
+            if save_npz:
+                npz_start = time.perf_counter()
+                npz_path = output_path / f"forward_t{t_val}.npz"
+                np.savez(
+                    npz_path,
+                    input=x_t_denorm,
+                    label=labels_denorm,
+                    info=labels_denorm,
                 )
-                
-                viz_time = time.perf_counter() - viz_start
-                total_viz_time += viz_time
-                
-                # Detailed timing breakdown
-                timestep_total = forward_time + denorm_time + npz_time + viz_time
-                print(f"   ✅ t={t_val}: Forward={forward_time*1000:.1f}ms, "
-                      f"Denorm={denorm_time*1000:.1f}ms, "
-                      f"NPZ={npz_time*1000:.1f}ms, "
-                      f"Viz={viz_time*1000:.1f}ms, "
-                      f"Total={timestep_total*1000:.1f}ms")
-            except Exception as e:
-                print(f"   ⚠️  t={t_val}: Visualization failed: {e}")
+                npz_time = time.perf_counter() - npz_start
+                total_npz_time += npz_time
+                print(f"   💾 NPZ saved: {npz_path}")
+            
+            # Step 3: Create visualizations
+            viz_time = 0
+            if save_images:
+                try:
+                    viz_start = time.perf_counter()
+                    
+                    # Load geometry from CSV
+                    geometry = np.loadtxt(detector_csv, delimiter=',', skiprows=1, usecols=(1,2,3))
+                    
+                    # Denormalized plots (default)
+                    if show_denormalized:
+                        png_path = output_path / f"forward_t{t_val}_denorm.png"
+                        plot_event_3d(
+                            charge_data=x_t_denorm[0],
+                            time_data=x_t_denorm[1],
+                            geometry=geometry,
+                            labels=labels_denorm,
+                            output_path=str(png_path),
+                            plot_type="both",
+                            figure_size=(16, 8),
+                            show_detector_hull=True,
+                            show_background=True,
+                            sphere_size=2.0,
+                            alpha=0.8
+                        )
+                        print(f"   🎨 Denormalized plot saved: {png_path}")
+                    
+                    # Normalized plots (if requested)
+                    if show_normalized:
+                        png_path = output_path / f"forward_t{t_val}_norm.png"
+                        plot_event_3d(
+                            charge_data=x_t_np[0],
+                            time_data=x_t_np[1],
+                            geometry=geometry,
+                            labels=labels_np,
+                            output_path=str(png_path),
+                            plot_type="both",
+                            figure_size=(16, 8),
+                            show_detector_hull=True,
+                            show_background=True,
+                            sphere_size=2.0,
+                            alpha=0.8
+                        )
+                        print(f"   🎨 Normalized plot saved: {png_path}")
+                    
+                    viz_time = time.perf_counter() - viz_start
+                    total_viz_time += viz_time
+                    
+                except Exception as e:
+                    print(f"   ⚠️  t={t_val}: Visualization failed: {e}")
+            
+            # Step 4: Create histograms (if requested)
+            hist_time = 0
+            if save_histograms:
+                try:
+                    hist_start = time.perf_counter()
+                    
+                    # Denormalized histograms (default)
+                    if show_denormalized:
+                        plot_histograms(
+                            x_t_denorm[0], x_t_denorm[1], 
+                            output_path, t_val, " (Denormalized)"
+                        )
+                    
+                    # Normalized histograms (if requested)
+                    if show_normalized:
+                        plot_histograms(
+                            x_t_np[0], x_t_np[1], 
+                            output_path, t_val, " (Normalized)"
+                        )
+                    
+                    hist_time = time.perf_counter() - hist_start
+                    
+                except Exception as e:
+                    print(f"   ⚠️  t={t_val}: Histogram failed: {e}")
+            
+            # Detailed timing breakdown
+            timestep_total = forward_time + denorm_time + npz_time + viz_time + hist_time
+            print(f"   ✅ t={t_val}: Forward={forward_time*1000:.1f}ms, "
+                  f"Denorm={denorm_time*1000:.1f}ms, "
+                  f"NPZ={npz_time*1000:.1f}ms, "
+                  f"Viz={viz_time*1000:.1f}ms, "
+                  f"Hist={hist_time*1000:.1f}ms, "
+                  f"Total={timestep_total*1000:.1f}ms")
         
         timestep_total = time.perf_counter() - timestep_start
         print(f"   📊 t={t_val} total time: {timestep_total*1000:.1f}ms")
@@ -349,7 +467,32 @@ def main():
     parser.add_argument(
         "--save-images",
         action="store_true",
-        help="Save NPZ files and 3D visualizations"
+        help="Save 3D visualization images"
+    )
+    
+    parser.add_argument(
+        "--save-npz",
+        action="store_true",
+        help="Save NPZ files for each timestep (default: False)"
+    )
+    
+    parser.add_argument(
+        "--save-histograms",
+        action="store_true",
+        help="Save histogram plots for each timestep"
+    )
+    
+    parser.add_argument(
+        "--show-normalized",
+        action="store_true",
+        help="Show normalized data plots"
+    )
+    
+    parser.add_argument(
+        "--show-denormalized",
+        action="store_true",
+        default=True,
+        help="Show denormalized data plots (default: True)"
     )
     
     parser.add_argument(
@@ -399,6 +542,10 @@ def main():
         device=device,
         timesteps=args.timesteps,
         save_images=args.save_images,
+        save_npz=args.save_npz,
+        save_histograms=args.save_histograms,
+        show_normalized=args.show_normalized,
+        show_denormalized=args.show_denormalized,
         output_dir=args.output_dir,
         detector_csv=args.detector_csv,
     )
