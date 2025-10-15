@@ -10,10 +10,10 @@ diffusion/
 ├── gaussian_diffusion.py          # DDPM/DDIM implementation
 ├── noise_schedules.py             # Noise schedule functions
 ├── diffusion_utils.py             # Helper utilities
-├── analysis.py                    # Analysis tools
-├── check_forward_diffusion.py     # Forward diffusion checker
-├── reverse_test.py                # Reverse diffusion tester
-├── test_diffusion_process.py      # Complete diffusion tester
+├── analysis.py                    # Statistical analysis tools
+├── forward_visualize.py           # Single event forward visualization
+├── forward_analyze.py             # Batch forward diffusion analysis
+├── reverse_compare.py             # Reverse diffusion comparison tool
 └── README.md                      # This file
 ```
 
@@ -24,11 +24,11 @@ diffusion/
 - **`noise_schedules.py`**: Noise schedule functions (linear, cosine, quadratic, sigmoid) for beta scheduling
 - **`diffusion_utils.py`**: Helper utilities for noise schedule visualization, value extraction, and batch processing
 
-**Analysis Tools:**
+**Analysis & Visualization Tools:**
 - **`analysis.py`**: Statistical analysis tools for Gaussian convergence testing, Q-Q plots, and diffusion process visualization
-- **`check_forward_diffusion.py`**: Command-line tool to validate forward diffusion process and check Gaussian convergence
-- **`test_diffusion_process.py`**: Comprehensive testing tool for both forward and reverse diffusion processes
-- **`reverse_test.py`**: Test trained models by generating samples using reverse diffusion with performance timing
+- **`forward_visualize.py`**: **Single event forward diffusion visualization** - See how one event progresses through noise levels with 3D detector images
+- **`forward_analyze.py`**: **Batch forward diffusion analysis** - Statistical analysis of forward process for large datasets, Gaussian convergence testing
+- **`reverse_compare.py`**: **Reverse diffusion comparison** - Compare generated samples with real data at different timesteps during reverse process
 
 **Module Interface:**
 - **`__init__.py`**: Exports all public classes and functions from the diffusion module
@@ -59,106 +59,112 @@ samples = diffusion.sample(label, geom, shape=(B, 2, L))
 
 ## 🔧 Command-Line Tools
 
-### 1. Forward Diffusion Check
+### 1. Single Event Forward Visualization
 
-Check if forward diffusion converges to Gaussian distribution:
+**`forward_visualize.py`** - Visualize how a single event progresses through forward diffusion with 3D detector images.
 
 ```bash
-# Single sample analysis (quick)
-python diffusion/check_forward_diffusion.py \
+# Quick mode - only t=0 and t=T-1
+python diffusion/forward_visualize.py \
     --config configs/default.yaml \
-    --sample-index 0 \
+    --event-index 0 \
     --quick
 
-# Batch analysis with statistics
-python diffusion/check_forward_diffusion.py \
+# Custom timesteps with 3D visualizations
+python diffusion/forward_visualize.py \
     --config configs/default.yaml \
-    analyze \
-    --analysis-batch-size 16 \
-    --timesteps 0 250 500 750 999
+    --event-index 0 \
+    --timesteps 0 250 500 750 999 \
+    --save-images
 
-# With NPZ/3D visualization
-python diffusion/check_forward_diffusion.py \
+# Full visualization with custom output directory
+python diffusion/forward_visualize.py \
     --config configs/default.yaml \
-    single \
-    --sample-index 42 \
-    --divisions 10 \
-    --npz-selected \
-    --detector-csv configs/detector_geometry.csv
+    --event-index 5 \
+    --timesteps 0 100 200 500 999 \
+    --save-images \
+    --output-dir ./my_forward_viz
 ```
 
 **Features:**
-- ✅ Forward diffusion process validation
-- ✅ Per-timestep statistics
-- ✅ NPZ file generation for 3D visualization
-- ✅ Quick mode for fast testing
-- ✅ Batch analysis with Q-Q plots
+- Per-timestep statistics (mean, std, range, SNR)
+- 3D detector visualization at each timestep
+- NPZ files for each timestep
+- Quick mode for fast testing
+- Performance timing
 
-### 2. Reverse Diffusion Test
+### 2. Batch Forward Diffusion Analysis
 
-Test trained model with reverse diffusion sampling:
+**`forward_analyze.py`** - Statistical analysis of forward diffusion process for large batches.
 
 ```bash
-# Basic reverse sampling
-python diffusion/reverse_test.py \
+# Quick mode - t=0, t=T/2, t=T-1
+python diffusion/forward_analyze.py \
+    --config configs/default.yaml \
+    --batch-size 100 \
+    --quick
+
+# Custom timesteps with full analysis
+python diffusion/forward_analyze.py \
+    --config configs/default.yaml \
+    --batch-size 200 \
+    --timesteps 0 100 200 500 999
+
+# Large batch analysis
+python diffusion/forward_analyze.py \
+    --config configs/default.yaml \
+    --batch-size 500 \
+    --timesteps 0 50 100 200 400 600 800 999 \
+    --output-dir ./large_batch_analysis
+```
+
+**Features:**
+- Batch statistics (mean, std, percentiles)
+- Gaussian convergence testing (Shapiro-Wilk)
+- Per-channel analysis (charge, time)
+- Q-Q plots for Gaussian verification
+- SNR analysis across timesteps
+- Kurtosis and skewness analysis
+
+### 3. Reverse Diffusion Comparison
+
+**`reverse_compare.py`** - Compare reverse diffusion generation with real data at different timesteps.
+
+```bash
+# Basic reverse generation
+python diffusion/reverse_compare.py \
     --pth-path outputs/best_model.pth \
     --config configs/default.yaml \
     --event-index 0
 
-# With intermediate steps
-python diffusion/reverse_test.py \
+# Compare with real data at same timesteps
+python diffusion/reverse_compare.py \
     --pth-path outputs/best_model.pth \
     --config configs/default.yaml \
-    --event-index 42 \
-    --divisions 10 \
-    --save-intermediate
+    --event-index 0 \
+    --timesteps 0 100 500 999 \
+    --compare-real
 
-# Custom output directory
-python diffusion/reverse_test.py \
+# Quick mode with comparison
+python diffusion/reverse_compare.py \
     --pth-path outputs/best_model.pth \
     --config configs/default.yaml \
-    --event-index 100 \
-    --output-dir ./my_generated_samples
+    --event-index 0 \
+    --quick \
+    --compare-real
 ```
 
 **Features:**
-- ✅ Load trained model from .pth checkpoint
-- ✅ Generate samples using DDIM sampling
-- ✅ Measure generation time
-- ✅ Save intermediate steps (optional)
-- ✅ NPZ + 3D PNG visualization
-- ✅ Detailed statistics output
+- Generate samples using trained model
+- Visualize reverse process at specified timesteps
+- Optional comparison with real data at same timesteps
+- NPZ and 3D visualization for each timestep
+- Performance timing
+- Side-by-side real vs generated comparison
 
-### 3. Complete Diffusion Test
+### 4. Legacy Tools
 
-Full forward and reverse diffusion testing:
-
-```bash
-# Complete test
-python diffusion/test_diffusion_process.py \
-    --config configs/default.yaml \
-    --data-path ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5
-
-# Forward analysis only
-python diffusion/test_diffusion_process.py \
-    --config configs/default.yaml \
-    --data-path ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5 \
-    --analyze-only
-
-# Custom batch size
-python diffusion/test_diffusion_process.py \
-    --config configs/default.yaml \
-    --data-path ~/GENESIS/GENESIS-data/22644_0921_time_shift.h5 \
-    --analyze-only \
-    --analysis-batch-size 1000
-```
-
-**Features:**
-- ✅ Forward diffusion analysis
-- ✅ Gaussian convergence validation
-- ✅ Statistical tests (KS, Shapiro-Wilk)
-- ✅ Histograms and Q-Q plots
-- ✅ Optional reverse diffusion test
+**`analysis.py`** - Statistical analysis tools for Gaussian convergence testing, Q-Q plots, and diffusion process visualization.
 
 ## 📊 Noise Schedules
 
@@ -268,11 +274,12 @@ results = batch_analysis(
 
 ### Command-Line Tools
 
-- ✅ **Forward Checker**: `check_forward_diffusion.py`
-- ✅ **Reverse Tester**: `reverse_test.py`
-- ✅ **Complete Tester**: `test_diffusion_process.py`
+- ✅ **Single Event Visualization**: `forward_visualize.py`
+- ✅ **Batch Analysis**: `forward_analyze.py`
+- ✅ **Reverse Comparison**: `reverse_compare.py`
+- ✅ **Legacy Analysis**: `analysis.py`
 - ✅ **Quick Mode**: Fast testing with minimal output
-- ✅ **Intermediate Steps**: Save samples at multiple timesteps
+- ✅ **3D Visualization**: NPZ generation and detector images
 
 ## 📚 API Reference
 
@@ -359,31 +366,44 @@ with torch.no_grad():
     )
 ```
 
-### Example 4: Forward Diffusion Check
+### Example 4: Single Event Forward Visualization
 
 ```python
-# Check forward diffusion
-from diffusion.check_forward_diffusion import main as check_forward
+# Visualize single event forward diffusion
+import subprocess
 
-# Single sample check
-check_forward([
+subprocess.run([
+    "python", "diffusion/forward_visualize.py",
     "--config", "configs/default.yaml",
-    "--sample-index", "0",
-    "--quick"
+    "--event-index", "0",
+    "--timesteps", "0", "250", "500", "750", "999",
+    "--save-images"
 ])
 ```
 
-### Example 5: Reverse Diffusion Test
+### Example 5: Batch Forward Analysis
 
 ```python
-# Test trained model
-from diffusion.reverse_test import main as reverse_test
+# Analyze batch forward diffusion
+subprocess.run([
+    "python", "diffusion/forward_analyze.py",
+    "--config", "configs/default.yaml",
+    "--batch-size", "100",
+    "--timesteps", "0", "100", "200", "500", "999"
+])
+```
 
-reverse_test([
+### Example 6: Reverse Comparison
+
+```python
+# Compare reverse diffusion with real data
+subprocess.run([
+    "python", "diffusion/reverse_compare.py",
     "--pth-path", "outputs/best_model.pth",
     "--config", "configs/default.yaml",
     "--event-index", "0",
-    "--save-intermediate"
+    "--timesteps", "0", "100", "500", "999",
+    "--compare-real"
 ])
 ```
 
@@ -400,14 +420,14 @@ The module includes comprehensive validation tools:
 
 Run validation:
 ```bash
-# Forward diffusion check
-python diffusion/check_forward_diffusion.py --config configs/default.yaml
+# Single event forward visualization
+python diffusion/forward_visualize.py --config configs/default.yaml --event-index 0 --quick
 
-# Reverse diffusion test
-python diffusion/reverse_test.py --pth-path outputs/best_model.pth --config configs/default.yaml
+# Batch forward analysis
+python diffusion/forward_analyze.py --config configs/default.yaml --batch-size 100 --quick
 
-# Complete test
-python diffusion/test_diffusion_process.py --config configs/default.yaml --data-path /path/to/data.h5
+# Reverse comparison with real data
+python diffusion/reverse_compare.py --pth-path outputs/best_model.pth --config configs/default.yaml --event-index 0 --compare-real
 ```
 
 ## 🚧 Future: Flow Matching
