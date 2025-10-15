@@ -176,7 +176,38 @@ class DataConfig:
     def __post_init__(self):
         """Convert all parameters to proper types."""
         import os
-        self.h5_path = os.path.expanduser(str(self.h5_path))
+        import re
+        import subprocess
+        
+        # 환경변수 처리: ${VAR:-default} 형태 지원
+        h5_path = str(self.h5_path)
+        
+        # Git repository 루트 자동 감지 함수
+        def get_git_root():
+            try:
+                # 현재 파일의 디렉토리에서 Git 루트 찾기
+                result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], 
+                                      capture_output=True, text=True, check=True)
+                return result.stdout.strip()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Git이 없거나 Git repository가 아닌 경우, 현재 디렉토리 반환
+                return os.getcwd()
+        
+        if '${' in h5_path:
+            # 환경변수 치환: ${GENESIS_ROOT:-../} 형태 처리
+            def replace_env_var(match):
+                var_name = match.group(1)
+                default_value = match.group(2) if match.group(2) else ""
+                
+                if var_name == "GENESIS_ROOT":
+                    # GENESIS_ROOT는 Git repository 루트로 설정
+                    return os.environ.get(var_name, get_git_root() + "/")
+                else:
+                    return os.environ.get(var_name, default_value)
+            
+            h5_path = re.sub(r'\$\{([^:}]+)(?::-(.*?))?\}', replace_env_var, h5_path)
+        
+        self.h5_path = os.path.expanduser(h5_path)
         if self.replace_time_inf_with is not None:
             self.replace_time_inf_with = float(self.replace_time_inf_with)
         self.channel_first = bool(self.channel_first) if not isinstance(self.channel_first, bool) else self.channel_first

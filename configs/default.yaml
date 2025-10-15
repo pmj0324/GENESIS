@@ -37,7 +37,9 @@ diffusion:
 
 # Data configuration
 data:
-  h5_path: "GENESIS-data/22644_0921_time_shift.h5"
+  # Git repository 루트 기준으로 데이터 경로 설정
+  # GENESIS_ROOT 환경변수가 설정되어 있으면 사용, 없으면 Git repository 루트 자동 감지
+  h5_path: "${GENESIS_ROOT}GENESIS-data/22644_0921_time_shift.h5"
   replace_time_inf_with: 0.0
   channel_first: true
   batch_size: 512
