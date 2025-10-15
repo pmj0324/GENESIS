@@ -40,7 +40,7 @@ diffusion:
 
 # Data configuration
 data:
-  h5_path: "GENESIS-data/22644_0921.h5"
+  h5_path: "GENESIS-data/22644_0921_time_shift.h5"
   replace_time_inf_with: 0.0
   channel_first: true
   batch_size: 128  # Will be overridden during benchmark

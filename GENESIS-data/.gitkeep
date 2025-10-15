@@ -1,0 +1,6 @@
+# This file ensures the GENESIS-data directory is tracked by git
+# while its contents (data files) are ignored.
+# 
+# Place your data files here:
+# - 22644_0921_time_shift.h5
+# - Other .h5 data files
