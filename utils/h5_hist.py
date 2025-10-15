@@ -573,7 +573,7 @@ def main():
     
     # 0 제외 플롯
     if args.exclude_zero or args.plot_both:
-    plot_hist_pair(
+        plot_hist_pair(
         h5_path=args.path,
         bins=args.bins,
         chunk=args.chunk,
