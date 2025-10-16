@@ -15,7 +15,7 @@ from pathlib import Path
 import argparse
 from typing import Dict, List, Optional, Tuple
 
-from .noise_schedules import (
+from noise_schedules import (
     linear_beta_schedule,
     cosine_beta_schedule,
     quadratic_beta_schedule,
