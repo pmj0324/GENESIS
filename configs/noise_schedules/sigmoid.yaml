@@ -15,8 +15,6 @@ model:
   label_dim: 6
   t_embed_dim: 128
   mlp_ratio: 4.0
-  kernel_size: 3
-  kernel_sizes: [3, 5, 7, 9]
   
   # Signal + Geometry affine normalization: [charge, time, x, y, z]
   # Formula: (x - offset) / scale → charge/time[-2,2], pos[-1,1]

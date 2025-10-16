@@ -1,7 +1,7 @@
-# Quadratic Noise Schedule Configuration for GENESIS
+# Linear Noise Schedule Configuration for GENESIS
 
-experiment_name: "icecube_diffusion_quadratic"
-description: "DiT architecture with quadratic noise schedule"
+experiment_name: "icecube_diffusion_linear"
+description: "DiT architecture with linear noise schedule - DDPM standard"
 
 # Model configuration
 model:
@@ -15,8 +15,6 @@ model:
   label_dim: 6
   t_embed_dim: 128
   mlp_ratio: 4.0
-  kernel_size: 3
-  kernel_sizes: [3, 5, 7, 9]
   
   # Signal + Geometry affine normalization: [charge, time, x, y, z]
   # Formula: (x - offset) / scale → charge/time[-2,2], pos[-1,1]
@@ -31,13 +29,13 @@ model:
   time_transform: "ln"  # "log10", "ln", or null
   exclude_zero_time: true  # Exclude zero time values (recommended for log transforms)
 
-# Diffusion configuration with Quadratic Schedule
+# Diffusion configuration with Linear Schedule
 diffusion:
   timesteps: 1000
   beta_start: 0.0001  # Starting noise level
   beta_end: 0.02      # Ending noise level
   objective: "eps"    # Predict noise (ε-prediction)
-  schedule: "quadratic"  # Quadratic beta schedule
+  schedule: "linear"  # Linear beta schedule (DDPM standard)
   
   # Classifier-free guidance
   use_cfg: true
@@ -50,7 +48,7 @@ data:
   h5_path: "${GENESIS_ROOT}GENESIS-data/22644_0921_time_shift.h5"
   replace_time_inf_with: 0.0
   channel_first: true
-  batch_size: 32      # Moderate batch size for quadratic schedule
+  batch_size: 32      # Moderate batch size for linear schedule
   num_workers: 8
   pin_memory: true
   shuffle: true
@@ -58,19 +56,20 @@ data:
   val_ratio: 0.1
   test_ratio: 0.1
 
-# Training configuration optimized for quadratic schedule
+# Training configuration optimized for linear schedule
 training:
-  num_epochs: 280     # Moderate epochs for quadratic schedule
-  learning_rate: 0.00015  # Moderate learning rate
+  num_epochs: 300     # More epochs for stable convergence
+  learning_rate: 0.0001  # Conservative learning rate
   weight_decay: 0.01
   grad_clip_norm: 1.0
   optimizer: "AdamW"
   scheduler: "cosine"  # Use cosine for training scheduler
-  warmup_steps: 1800
+  warmup_steps: 2000
+  
   
   # Early stopping
   early_stopping: true
-  early_stopping_patience: 28
+  early_stopping_patience: 30
   early_stopping_min_delta: 1e-4
   early_stopping_mode: "min"
   early_stopping_baseline: null
@@ -81,9 +80,9 @@ training:
   log_interval: 50
   save_interval: 1000
   eval_interval: 500
-  output_dir: "./outputs/quadratic"
-  checkpoint_dir: "./checkpoints/quadratic"
-  log_dir: "./logs/quadratic"
+  output_dir: "./outputs/linear"
+  checkpoint_dir: "./checkpoints/linear"
+  log_dir: "./logs/linear"
   resume_from_checkpoint: null
   use_amp: true
   debug_mode: false
@@ -95,5 +94,5 @@ seed: 42
 
 # Logging
 use_wandb: false
-wandb_project: "icecube-diffusion-quadratic"
+wandb_project: "icecube-diffusion-linear"
 wandb_entity: null

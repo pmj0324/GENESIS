@@ -5,26 +5,18 @@
 ## 📁 구조
 
 ```
-configs/schedules/
+configs/noise_schedules/
 ├── README.md                    # 이 파일
-├── linear/                      # Linear Schedule (DDPM 표준)
-│   ├── model.yaml              # 모델 설정
-│   └── train.sh                # 훈련 스크립트
-├── cosine/                      # Cosine Schedule (Improved DDPM)
-│   ├── model.yaml              # 모델 설정
-│   └── train.sh                # 훈련 스크립트
-├── quadratic/                   # Quadratic Schedule
-│   ├── model.yaml              # 모델 설정
-│   └── train.sh                # 훈련 스크립트
-└── sigmoid/                     # Sigmoid Schedule
-    ├── model.yaml              # 모델 설정
-    └── train.sh                # 훈련 스크립트
+├── linear.yaml                  # Linear Schedule (DDPM 표준)
+├── cosine.yaml                  # Cosine Schedule (Improved DDPM)
+├── quadratic.yaml               # Quadratic Schedule
+└── sigmoid.yaml                 # Sigmoid Schedule
 ```
 
 ## 🎯 스케줄러별 특징
 
 ### 1. Linear Schedule (DDPM 표준)
-- **파일**: `linear/model.yaml`
+- **파일**: `linear.yaml`
 - **특징**: β_t가 선형적으로 증가
 - **장점**: 안정적이고 검증된 방법
 - **단점**: 초기 노이즈가 너무 작을 수 있음
@@ -34,7 +26,7 @@ configs/schedules/
   - Batch Size: 32
 
 ### 2. Cosine Schedule (Improved DDPM)
-- **파일**: `cosine/model.yaml`
+- **파일**: `cosine.yaml`
 - **특징**: β_t가 코사인 함수로 증가
 - **장점**: 더 부드러운 노이즈 전환, 빠른 수렴
 - **단점**: 복잡한 수식
@@ -45,7 +37,7 @@ configs/schedules/
   - Cosine s: 0.008
 
 ### 3. Quadratic Schedule
-- **파일**: `quadratic/model.yaml`
+- **파일**: `quadratic.yaml`
 - **특징**: β_t가 2차 함수로 증가
 - **장점**: 중간 수준의 노이즈 증가
 - **단점**: 초기/후기 극값 문제
@@ -55,7 +47,7 @@ configs/schedules/
   - Batch Size: 32
 
 ### 4. Sigmoid Schedule
-- **파일**: `sigmoid/model.yaml`
+- **파일**: `sigmoid.yaml`
 - **특징**: β_t가 시그모이드 함수로 증가
 - **장점**: 매우 부드러운 전환
 - **단점**: 느린 초기 수렴
@@ -67,50 +59,54 @@ configs/schedules/
 
 ## 🚀 사용법
 
-### 개별 스케줄러 훈련
-
-```bash
-# Linear Schedule
-bash configs/schedules/linear/train.sh
-
-# Cosine Schedule  
-bash configs/schedules/cosine/train.sh
-
-# Quadratic Schedule
-bash configs/schedules/quadratic/train.sh
-
-# Sigmoid Schedule
-bash configs/schedules/sigmoid/train.sh
-```
-
 ### 직접 Python 실행
 
 ```bash
 # Linear Schedule
-python scripts/train.py --config configs/schedules/linear/model.yaml
+python scripts/train.py --config configs/noise_schedules/linear.yaml
 
 # Cosine Schedule
-python scripts/train.py --config configs/schedules/cosine/model.yaml
+python scripts/train.py --config configs/noise_schedules/cosine.yaml
 
 # Quadratic Schedule
-python scripts/train.py --config configs/schedules/quadratic/model.yaml
+python scripts/train.py --config configs/noise_schedules/quadratic.yaml
 
 # Sigmoid Schedule
-python scripts/train.py --config configs/schedules/sigmoid/model.yaml
+python scripts/train.py --config configs/noise_schedules/sigmoid.yaml
 ```
 
 ### 모든 스케줄러 동시 훈련 (병렬)
 
 ```bash
 # 백그라운드에서 모든 스케줄러 훈련
-bash configs/schedules/linear/train.sh &
-bash configs/schedules/cosine/train.sh &
-bash configs/schedules/quadratic/train.sh &
-bash configs/schedules/sigmoid/train.sh &
+python scripts/train.py --config configs/noise_schedules/linear.yaml &
+python scripts/train.py --config configs/noise_schedules/cosine.yaml &
+python scripts/train.py --config configs/noise_schedules/quadratic.yaml &
+python scripts/train.py --config configs/noise_schedules/sigmoid.yaml &
 
 # 모든 작업 완료 대기
 wait
 echo "🎉 모든 스케줄러 훈련 완료!"
+```
+
+### 노이즈 스케줄 시각화
+
+```bash
+# 스케줄 비교 시각화
+python -c "
+from diffusion.noise_schedules import quick_schedule_comparison
+quick_schedule_comparison(save_path='noise_schedules_comparison.png')
+"
+
+# 상세 시각화 (샘플 데이터 포함)
+python -c "
+import torch
+from diffusion.noise_schedules import plot_schedule_effects_on_sample
+
+# 더미 데이터로 테스트
+sample_data = torch.randn(1, 2, 5160)
+plot_schedule_effects_on_sample(sample_data, save_path='schedule_effects.png')
+"
 ```
 
 ## 📊 출력 구조
