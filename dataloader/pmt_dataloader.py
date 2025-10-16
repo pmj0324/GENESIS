@@ -55,19 +55,25 @@ class PMTSignalsH5(Dataset):
         
         # Store normalization parameters
         # Default: no normalization (offset=0, scale=1)
-        self.affine_offsets = np.array(affine_offsets if affine_offsets is not None 
-                                       else [0.0, 0.0, 0.0, 0.0, 0.0], dtype=self.dtype)
-        self.affine_scales = np.array(affine_scales if affine_scales is not None 
-                                      else [1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype)
+        affine_offsets_arr = np.array(affine_offsets if affine_offsets is not None 
+                                      else [0.0, 0.0, 0.0, 0.0, 0.0], dtype=self.dtype)
+        affine_scales_arr = np.array(affine_scales if affine_scales is not None 
+                                     else [1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype)
+        
+        # Split signal and geometry normalization parameters
+        # Signal: [charge, time] - indices 0, 1
+        self.sig_offset = affine_offsets_arr[:2].reshape(2, 1)  # (2, 1) for broadcasting
+        self.sig_scale = affine_scales_arr[:2].reshape(2, 1)
+        
+        # Geometry: [x, y, z] - indices 2, 3, 4
+        geom_offset = affine_offsets_arr[2:].reshape(3, 1)      # (3, 1) for broadcasting
+        geom_scale = affine_scales_arr[2:].reshape(3, 1)
+        
+        # Labels: [Energy, Zenith, Azimuth, X, Y, Z]
         self.label_offsets = np.array(label_offsets if label_offsets is not None 
                                       else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=self.dtype)
         self.label_scales = np.array(label_scales if label_scales is not None 
                                      else [1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=self.dtype)
-        
-        # Reshape for broadcasting: (5,) -> (5, 1) for signals+geom
-        self.affine_offsets = self.affine_offsets.reshape(5, 1)
-        self.affine_scales = self.affine_scales.reshape(5, 1)
-        # Labels: (6,) stays (6,) for per-label normalization
 
         # 파일 메타만 먼저 확인 (빠르게)
         with h5py.File(self.h5_path, "r", swmr=True, libver="latest") as f:
@@ -82,7 +88,15 @@ class PMTSignalsH5(Dataset):
             ypmt = np.asarray(f["ypmt"], dtype=self.dtype)
             zpmt = np.asarray(f["zpmt"], dtype=self.dtype)
             assert xpmt.shape == (L,) and ypmt.shape == (L,) and zpmt.shape == (L,)
-            self.geom_np = np.stack([xpmt, ypmt, zpmt], axis=0)  # (3, L)
+            geom_raw = np.stack([xpmt, ypmt, zpmt], axis=0)  # (3, L)
+            
+            # ⭐ OPTIMIZATION: Normalize geometry once during initialization
+            # Geometry is shared across all events, so we normalize it once here
+            # instead of re-normalizing it for every __getitem__ call
+            self.geom_normalized = (geom_raw - geom_offset) / geom_scale  # (3, L)
+            
+            # Also keep raw geometry for reference (optional)
+            self.geom_raw = geom_raw
 
         # 인덱스 서브셋
         if indices is None:
@@ -147,20 +161,15 @@ class PMTSignalsH5(Dataset):
         #   x_sig_np: (2, L) - [charge_raw, time_transformed]
         #              - charge is raw NPE
         #              - time is ln(1+time) or log10(1+time)
-        #   geom_np:  (3, L) - [x, y, z] in raw scale
         #   y_np:     (6,)   - [Energy, Zenith, Azimuth, X, Y, Z] in raw scale
         
-        # Concatenate signal + geom -> (5, L)
-        geom_np = self.geom_np  # (3, L)
-        x5_np = np.concatenate([x_sig_np, geom_np], axis=0)  # (5, L)
+        # Normalize signal (charge, time)
+        # Broadcasting: (2, 1) with (2, L) -> (2, L)
+        x_sig_np = (x_sig_np - self.sig_offset) / self.sig_scale
         
-        # Apply affine normalization: (x - offset) / scale
-        # Broadcast: (5, 1) with (5, L) -> (5, L)
-        x5_np = (x5_np - self.affine_offsets) / self.affine_scales
-        
-        # Split back
-        x_sig_np = x5_np[0:2, :]  # (2, L)
-        geom_np = x5_np[2:5, :]   # (3, L)
+        # Geometry is already normalized in __init__ (all events share same geometry)
+        # ⭐ OPTIMIZATION: No need to normalize again!
+        geom_np = self.geom_normalized  # (3, L) - already normalized
         
         # Normalize labels: (6,) - (6,) / (6,) -> (6,)
         y_np = (y_np - self.label_offsets) / self.label_scales

@@ -5,12 +5,108 @@ Configuration system for GENESIS IceCube diffusion model.
 
 Provides centralized configuration management for model hyperparameters,
 training settings, and data processing options.
+
+YAML Path Resolution:
+---------------------
+When loading from YAML file, relative paths are resolved relative to the YAML file location.
+Both absolute and relative paths are supported:
+  - Absolute: "/home/user/data.h5" → used as-is
+  - Relative: "data/train.h5" → resolved relative to YAML file directory
+  - Home expansion: "~/data.h5" → expanded to user home directory
 """
 
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, List
 import os
+from pathlib import Path
 
+
+# =============================================================================
+# Helper Functions for Path Resolution and Type Conversion
+# =============================================================================
+
+def resolve_path(path: str, yaml_dir: Optional[Path] = None) -> str:
+    """
+    Resolve a path, supporting both absolute and relative paths.
+    
+    Args:
+        path: Path string (can be absolute, relative, or use ~ for home)
+        yaml_dir: Directory containing the YAML file (for relative path resolution)
+    
+    Returns:
+        Resolved absolute path as string
+    
+    Examples:
+        >>> resolve_path("/absolute/path.h5")  # → "/absolute/path.h5"
+        >>> resolve_path("~/data.h5")  # → "/home/user/data.h5"
+        >>> resolve_path("data/train.h5", yaml_dir=Path("/config"))  # → "/config/data/train.h5"
+    """
+    path = str(path)
+    
+    # Handle home directory expansion
+    if path.startswith("~"):
+        return os.path.expanduser(path)
+    
+    # Handle absolute paths
+    if os.path.isabs(path):
+        return path
+    
+    # Handle relative paths
+    if yaml_dir is not None:
+        return str((yaml_dir / path).resolve())
+    
+    # Fallback to current working directory
+    return str(Path(path).resolve())
+
+
+def convert_to_type(value, target_type):
+    """
+    Safely convert value to target type.
+    
+    Args:
+        value: Value to convert
+        target_type: Target type (int, float, bool, str)
+    
+    Returns:
+        Converted value
+    """
+    if value is None:
+        return None
+    
+    if target_type == bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() not in ['false', '0', 'no', 'null', 'none', '']
+        return bool(value)
+    
+    if target_type == str:
+        if value in ['null', 'None', '']:
+            return None
+        return str(value)
+    
+    return target_type(value)
+
+
+def convert_to_tuple(value, element_type=float):
+    """
+    Convert list or tuple to tuple with specified element type.
+    
+    Args:
+        value: List or tuple to convert
+        element_type: Type of elements (default: float)
+    
+    Returns:
+        Tuple with converted elements
+    """
+    if isinstance(value, (list, tuple)):
+        return tuple(element_type(x) for x in value)
+    return value
+
+
+# =============================================================================
+# Configuration Classes
+# =============================================================================
 
 @dataclass
 class ModelConfig:
@@ -66,14 +162,12 @@ class ModelConfig:
     
     def __post_init__(self):
         """Convert all parameters to proper types."""
-        # Architecture
-        self.architecture = str(self.architecture)
+        # Architecture parameters
         self.seq_len = int(self.seq_len)
         self.hidden = int(self.hidden)
         self.depth = int(self.depth)
         self.heads = int(self.heads)
         self.dropout = float(self.dropout)
-        self.fusion = str(self.fusion)
         
         # Conditioning
         self.label_dim = int(self.label_dim)
@@ -86,15 +180,11 @@ class ModelConfig:
         # C-Dit specific
         self.classifier_size = int(self.classifier_size)
         self.factor = int(self.factor)
-        self.combine = str(self.combine)
-        self.update_with_classifier = bool(self.update_with_classifier)
+        self.update_with_classifier = convert_to_type(self.update_with_classifier, bool)
         self.n_cls_tokens = int(self.n_cls_tokens)
         
-        # Time transformation
-        if self.time_transform and self.time_transform not in ["null", "None", ""]:
-            self.time_transform = str(self.time_transform)
-        else:
-            self.time_transform = "ln"  # Default to ln
+        # Time transformation (default to "ln" if not set)
+        self.time_transform = convert_to_type(self.time_transform, str) or "ln"
 
 
 @dataclass
@@ -120,10 +210,8 @@ class DiffusionConfig:
         self.timesteps = int(self.timesteps)
         self.beta_start = float(self.beta_start)
         self.beta_end = float(self.beta_end)
-        self.objective = str(self.objective)
-        self.schedule = str(self.schedule)
         self.cosine_s = float(self.cosine_s)
-        self.use_cfg = bool(self.use_cfg) if not isinstance(self.use_cfg, bool) else self.use_cfg
+        self.use_cfg = convert_to_type(self.use_cfg, bool)
         self.cfg_scale = float(self.cfg_scale)
         self.cfg_dropout = float(self.cfg_dropout)
 
@@ -180,61 +268,35 @@ class DataConfig:
     
     def __post_init__(self):
         """Convert all parameters to proper types."""
-        import os
-        import re
-        import subprocess
+        # Note: Path resolution (absolute vs relative) is handled in load_config_from_file()
+        # This method only does type conversion
         
-        # 환경변수 처리: ${VAR:-default} 형태 지원
-        h5_path = str(self.h5_path)
-        
-        # Git repository 루트 자동 감지 함수
-        def get_git_root():
-            try:
-                # 현재 파일의 디렉토리에서 Git 루트 찾기
-                result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], 
-                                      capture_output=True, text=True, check=True)
-                return result.stdout.strip()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                # Git이 없거나 Git repository가 아닌 경우, 현재 디렉토리 반환
-                return os.getcwd()
-        
-        if '${' in h5_path:
-            # 환경변수 치환: ${GENESIS_ROOT:-../} 형태 처리
-            def replace_env_var(match):
-                var_name = match.group(1)
-                default_value = match.group(2) if match.group(2) else ""
-                
-                if var_name == "GENESIS_ROOT":
-                    # GENESIS_ROOT는 Git repository 루트로 설정
-                    return os.environ.get(var_name, get_git_root() + "/")
-                else:
-                    return os.environ.get(var_name, default_value)
-            
-            h5_path = re.sub(r'\$\{([^:}]+)(?::-(.*?))?\}', replace_env_var, h5_path)
-        
-        self.h5_path = os.path.expanduser(h5_path)
+        # Convert optional float
         if self.replace_time_inf_with is not None:
             self.replace_time_inf_with = float(self.replace_time_inf_with)
-        self.channel_first = bool(self.channel_first) if not isinstance(self.channel_first, bool) else self.channel_first
+        
+        # Convert booleans
+        self.channel_first = convert_to_type(self.channel_first, bool)
+        self.pin_memory = convert_to_type(self.pin_memory, bool)
+        self.shuffle = convert_to_type(self.shuffle, bool)
+        
+        # Convert integers
         self.batch_size = int(self.batch_size)
         self.num_workers = int(self.num_workers)
-        self.pin_memory = bool(self.pin_memory) if not isinstance(self.pin_memory, bool) else self.pin_memory
-        self.shuffle = bool(self.shuffle) if not isinstance(self.shuffle, bool) else self.shuffle
+        
+        # Convert floats
         self.train_ratio = float(self.train_ratio)
         self.val_ratio = float(self.val_ratio)
         self.test_ratio = float(self.test_ratio)
         
-        # Normalization parameters
+        # Convert time transform
         self.time_transform = str(self.time_transform)
-        # Convert tuples to lists if needed (YAML compatibility)
-        if isinstance(self.affine_offsets, list):
-            self.affine_offsets = tuple(float(x) for x in self.affine_offsets)
-        if isinstance(self.affine_scales, list):
-            self.affine_scales = tuple(float(x) for x in self.affine_scales)
-        if isinstance(self.label_offsets, list):
-            self.label_offsets = tuple(float(x) for x in self.label_offsets)
-        if isinstance(self.label_scales, list):
-            self.label_scales = tuple(float(x) for x in self.label_scales)
+        
+        # Convert normalization parameters to tuples
+        self.affine_offsets = convert_to_tuple(self.affine_offsets, float)
+        self.affine_scales = convert_to_tuple(self.affine_scales, float)
+        self.label_offsets = convert_to_tuple(self.label_offsets, float)
+        self.label_scales = convert_to_tuple(self.label_scales, float)
 
 
 @dataclass
@@ -308,7 +370,7 @@ class TrainingConfig:
     detect_anomaly: bool = False
     
     def __post_init__(self):
-        """Convert all parameters to proper types (YAML sometimes parses as strings)."""
+        """Convert all parameters to proper types."""
         # Training parameters
         self.num_epochs = int(self.num_epochs)
         self.learning_rate = float(self.learning_rate)
@@ -316,74 +378,62 @@ class TrainingConfig:
         self.grad_clip_norm = float(self.grad_clip_norm)
         
         # Optimizer and scheduler
-        self.optimizer = str(self.optimizer) if self.optimizer else "AdamW"
-        self.scheduler = str(self.scheduler) if self.scheduler and self.scheduler not in ["null", "None", ""] else None
+        self.optimizer = self.optimizer or "AdamW"
+        self.scheduler = convert_to_type(self.scheduler, str)
         self.warmup_steps = int(self.warmup_steps)
         self.warmup_ratio = float(self.warmup_ratio)
         
-        # Cosine scheduler
+        # Scheduler-specific parameters
         if self.cosine_t_max is not None:
             self.cosine_t_max = int(self.cosine_t_max)
         
-        # Plateau scheduler
         self.plateau_patience = int(self.plateau_patience)
         self.plateau_factor = float(self.plateau_factor)
-        self.plateau_mode = str(self.plateau_mode)
         self.plateau_threshold = float(self.plateau_threshold)
         self.plateau_cooldown = int(self.plateau_cooldown)
-        self.plateau_verbose = bool(self.plateau_verbose) if not isinstance(self.plateau_verbose, bool) else self.plateau_verbose
+        self.plateau_verbose = convert_to_type(self.plateau_verbose, bool)
         
-        # Step scheduler
         self.step_size = int(self.step_size)
         self.step_gamma = float(self.step_gamma)
         
-        # Linear scheduler
         self.linear_start_factor = float(self.linear_start_factor)
         self.linear_end_factor = float(self.linear_end_factor)
         
         # Early stopping
-        self.early_stopping = bool(self.early_stopping) if not isinstance(self.early_stopping, bool) else self.early_stopping
+        self.early_stopping = convert_to_type(self.early_stopping, bool)
         self.early_stopping_patience = int(self.early_stopping_patience)
         self.early_stopping_min_delta = float(self.early_stopping_min_delta)
-        self.early_stopping_mode = str(self.early_stopping_mode)
-        # Handle baseline
-        if self.early_stopping_baseline is not None and self.early_stopping_baseline not in ["null", "None", ""]:
+        
+        if self.early_stopping_baseline not in [None, "null", "None", ""]:
             try:
                 self.early_stopping_baseline = float(self.early_stopping_baseline)
             except (ValueError, TypeError):
                 self.early_stopping_baseline = None
         else:
             self.early_stopping_baseline = None
-        self.early_stopping_restore_best = bool(self.early_stopping_restore_best) if not isinstance(self.early_stopping_restore_best, bool) else self.early_stopping_restore_best
-        self.early_stopping_verbose = bool(self.early_stopping_verbose) if not isinstance(self.early_stopping_verbose, bool) else self.early_stopping_verbose
+        
+        self.early_stopping_restore_best = convert_to_type(self.early_stopping_restore_best, bool)
+        self.early_stopping_verbose = convert_to_type(self.early_stopping_verbose, bool)
         
         # Logging and checkpointing
         self.log_interval = int(self.log_interval)
         self.save_interval = int(self.save_interval)
         self.eval_interval = int(self.eval_interval)
-        self.save_best_only = bool(self.save_best_only) if not isinstance(self.save_best_only, bool) else self.save_best_only
+        self.save_best_only = convert_to_type(self.save_best_only, bool)
         
-        # Output directories
-        self.output_dir = str(self.output_dir)
-        self.checkpoint_dir = str(self.checkpoint_dir)
-        self.log_dir = str(self.log_dir)
-        
-        # Resume training
-        if self.resume_from_checkpoint and self.resume_from_checkpoint not in ["null", "None", ""]:
-            self.resume_from_checkpoint = str(self.resume_from_checkpoint)
-        else:
-            self.resume_from_checkpoint = None
+        # Resume training - handled in load_config_from_file for path resolution
+        self.resume_from_checkpoint = convert_to_type(self.resume_from_checkpoint, str)
         
         # Mixed precision
-        self.use_amp = bool(self.use_amp) if not isinstance(self.use_amp, bool) else self.use_amp
+        self.use_amp = convert_to_type(self.use_amp, bool)
         
         # Advanced features
         self.gradient_accumulation_steps = int(self.gradient_accumulation_steps)
         self.max_grad_norm = float(self.max_grad_norm)
         
         # Debugging
-        self.debug_mode = bool(self.debug_mode) if not isinstance(self.debug_mode, bool) else self.debug_mode
-        self.detect_anomaly = bool(self.detect_anomaly) if not isinstance(self.detect_anomaly, bool) else self.detect_anomaly
+        self.debug_mode = convert_to_type(self.debug_mode, bool)
+        self.detect_anomaly = convert_to_type(self.detect_anomaly, bool)
 
 
 @dataclass
@@ -428,14 +478,55 @@ def get_default_config() -> ExperimentConfig:
 
 
 def load_config_from_file(config_path: str) -> ExperimentConfig:
-    """Load configuration from YAML file."""
+    """
+    Load configuration from YAML file.
+    
+    Relative paths in the YAML file are resolved relative to the YAML file's directory.
+    Absolute paths and paths starting with ~ are used as-is.
+    
+    Args:
+        config_path: Path to YAML configuration file
+        
+    Returns:
+        ExperimentConfig object with resolved paths
+        
+    Examples:
+        >>> config = load_config_from_file("configs/default.yaml")
+        >>> # If YAML contains h5_path: "data/train.h5"
+        >>> # It will be resolved to "configs/data/train.h5"
+    """
     import yaml
     
-    with open(config_path, 'r') as f:
+    # Resolve config file path and get its directory
+    config_path = os.path.expanduser(config_path)
+    config_file = Path(config_path).resolve()
+    yaml_dir = config_file.parent
+    
+    print(f"📂 Loading config from: {config_file}")
+    print(f"📂 YAML directory: {yaml_dir}")
+    
+    with open(config_file, 'r') as f:
         config_dict = yaml.safe_load(f)
     
     # Remove benchmark-specific config (not part of ExperimentConfig)
     config_dict.pop('benchmark', None)
+    
+    # Resolve paths in data config relative to YAML file location
+    if 'data' in config_dict and 'h5_path' in config_dict['data']:
+        original_path = config_dict['data']['h5_path']
+        resolved_path = resolve_path(original_path, yaml_dir)
+        config_dict['data']['h5_path'] = resolved_path
+        print(f"📊 Data path: {original_path} → {resolved_path}")
+    
+    # Resolve paths in training config (if any)
+    if 'training' in config_dict:
+        # Resolve checkpoint path if present
+        if 'resume_from_checkpoint' in config_dict['training']:
+            resume_path = config_dict['training']['resume_from_checkpoint']
+            if resume_path and resume_path not in ['null', 'None', '']:
+                resolved_resume = resolve_path(resume_path, yaml_dir)
+                config_dict['training']['resume_from_checkpoint'] = resolved_resume
+                print(f"💾 Resume checkpoint: {resume_path} → {resolved_resume}")
     
     # Convert nested dictionaries to config objects
     if 'model' in config_dict:
@@ -447,7 +538,10 @@ def load_config_from_file(config_path: str) -> ExperimentConfig:
     if 'training' in config_dict:
         config_dict['training'] = TrainingConfig(**config_dict['training'])
     
-    return ExperimentConfig(**config_dict)
+    config = ExperimentConfig(**config_dict)
+    print(f"✅ Config loaded successfully!")
+    
+    return config
 
 
 def save_config_to_file(config: ExperimentConfig, config_path: str):
