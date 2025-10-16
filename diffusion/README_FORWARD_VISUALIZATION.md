@@ -9,8 +9,9 @@
 ```
 diffusion/
 ├── forward_show_event_3D.py     # 단일 이벤트 forward 디퓨전 시각화
-├── forward_show_event_scatter.py # 원본 vs 노이지 신호 비교 시각화
-├── forward_stat_analysis.py     # 배치 단위 통계적 분석
+├── forward_show_event_scatter.py # 정규화 vs 역정규화 신호 비교 시각화
+├── forward_show_event_hist.py   # 정규화 vs 역정규화 히스토그램 시각화
+├── forward_data_stat_analysis.py # 배치 단위 통계적 분석
 └── reverse_show_event_3D.py     # 역방향 디퓨전 비교 (참고용)
 ```
 
@@ -66,41 +67,102 @@ python diffusion/forward_show_event_3D.py \
 
 ---
 
-### 2. `forward_show_event_scatter.py` - 원본 vs 노이지 신호 비교
+### 2. `forward_show_event_scatter.py` - 정규화 vs 역정규화 신호 비교 시각화
 
-**목적**: 원본 신호와 노이즈가 추가된 신호를 직접 비교
+**목적**: 정규화된 공간(훈련 공간)과 역정규화된 공간(물리적 단위)에서의 신호를 동시에 비교
 
 **주요 기능**:
-- 원본 신호와 여러 timestep의 노이지 신호 비교
-- 2D 플롯으로 charge/time 분포 시각화
-- 배치 단위로 여러 샘플 동시 비교
-- 통계적 비교 정보 제공
+- **위쪽 줄**: 정규화된 값들 (훈련 공간) - 파란색
+- **아래쪽 줄**: 역정규화된 값들 (물리적 단위) - 빨간색
+- 여러 timestep에서의 scatter plot 비교
+- 각 공간에서의 SNR (Signal-to-Noise Ratio) 표시
+- 정규화/역정규화 과정의 시각적 비교
+
+**📊 시각화 구조**:
+```
+┌─────────────────────────────────────────────────────────┐
+│ Sample 0: Original (Normalized)    t=100 (Normalized)   │ ← 정규화된 공간
+│ Sample 0: Original (Denormalized)  t=100 (Denormalized) │ ← 역정규화된 공간
+├─────────────────────────────────────────────────────────┤
+│ Sample 1: Original (Normalized)    t=100 (Normalized)   │
+│ Sample 1: Original (Denormalized)  t=100 (Denormalized) │
+└─────────────────────────────────────────────────────────┘
+```
 
 **사용 예시**:
 ```bash
 # 기본 사용법
-python diffusion/forward_show_event_scatter.py
+python diffusion/forward_show_event_scatter.py \
+    --config configs/default.yaml \
+    --num-samples 4
 
-# 설정 파일 지정
-python diffusion/forward_show_event_scatter.py --config configs/default.yaml
+# 더 많은 샘플로 테스트
+python diffusion/forward_show_event_scatter.py \
+    --config configs/default.yaml \
+    --num-samples 8
 
-# 샘플 수 조정
-python diffusion/forward_show_event_scatter.py --num-samples 8
+# 특정 스케줄러로 테스트
+python diffusion/forward_show_event_scatter.py \
+    --config configs/noise_schedules/cosine.yaml \
+    --num-samples 2
 ```
 
 **CLI 옵션**:
-- `--config`: 설정 파일 경로
+- `--config`: 설정 파일 경로 (기본: configs/default.yaml)
 - `--num-samples`: 시각화할 샘플 수 (기본: 4)
-- `--timesteps`: 비교할 timestep들 (기본: [100, 500, 999])
-- `--save`: 결과 이미지 저장
 
 **출력**:
-- 원본 신호와 각 timestep의 노이지 신호를 나란히 비교하는 플롯
-- Charge와 Time 채널별 분포 비교
+- `diffusion_process_normalized_vs_denormalized.png`: 정규화/역정규화 비교 플롯
+- 각 공간에서의 노이즈 통계 및 SNR 정보
 
 ---
 
-### 3. `forward_stat_analysis.py` - 배치 단위 통계적 분석
+### 3. `forward_show_event_hist.py` - 정규화 vs 역정규화 히스토그램 시각화
+
+**목적**: 정규화된 공간과 역정규화된 공간에서의 신호 분포를 히스토그램으로 비교
+
+**주요 기능**:
+- **4행 구조**: NPE 정규화, NPE 역정규화, Time 정규화, Time 역정규화
+- 각 채널별 분포 히스토그램 시각화
+- 통계 정보 표시 (평균, 표준편차)
+- 노이즈 추가에 따른 분포 변화 추적
+- 상세한 역정규화 과정 설명
+
+**📊 시각화 구조**:
+```
+┌─────────────────────────────────────────────────────────┐
+│ NPE Normalized (training space)    t=100 NPE (Normalized) │
+│ NPE Denormalized (physical units)  t=100 NPE (Denormalized) │
+│ Time Normalized (training space)   t=100 Time (Normalized) │
+│ Time Denormalized (physical units) t=100 Time (Denormalized) │
+└─────────────────────────────────────────────────────────┘
+```
+
+**사용 예시**:
+```bash
+# 기본 사용법
+python diffusion/forward_show_event_hist.py \
+    --config configs/default.yaml \
+    --num-samples 2
+
+# 특정 스케줄러로 테스트
+python diffusion/forward_show_event_hist.py \
+    --config configs/noise_schedules/cosine.yaml \
+    --num-samples 1
+```
+
+**CLI 옵션**:
+- `--config`: 설정 파일 경로 (기본: configs/default.yaml)
+- `--num-samples`: 시각화할 샘플 수 (기본: 4)
+
+**출력**:
+- `diffusion_process_histograms_normalized_vs_denormalized.png`: 히스토그램 비교 플롯
+- 각 공간에서의 분포 통계 및 SNR 정보
+- 상세한 역정규화 공식 설명
+
+---
+
+### 4. `forward_data_stat_analysis.py` - 배치 단위 통계적 분석
 
 **목적**: 대량의 이벤트에 대한 forward diffusion 과정의 통계적 분석
 
@@ -114,18 +176,18 @@ python diffusion/forward_show_event_scatter.py --num-samples 8
 **사용 예시**:
 ```bash
 # 기본 배치 분석
-python diffusion/forward_stat_analysis.py \
+python diffusion/forward_data_stat_analysis.py \
     --config configs/default.yaml \
     --batch-size 100
 
 # 특정 timestep들 분석
-python diffusion/forward_stat_analysis.py \
+python diffusion/forward_data_stat_analysis.py \
     --config configs/default.yaml \
     --batch-size 200 \
     --timesteps 0 100 200 500 999
 
 # Gaussian 테스트 포함
-python diffusion/forward_stat_analysis.py \
+python diffusion/forward_data_stat_analysis.py \
     --config configs/default.yaml \
     --batch-size 100 \
     --test-gaussian
@@ -147,7 +209,7 @@ python diffusion/forward_stat_analysis.py \
 
 ---
 
-### 4. `reverse_show_event_3D.py` - 역방향 디퓨전 비교 (참고용)
+### 5. `reverse_show_event_3D.py` - 역방향 디퓨전 비교 (참고용)
 
 **목적**: 역방향 디퓨전으로 생성된 샘플과 실제 데이터 비교
 

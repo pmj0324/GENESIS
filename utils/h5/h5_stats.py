@@ -74,12 +74,15 @@ def get_dataset_stats(
         else:
             # Sample data
             if dataset.ndim == 1:
+                # For 1D arrays, sample indices and sort them
                 indices = np.random.choice(dataset.size, sample_size, replace=False)
+                indices = np.sort(indices)  # Sort indices for HDF5 compatibility
                 data = dataset[indices]
             else:
                 # For multi-dimensional arrays, sample along first dimension
                 n_samples = min(sample_size, dataset.shape[0])
                 indices = np.random.choice(dataset.shape[0], n_samples, replace=False)
+                indices = np.sort(indices)  # Sort indices for HDF5 compatibility
                 data = dataset[indices]
         
         # Basic statistics
