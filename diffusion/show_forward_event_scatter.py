@@ -368,11 +368,11 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Visualize diffusion process")
-    parser.add_argument("--config", type=str, default="configs/default.yaml",
+    parser.add_argument("-c", "--config", type=str, default="configs/default.yaml",
                         help="Path to config file")
-    parser.add_argument("--num-samples", type=int, default=4,
+    parser.add_argument("-n", "--num-samples", type=int, default=4,
                         help="Number of samples to visualize")
-    parser.add_argument("--output", type=str, default=None,
+    parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output directory path")
     
     args = parser.parse_args()

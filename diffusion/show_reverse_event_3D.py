@@ -385,28 +385,28 @@ def main():
     )
     
     parser.add_argument(
-        "--pth-path",
+        "-p", "--pth-path",
         type=str,
         required=True,
         help="Path to trained model .pth file"
     )
     
     parser.add_argument(
-        "--config",
+        "-c", "--config",
         type=str,
         required=True,
         help="Path to YAML config file"
     )
     
     parser.add_argument(
-        "--event-index",
+        "-e", "--event-index",
         type=int,
         default=0,
         help="Event index to use from dataset"
     )
     
     parser.add_argument(
-        "--timesteps",
+        "-t", "--timesteps",
         type=int,
         nargs="+",
         default=[0, 100, 500, 999],
@@ -414,27 +414,27 @@ def main():
     )
     
     parser.add_argument(
-        "--compare-real",
+        "-r", "--compare-real",
         action="store_true",
         help="Also show real data at same timesteps"
     )
     
     parser.add_argument(
-        "--output-dir",
+        "-o", "--output-dir",
         type=str,
         default="./reverse_comparison",
         help="Output directory for saved files"
     )
     
     parser.add_argument(
-        "--detector-csv",
+        "-d", "--detector-csv",
         type=str,
         default="./configs/detector_geometry.csv",
         help="Path to detector geometry CSV file"
     )
     
     parser.add_argument(
-        "--quick",
+        "-q", "--quick",
         action="store_true",
         help="Quick mode: only t=0 and t=T-1"
     )

@@ -15,13 +15,22 @@ from pathlib import Path
 import argparse
 from typing import Dict, List, Optional, Tuple
 
-from noise_schedules import (
-    linear_beta_schedule,
-    cosine_beta_schedule,
-    quadratic_beta_schedule,
-    sigmoid_beta_schedule,
-    compute_alpha_schedule
-)
+try:
+    from .noise_schedules import (
+        linear_beta_schedule,
+        cosine_beta_schedule,
+        quadratic_beta_schedule,
+        sigmoid_beta_schedule,
+        compute_alpha_schedule
+    )
+except ImportError:
+    from noise_schedules import (
+        linear_beta_schedule,
+        cosine_beta_schedule,
+        quadratic_beta_schedule,
+        sigmoid_beta_schedule,
+        compute_alpha_schedule
+    )
 
 
 class NoiseScheduleVisualizer:
@@ -376,12 +385,12 @@ class NoiseScheduleVisualizer:
 def main():
     """Main function for command line usage."""
     parser = argparse.ArgumentParser(description="Noise Schedule Visualizer")
-    parser.add_argument("--timesteps", type=int, default=1000, help="Number of timesteps")
-    parser.add_argument("--output-dir", type=str, default="./outputs", help="Output directory")
-    parser.add_argument("--sample-data-path", type=str, help="Path to sample data (optional)")
-    parser.add_argument("--beta-start", type=float, default=1e-4, help="Beta start value")
-    parser.add_argument("--beta-end", type=float, default=2e-2, help="Beta end value")
-    parser.add_argument("--cosine-s", type=float, default=0.008, help="Cosine schedule offset")
+    parser.add_argument("-t", "--timesteps", type=int, default=1000, help="Number of timesteps")
+    parser.add_argument("-o", "--output-dir", type=str, default="./outputs", help="Output directory")
+    parser.add_argument("-d", "--sample-data-path", type=str, help="Path to sample data (optional)")
+    parser.add_argument("-s", "--beta-start", type=float, default=1e-4, help="Beta start value")
+    parser.add_argument("-e", "--beta-end", type=float, default=2e-2, help="Beta end value")
+    parser.add_argument("-c", "--cosine-s", type=float, default=0.008, help="Cosine schedule offset")
     
     args = parser.parse_args()
     
