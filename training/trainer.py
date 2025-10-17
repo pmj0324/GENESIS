@@ -35,7 +35,8 @@ except ImportError:
 # Project imports
 from dataloader.pmt_dataloader import make_dataloader, check_dataset_health
 from models.factory import ModelFactory
-from diffusion import GaussianDiffusion, DiffusionConfig
+from diffusion import GaussianDiffusion
+from config import DiffusionConfig
 from config import ExperimentConfig
 from utils.gpu_utils import print_memory_analysis, print_gpu_info
 from .schedulers import create_scheduler
@@ -983,11 +984,12 @@ class Trainer:
             geom = geom[:batch_size].to(self.device)
             labels = labels[:batch_size].to(self.device)
             
-            # Test key timesteps
+            # Test key timesteps (t=0 is original, then show noise steps from t=1 to t=T)
             T = self.diffusion.cfg.timesteps
-            test_timesteps = [0, T//4, T//2, (3*T)//4, T-1]
+            test_timesteps = [0, 1, T//4, T//2, (3*T)//4, T]
             
             print(f"\n📊 Forward Diffusion Statistics (batch_size={batch_size})")
+            print(f"Note: t=0 is original data, t=1 is first noise step, t={T} is final timestep")
             print(f"{'Timestep':<10} {'Charge Range':<30} {'Time Range':<30} {'SNR':<10}")
             print(f"{'-'*80}")
             
@@ -998,14 +1000,19 @@ class Trainer:
                 charge_range = f"[{x_t[:,0].min():.3f}, {x_t[:,0].max():.3f}]"
                 time_range = f"[{x_t[:,1].min():.3f}, {x_t[:,1].max():.3f}]"
                 
-                sqrt_alpha_bar = self.diffusion.sqrt_alphas_cumprod[t_val].item()
-                sqrt_one_minus = self.diffusion.sqrt_one_minus_alphas_cumprod[t_val].item()
-                snr = sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
+                # For t > 0, use parameter at index t-1
+                if t_val == 0:
+                    snr = float('inf')  # Original data, no noise
+                else:
+                    idx = t_val - 1
+                    sqrt_alpha_bar = self.diffusion.sqrt_alphas_cumprod[idx].item()
+                    sqrt_one_minus = self.diffusion.sqrt_one_minus_alphas_cumprod[idx].item()
+                    snr = sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
                 
                 print(f"{t_val:<10} {charge_range:<30} {time_range:<30} {snr:<10.4f}")
             
             # Per-sample statistics for final timestep
-            print(f"\n📈 Per-Sample Statistics (t={T-1})")
+            print(f"\n📈 Per-Sample Statistics (t={T})")
             print(f"{'Sample':<8} {'Original':<20} {'Final':<20} {'Change':<15}")
             print(f"{'Index':<8} {'Charge Mean':<10} {'Charge Mean':<10} {'Charge':<7} {'Time':<7}")
             print(f"{'-'*80}")
@@ -1015,7 +1022,7 @@ class Trainer:
             orig_time_means = x_sig[:, 1].mean(dim=1)
             
             # Final timestep
-            t_final = torch.full((batch_size,), T-1, device=self.device, dtype=torch.long)
+            t_final = torch.full((batch_size,), T, device=self.device, dtype=torch.long)
             x_final = self.diffusion.q_sample(x_sig, t_final)
             final_charge_means = x_final[:, 0].mean(dim=1)
             final_time_means = x_final[:, 1].mean(dim=1)

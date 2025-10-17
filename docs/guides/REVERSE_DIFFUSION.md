@@ -36,7 +36,7 @@ This document explains **exactly** what happens during reverse diffusion samplin
 ┌─────────────────────────────────────────────────────────────────┐
 │ Step 2: Reverse Diffusion Loop (T → 0)                         │
 ├─────────────────────────────────────────────────────────────────┤
-│ for t = T-1, T-2, ..., 1, 0:                                   │
+│ for t = T-1, T-2, ..., 1, 0: (T-1 is final timestep)          │
 │                                                                  │
 │   ┌──────────────────────────────────────────────────────────┐ │
 │   │ 2.1: Predict Noise with CFG                              │ │
@@ -147,7 +147,7 @@ x_T = torch.randn(B, 2, 5160)  # N(0, 1)
 #### Iteration Structure
 
 ```python
-for t in reversed(range(T)):  # T-1, T-2, ..., 1, 0
+for t in reversed(range(T)):  # T-1, T-2, ..., 1, 0 (T-1 is final timestep)
     t_batch = torch.full((B,), t, dtype=torch.long)
     
     # ═══════════════════════════════════════════════

@@ -14,8 +14,8 @@ import torch
 import torch.nn as nn
 
 from .architectures import create_model as _create_arch_model, ArchitectureConfig, get_architecture_info
-from diffusion import GaussianDiffusion, DiffusionConfig
-from config import ModelConfig, DiffusionConfig as ConfigDiffusionConfig
+from diffusion import GaussianDiffusion
+from config import ModelConfig, DiffusionConfig
 
 
 class ModelFactory:
@@ -48,25 +48,15 @@ class ModelFactory:
     @staticmethod
     def create_diffusion_wrapper(
         model: nn.Module, 
-        diffusion_config: ConfigDiffusionConfig
+        diffusion_config: DiffusionConfig
     ) -> GaussianDiffusion:
         """Create diffusion wrapper from model and config."""
-        dit_config = DiffusionConfig(
-            timesteps=diffusion_config.timesteps,
-            beta_start=diffusion_config.beta_start,
-            beta_end=diffusion_config.beta_end,
-            objective=diffusion_config.objective,
-            schedule=getattr(diffusion_config, 'schedule', 'linear'),
-            use_cfg=getattr(diffusion_config, 'use_cfg', True),
-            cfg_scale=getattr(diffusion_config, 'cfg_scale', 2.0),
-            cfg_dropout=getattr(diffusion_config, 'cfg_dropout', 0.1),
-        )
-        return GaussianDiffusion(model, dit_config)
+        return GaussianDiffusion(model, diffusion_config)
     
     @staticmethod
     def create_model_and_diffusion(
         model_config: ModelConfig,
-        diffusion_config: ConfigDiffusionConfig,
+        diffusion_config: DiffusionConfig,
         device: Optional[torch.device] = None
     ) -> tuple[nn.Module, GaussianDiffusion]:
         """Create both model and diffusion wrapper."""

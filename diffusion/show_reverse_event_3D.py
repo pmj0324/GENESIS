@@ -157,6 +157,7 @@ def generate_with_timesteps(
     # Generate using DDIM with specified timesteps
     # We'll use a custom sampling function that saves intermediate steps
     T = diffusion.cfg.timesteps
+    print(f"Note: t=0 is original data, t=1 is first noise step, t={T} is final timestep")
     ddim_steps = max(timesteps) + 1  # Ensure we go to max timestep
     
     print(f"   Using DDIM with {ddim_steps} steps")
@@ -436,15 +437,15 @@ def main():
     parser.add_argument(
         "-q", "--quick",
         action="store_true",
-        help="Quick mode: only t=0 and t=T-1"
+        help="Quick mode: only t=0 and t=T-1 (final timestep)"
     )
     
     args = parser.parse_args()
     
-    # Quick mode
+    # Quick mode: show t=0 (original), t=1 (first noise), and t=T (final)
     if args.quick:
         T = 1000  # Default timesteps
-        args.timesteps = [0, T-1]
+        args.timesteps = [0, 1, T]
         print(f"🚀 Quick mode: timesteps = {args.timesteps}")
     
     print("\n" + "="*80)

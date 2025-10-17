@@ -67,8 +67,10 @@ def visualize_diffusion_histograms(config_path: str = None, num_samples: int = 4
         device=torch.device('cpu')
     )
     
-    # Timesteps to visualize (4 timesteps for 4 columns)
-    timesteps = [0, 250, 500, 999]
+    # Timesteps to visualize (t=0 is original, then show noise steps from t=1 to t=T)
+    timesteps = [0, 1, 250, 500, 1000]
+    T = diffusion.cfg.timesteps
+    print(f"Note: t=0 is original data, t=1 is first noise step, t={T} is final timestep")
     
     # Create figure with 4 rows: NPE normalized, NPE denormalized, Time normalized, Time denormalized
     fig, axes = plt.subplots(4, len(timesteps) + 1, figsize=(20, 16))

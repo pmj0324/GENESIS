@@ -284,7 +284,7 @@ def plot_noise_schedules_comparison(timesteps: int = 1000,
 
 def plot_schedule_effects_on_sample(sample_data: torch.Tensor,
                                   timesteps: int = 1000,
-                                  test_timesteps: List[int] = [0, 100, 250, 500, 750, 999],
+                                  test_timesteps: List[int] = [0, 1, 100, 250, 500, 750, 1000],
                                   beta_start: float = 1e-4,
                                   beta_end: float = 2e-2,
                                   cosine_s: float = 0.008,

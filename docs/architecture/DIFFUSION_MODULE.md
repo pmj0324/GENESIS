@@ -159,7 +159,7 @@ compare_noise_schedules(schedules, save_path="comparison.png")
 
 ### 1. 가우시안 수렴 (Gaussian Convergence)
 
-Forward diffusion이 끝나면 (t=T-1) 데이터가 N(0, 1) 가우시안 분포가 되어야 합니다.
+Forward diffusion이 끝나면 (t=T-1, final timestep) 데이터가 N(0, 1) 가우시안 분포가 되어야 합니다.
 
 **확인 항목:**
 - Mean ≈ 0
@@ -171,7 +171,7 @@ Forward diffusion이 끝나면 (t=T-1) 데이터가 N(0, 1) 가우시안 분포�
 
 ### 2. 중간 Timestep 분포
 
-다양한 timestep (t=0, T/4, T/2, 3T/4, T-1)에서 분포를 확인하여:
+다양한 timestep (t=0, T/4, T/2, 3T/4, T-1)에서 분포를 확인하여 (T-1은 final timestep):
 - 점진적으로 노이즈가 추가되는지
 - SNR이 단조감소하는지
 - 최종적으로 가우시안에 수렴하는지
@@ -202,7 +202,7 @@ Forward Diffusion Analysis
 
 ...
 
-📊 Analyzing timestep t=999
+📊 Analyzing timestep t=999 (final timestep)
   Mean: -0.001234
   Std: 1.002145
   Skewness: 0.008765 (normal ≈ 0)
@@ -215,7 +215,7 @@ Forward Diffusion Analysis
 Summary
 ======================================================================
 
-🎯 Final timestep (t=999) check:
+🎯 Final timestep (t=999, final timestep) check:
    Mean ≈ 0: True (|mean|=0.0012)
    Std ≈ 1: True (std=1.0021)
    Skewness ≈ 0: True (skew=0.0088)

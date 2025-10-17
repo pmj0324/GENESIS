@@ -27,21 +27,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-@dataclass
-class DiffusionConfig:
-    """Configuration for Gaussian diffusion process."""
-    timesteps: int = 1000          # Number of diffusion timesteps
-    beta_start: float = 1e-4       # Starting noise schedule
-    beta_end: float = 2e-2         # Ending noise schedule
-    objective: str = "eps"         # Training objective: "eps" or "x0"
-    schedule: str = "linear"       # Noise schedule: "linear" or "cosine"
-    
-    # Classifier-free guidance
-    use_cfg: bool = True           # Use classifier-free guidance
-    cfg_scale: float = 2.0         # Guidance scale (1.0 = no guidance, higher = stronger)
-    cfg_dropout: float = 0.1       # Probability of dropping condition during training
-
-
 class GaussianDiffusion(nn.Module):
     """
     DDPM-style trainer/sampler for p(x|c) with geometry.
@@ -65,7 +50,7 @@ class GaussianDiffusion(nn.Module):
         
         # Create noise schedule
         if cfg.schedule == "cosine":
-            betas = self._cosine_beta_schedule(T)
+            betas = self._cosine_beta_schedule(T, cfg.cosine_s)
         else:  # linear (default)
             betas = torch.linspace(cfg.beta_start, cfg.beta_end, T)
         
@@ -126,19 +111,44 @@ class GaussianDiffusion(nn.Module):
         
         Args:
             x0_sig: Clean signals (B, 2, L) - [charge, time]
-            t: Timesteps (B,) - integer values in [0, T)
+            t: Timesteps (B,) - integer values in [0, T]
+                • t=0: Original data (no noise, no parameter used)
+                • t=1: First noise step (uses betas[0])
+                • t=2: Second noise step (uses betas[1])
+                • ...
+                • t=T: Final timestep (uses betas[T-1], maximum noise)
             noise: Optional pre-generated noise (B, 2, L)
         
         Returns:
             Noised signals x_t (B, 2, L)
+        
+        Note:
+            Parameter indexing: betas[t-1] for t > 0
+            This ensures all T noise parameters are used (betas[0] through betas[T-1])
         """
+        # Special case: t=0 returns original data (no noise)
+        mask_t0 = (t == 0)
+        if mask_t0.all():
+            return x0_sig.clone()
+        
         if noise is None:
             noise = torch.randn_like(x0_sig)
         
-        sqrt_alpha_bar = self.sqrt_alphas_cumprod[t][:, None, None]
-        sqrt_one_minus_alpha_bar = self.sqrt_one_minus_alphas_cumprod[t][:, None, None]
+        # For t > 0, use parameter at index t-1
+        # t=1 → index 0, t=2 → index 1, ..., t=T → index T-1
+        t_idx = torch.where(t > 0, t - 1, torch.zeros_like(t))
         
-        return sqrt_alpha_bar * x0_sig + sqrt_one_minus_alpha_bar * noise
+        sqrt_alpha_bar = self.sqrt_alphas_cumprod[t_idx][:, None, None]
+        sqrt_one_minus_alpha_bar = self.sqrt_one_minus_alphas_cumprod[t_idx][:, None, None]
+        
+        # Compute noised version
+        x_t = sqrt_alpha_bar * x0_sig + sqrt_one_minus_alpha_bar * noise
+        
+        # Replace t=0 samples with original (if any in batch)
+        if mask_t0.any():
+            x_t[mask_t0] = x0_sig[mask_t0].clone()
+        
+        return x_t
     
     def predict_start_from_noise(
         self, 
@@ -150,10 +160,15 @@ class GaussianDiffusion(nn.Module):
         Predict x_0 from x_t and predicted noise ε.
         
         x_0 = (x_t - sqrt(1-α̅_t) * ε) / sqrt(α̅_t)
+        
+        Note: For t > 0, use parameter at index t-1
         """
+        # For t > 0, use parameter at index t-1
+        t_idx = torch.where(t > 0, t - 1, torch.zeros_like(t))
+        
         return (
-            self.sqrt_recip_alphas_cumprod[t][:, None, None] * x_t -
-            self.sqrt_recipm1_alphas_cumprod[t][:, None, None] * noise
+            self.sqrt_recip_alphas_cumprod[t_idx][:, None, None] * x_t -
+            self.sqrt_recipm1_alphas_cumprod[t_idx][:, None, None] * noise
         )
     
     def loss(
@@ -176,8 +191,11 @@ class GaussianDiffusion(nn.Module):
         B = x0_sig.size(0)
         device = x0_sig.device
         
-        # Sample random timesteps
-        t = torch.randint(0, self.cfg.timesteps, (B,), device=device, dtype=torch.long)
+        # Sample random timesteps (excluding t=0 which is original data)
+        # t=0: original (no noise, skip training)
+        # t=1~T: noise steps (train on these, uses all T noise parameters)
+        # Note: torch.randint(1, T+1) generates values in [1, T]
+        t = torch.randint(1, self.cfg.timesteps + 1, (B,), device=device, dtype=torch.long)
         
         # Sample noise and create noisy signals
         noise = torch.randn_like(x0_sig)
@@ -272,8 +290,11 @@ class GaussianDiffusion(nn.Module):
         all_samples = [x] if return_all_timesteps else None
         
         # Reverse diffusion
-        for t_idx in reversed(range(self.cfg.timesteps)):
-            t_batch = torch.full((B,), t_idx, device=device, dtype=torch.long)
+        # Loop from t=T down to t=1 (stop before t=0)
+        # t=0 is original data, so we stop at t=1 and take the mean as x_0
+        # Note: range(1, T+1) generates [1, 2, ..., T], reversed = [T, T-1, ..., 2, 1]
+        for t_val in reversed(range(1, self.cfg.timesteps + 1)):
+            t_batch = torch.full((B,), t_val, device=device, dtype=torch.long)
             
             # Classifier-free guidance
             if self.cfg.use_cfg and self.cfg.cfg_scale != 1.0:
@@ -291,10 +312,11 @@ class GaussianDiffusion(nn.Module):
                 # Standard prediction without guidance
                 eps_hat = self.model(x, geom, t_batch, label)  # (B, 2, L)
             
-            # Get schedule values
-            alpha = self.alphas[t_idx]
-            alpha_bar = self.alphas_cumprod[t_idx]
-            beta = self.betas[t_idx]
+            # Get schedule values (use t-1 as index)
+            idx = t_val - 1
+            alpha = self.alphas[idx]
+            alpha_bar = self.alphas_cumprod[idx]
+            beta = self.betas[idx]
             
             # DDPM mean update (eps-prediction)
             # μ_θ(x_t, t) = (1/sqrt(α_t)) * (x_t - (β_t / sqrt(1-α̅_t)) * ε_θ(x_t, t))
@@ -302,12 +324,13 @@ class GaussianDiffusion(nn.Module):
                 x - (beta / torch.sqrt(1 - alpha_bar)) * eps_hat
             )
             
-            # Add noise (except at t=0)
-            if t_idx > 0:
+            # Add noise (except at final step t=1)
+            if t_val > 1:
                 noise = torch.randn_like(x)
-                var = torch.sqrt(self.posterior_variance[t_idx])
+                var = torch.sqrt(self.posterior_variance[idx])
                 x = mean + var * noise
             else:
+                # t=1: final denoising step, return mean as x_0
                 x = mean
             
             if return_all_timesteps:
@@ -403,26 +426,36 @@ class GaussianDiffusion(nn.Module):
         B, C, L = shape
         device = next(self.parameters()).device
         
-        # Create subsequence of timesteps
+        # Create subsequence of timesteps (exclude t=0 which is original)
+        # Generate t values: [step_size, 2*step_size, ..., T]
         step_size = self.cfg.timesteps // ddim_steps
-        timesteps = list(range(0, self.cfg.timesteps, step_size))
-        timesteps.reverse()
+        timesteps = list(range(step_size, self.cfg.timesteps + 1, step_size))
+        if timesteps[-1] != self.cfg.timesteps:
+            timesteps.append(self.cfg.timesteps)  # Ensure final timestep T is included
+        timesteps.reverse()  # [T, ..., step_size]
         
         # Start from pure noise
         x = torch.randn(B, C, L, device=device)
         
-        for i, t_idx in enumerate(timesteps):
-            t_batch = torch.full((B,), t_idx, device=device, dtype=torch.long)
+        for i, t_val in enumerate(timesteps):
+            t_batch = torch.full((B,), t_val, device=device, dtype=torch.long)
             
             # Predict noise
             eps_hat = self.model(x, geom, t_batch, label)
             
-            # Get next timestep
-            t_prev_idx = timesteps[i + 1] if i < len(timesteps) - 1 else 0
+            # Get next timestep (stop at t=1, not t=0)
+            if i < len(timesteps) - 1:
+                t_prev = timesteps[i + 1]
+            else:
+                t_prev = 1  # Stop at t=1, not t=0
+            
+            # Get alphas (use t-1 as index for t > 0)
+            idx = t_val - 1
+            idx_prev = t_prev - 1
             
             # DDIM update (simplified)
-            alpha_bar = self.alphas_cumprod[t_idx]
-            alpha_bar_prev = self.alphas_cumprod[t_prev_idx]
+            alpha_bar = self.alphas_cumprod[idx]
+            alpha_bar_prev = self.alphas_cumprod[idx_prev]
             
             # Predict x_0
             x0_pred = self.predict_start_from_noise(x, t_batch, eps_hat)

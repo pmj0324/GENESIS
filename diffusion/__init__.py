@@ -13,7 +13,6 @@ Future: Will also support Flow Matching in a separate 'flow' module.
 
 from .gaussian_diffusion import (
     GaussianDiffusion,
-    DiffusionConfig,
     create_gaussian_diffusion
 )
 from .noise_schedules import (
@@ -37,7 +36,6 @@ from .diffusion_utils import (
 __all__ = [
     # Gaussian diffusion
     "GaussianDiffusion",
-    "DiffusionConfig",
     "create_gaussian_diffusion",
     
     # Noise schedules

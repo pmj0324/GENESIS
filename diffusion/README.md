@@ -64,7 +64,7 @@ samples = diffusion.sample(label, geom, shape=(B, 2, L))
 **`forward_visualize.py`** - Visualize how a single event progresses through forward diffusion with 3D detector images.
 
 ```bash
-# Quick mode - only t=0 and t=T-1
+# Quick mode - only t=0 and t=T-1 (final timestep)
 python diffusion/forward_visualize.py \
     --config configs/default.yaml \
     --event-index 0 \
@@ -98,7 +98,7 @@ python diffusion/forward_visualize.py \
 **`forward_analyze.py`** - Statistical analysis of forward diffusion process for large batches.
 
 ```bash
-# Quick mode - t=0, t=T/2, t=T-1
+# Quick mode - t=0, t=T/2, t=T-1 (final timestep)
 python diffusion/forward_analyze.py \
     --config configs/default.yaml \
     --batch-size 100 \

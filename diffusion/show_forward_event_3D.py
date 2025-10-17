@@ -227,8 +227,9 @@ def visualize_forward_process(
         print(f"   Output directory: {output_path}")
     
     # Denormalize original labels for display
+    labels_np = labels.cpu().numpy()[0]  # Store normalized labels for plotting
     labels_denorm = denormalize_labels(
-        labels.cpu().numpy()[0],
+        labels_np,
         label_offsets=np.array(config.data.label_offsets),
         label_scales=np.array(config.data.label_scales),
     )
@@ -243,6 +244,7 @@ def visualize_forward_process(
     print(f"\n{'='*80}")
     print(f"📈 Forward Diffusion Statistics")
     print(f"{'='*80}")
+    print(f"Note: t=0 is original data, t=1 is first noise step, t={diffusion.cfg.timesteps} is final timestep")
     print(f"{'Timestep':<10} {'Charge Range':<30} {'Time Range':<30} {'SNR':<10}")
     print(f"{'-'*80}")
     
@@ -269,19 +271,26 @@ def visualize_forward_process(
         charge_range = f"[{charge.min():.3f}, {charge.max():.3f}]"
         time_range = f"[{time_vals.min():.3f}, {time_vals.max():.3f}]"
         
-        # SNR calculation
-        sqrt_alpha_bar = diffusion.sqrt_alphas_cumprod[t_val].item()
-        sqrt_one_minus = diffusion.sqrt_one_minus_alphas_cumprod[t_val].item()
-        snr = sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
+        # SNR calculation (use t-1 as index for t > 0)
+        if t_val == 0:
+            snr = float('inf')  # Original data, no noise
+        else:
+            idx = t_val - 1
+            sqrt_alpha_bar = diffusion.sqrt_alphas_cumprod[idx].item()
+            sqrt_one_minus = diffusion.sqrt_one_minus_alphas_cumprod[idx].item()
+            snr = sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
         
         print(f"{t_val:<10} {charge_range:<30} {time_range:<30} {snr:<10.4f}")
         
         # Save NPZ and images if requested
         if save_images:
-            # Step 1: Denormalize for visualization
+            # Step 1: Prepare normalized data (for normalized plots/histograms)
+            x_t_np = x_t[0].cpu().numpy()  # (2, 5160)
+            
+            # Step 2: Denormalize for visualization
             denorm_start = time.perf_counter()
             x_t_denorm = denormalize_signal(
-                x_t[0].cpu().numpy(),
+                x_t_np,
                 charge_offset=config.data.affine_offsets[0],
                 charge_scale=config.data.affine_scales[0],
                 time_offset=config.data.affine_offsets[1],
@@ -460,7 +469,7 @@ def main():
         "-t", "--timesteps",
         type=int,
         nargs="+",
-        default=[0, 250, 500, 750, 999],
+        default=[0, 250, 500, 750, 1000],
         help="Timesteps to visualize"
     )
     
@@ -512,15 +521,15 @@ def main():
     parser.add_argument(
         "-q", "--quick",
         action="store_true",
-        help="Quick mode: only t=0 and t=T-1"
+        help="Quick mode: only t=0 and t=T-1 (final timestep)"
     )
     
     args = parser.parse_args()
     
-    # Quick mode: only first and last timesteps
+    # Quick mode: show t=0 (original), t=1 (first noise), and t=T (final)
     if args.quick:
         T = 1000  # Default timesteps
-        args.timesteps = [0, T-1]
+        args.timesteps = [0, 1, T]
         print(f"🚀 Quick mode: timesteps = {args.timesteps}")
     
     print("\n" + "="*80)

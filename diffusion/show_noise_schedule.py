@@ -237,7 +237,7 @@ class NoiseScheduleVisualizer:
     
     def plot_forward_diffusion_effects(self, 
                                      sample_data: torch.Tensor,
-                                     test_timesteps: List[int] = [0, 100, 250, 500, 750, 999],
+                                     test_timesteps: List[int] = [0, 1, 100, 250, 500, 750, 1000],
                                      save_path: Optional[str] = None) -> plt.Figure:
         """
         Plot forward diffusion effects on sample data.

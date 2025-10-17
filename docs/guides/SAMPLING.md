@@ -55,7 +55,7 @@ This will:
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. Iterative Denoising (Reverse Diffusion)                 │
 ├─────────────────────────────────────────────────────────────┤
-│ for t = T-1 down to 0:                                      │
+│ for t = T-1 down to 0: (T-1 is final timestep)             │
 │     # Predict noise                                          │
 │     noise_pred = model(x_t, geom, t, label)                │
 │                                                              │

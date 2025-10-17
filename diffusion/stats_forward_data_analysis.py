@@ -42,11 +42,32 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from scipy import stats
+from io import StringIO
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import load_config_from_file
+
+
+class TeeOutput:
+    """Capture both terminal output and save to file."""
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.terminal = sys.stdout
+        self.log_file = open(file_path, 'w', encoding='utf-8')
+        
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()
+        
+    def flush(self):
+        self.terminal.flush()
+        self.log_file.flush()
+        
+    def close(self):
+        self.log_file.close()
 from dataloader.pmt_dataloader import PMTSignalsH5
 from models.factory import ModelFactory
 
@@ -104,9 +125,25 @@ def load_batch_and_diffusion(config_path: str, batch_size: int):
 
 
 def compute_snr_at_timestep(diffusion, t: int) -> float:
-    """Compute Signal-to-Noise Ratio at given timestep."""
-    sqrt_alpha_bar = diffusion.sqrt_alphas_cumprod[t].item()
-    sqrt_one_minus = diffusion.sqrt_one_minus_alphas_cumprod[t].item()
+    """
+    Compute Signal-to-Noise Ratio at given timestep.
+    
+    Args:
+        diffusion: GaussianDiffusion instance
+        t: Timestep value (0 to T, where T is cfg.timesteps)
+    
+    Returns:
+        SNR value
+        
+    Note:
+        For t > 0, use parameter at index t-1
+    """
+    if t == 0:
+        return float('inf')  # Original data, no noise
+    
+    idx = t - 1  # Use t-1 as index
+    sqrt_alpha_bar = diffusion.sqrt_alphas_cumprod[idx].item()
+    sqrt_one_minus = diffusion.sqrt_one_minus_alphas_cumprod[idx].item()
     return sqrt_alpha_bar / sqrt_one_minus if sqrt_one_minus > 0 else float('inf')
 
 
@@ -141,9 +178,9 @@ def analyze_forward_diffusion(
     T = diffusion.cfg.timesteps
     device = next(diffusion.parameters()).device
     
-    # Default timesteps to check
+    # Default timesteps to check (t=0 is original, then show noise steps from t=1 to t=T)
     if timesteps_to_check is None:
-        timesteps_to_check = [0, T//4, T//2, 3*T//4, T-1]
+        timesteps_to_check = [0, 1, T//4, T//2, 3*T//4, T]
     
     # Move to device
     x0 = x0.to(device)
@@ -154,6 +191,7 @@ def analyze_forward_diffusion(
     print("\n" + "="*80)
     print("📊 Comprehensive Forward Diffusion Analysis")
     print("="*80)
+    print(f"Note: t=0 is original data, t=1 is first noise step, t={diffusion.cfg.timesteps} is final timestep")
     
     for t_idx in timesteps_to_check:
         print(f"\n📊 Analyzing timestep t={t_idx}")
@@ -280,15 +318,15 @@ def create_convergence_plots(
     timesteps: List[int],
     save_dir: Path
 ):
-    """Create histogram + Q-Q plots for Gaussian convergence verification."""
+    """Create histogram plots for Gaussian convergence verification."""
     print(f"\n📊 Creating convergence plots...")
     
     N = x0.size(0)
     device = x0.device
     
-    fig, axes = plt.subplots(2, len(timesteps), figsize=(4*len(timesteps), 8))
+    fig, axes = plt.subplots(1, len(timesteps), figsize=(4*len(timesteps), 4))
     if len(timesteps) == 1:
-        axes = axes.reshape(2, 1)
+        axes = [axes]
     
     for idx, t in enumerate(timesteps):
         # Sample at timestep t
@@ -297,7 +335,7 @@ def create_convergence_plots(
         x_t_flat = x_t.reshape(-1).cpu().numpy()
         
         # Histogram
-        ax = axes[0, idx]
+        ax = axes[idx]
         counts, bins, _ = ax.hist(x_t_flat, bins=100, density=True, alpha=0.7, 
                                  color='blue', edgecolor='black')
         
@@ -311,12 +349,6 @@ def create_convergence_plots(
         ax.set_xlabel('Value')
         ax.set_ylabel('Density')
         ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        # Q-Q plot
-        ax = axes[1, idx]
-        stats.probplot(x_t_flat, dist="norm", plot=ax)
-        ax.set_title(f't={t} Q-Q Plot')
         ax.grid(True, alpha=0.3)
     
     fig.suptitle('Forward Diffusion Convergence to Gaussian', fontsize=14, fontweight='bold')
@@ -387,16 +419,26 @@ def create_statistics_plots(results: Dict, timesteps: List[int], save_dir: Path)
     print(f"   ✅ Statistics plots saved: {stats_path}")
 
 
-def save_results_to_txt(results: Dict, timesteps: List[int], save_dir: Path):
+def save_results_to_txt(results: Dict, timesteps: List[int], save_dir: Path, terminal_output: str = ""):
     """Save analysis results to text file."""
     print(f"\n📄 Saving results to text file...")
     
     output_file = save_dir / 'analysis_results.txt'
     
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding='utf-8') as f:
         f.write("="*80 + "\n")
         f.write("FORWARD DIFFUSION STATISTICAL ANALYSIS RESULTS\n")
         f.write("="*80 + "\n\n")
+        
+        # Add terminal output if provided
+        if terminal_output:
+            f.write("TERMINAL OUTPUT:\n")
+            f.write("-" * 40 + "\n")
+            f.write(terminal_output)
+            f.write("\n" + "="*80 + "\n\n")
+        
+        f.write("DETAILED STATISTICAL RESULTS:\n")
+        f.write("-" * 40 + "\n\n")
         
         for t_val in timesteps:
             if t_val not in results:
@@ -472,6 +514,8 @@ def print_summary(results: Dict, timesteps: List[int]):
                 print(f"     Std ≈ 1: {abs(ch_results['std'] - 1.0) < 0.2} (std={ch_results['std']:.4f})")
                 print(f"     Skewness ≈ 0: {abs(ch_results['skewness']) < 0.5} (skew={abs(ch_results['skewness']):.4f})")
                 print(f"     Is Normal: {ch_results['is_normal']}")
+                print(f"     KS test p-value: {ch_results['ks_test_pval']:.6f}")
+                print(f"     Shapiro-Wilk p-value: {ch_results['shapiro_test_pval']:.6f}")
                 if ch_results['snr'] is not None:
                     print(f"     SNR: {ch_results['snr']:.4f}")
         else:
@@ -482,20 +526,64 @@ def print_summary(results: Dict, timesteps: List[int]):
             print(f"   Std ≈ 1: {abs(final_results['std'] - 1.0) < 0.2} (std={final_results['std']:.4f})")
             print(f"   Skewness ≈ 0: {abs(final_results['skewness']) < 0.5} (skew={abs(final_results['skewness']):.4f})")
             print(f"   Is Normal: {final_results['is_normal']}")
+            print(f"   KS test p-value: {final_results['ks_test_pval']:.6f}")
+            print(f"   Shapiro-Wilk p-value: {final_results['shapiro_test_pval']:.6f}")
             if final_results['snr'] is not None:
                 print(f"   SNR: {final_results['snr']:.4f}")
     
-    # Check convergence
+    # Detailed convergence check
+    print(f"\n🔍 Convergence Check (Last 3 timesteps: {timesteps[-3:]}):")
+    failed_tests = []
+    
+    for t in timesteps[-3:]:
+        if t in results:
+            if isinstance(results[t], dict) and 'charge' in results[t]:
+                # Per-channel analysis
+                for channel in ['charge', 'time']:
+                    if channel in results[t]:
+                        ch_results = results[t][channel]
+                        is_normal = ch_results['is_normal']
+                        ks_pval = ch_results['ks_test_pval']
+                        shapiro_pval = ch_results['shapiro_test_pval']
+                        
+                        status = "✅ PASS" if is_normal else "❌ FAIL"
+                        print(f"   t={t}, {channel}: {status}")
+                        print(f"     KS p-value: {ks_pval:.6f} {'✅' if ks_pval > 0.05 else '❌'}")
+                        print(f"     Shapiro p-value: {shapiro_pval:.6f} {'✅' if shapiro_pval > 0.05 else '❌'}")
+                        
+                        if not is_normal:
+                            failed_tests.append(f"t={t}, {channel} (KS: {ks_pval:.6f}, Shapiro: {shapiro_pval:.6f})")
+            else:
+                # Overall analysis
+                overall_results = results[t]
+                is_normal = overall_results['is_normal']
+                ks_pval = overall_results['ks_test_pval']
+                shapiro_pval = overall_results['shapiro_test_pval']
+                
+                status = "✅ PASS" if is_normal else "❌ FAIL"
+                print(f"   t={t}, overall: {status}")
+                print(f"     KS p-value: {ks_pval:.6f} {'✅' if ks_pval > 0.05 else '❌'}")
+                print(f"     Shapiro p-value: {shapiro_pval:.6f} {'✅' if shapiro_pval > 0.05 else '❌'}")
+                
+                if not is_normal:
+                    failed_tests.append(f"t={t}, overall (KS: {ks_pval:.6f}, Shapiro: {shapiro_pval:.6f})")
+    
+    # Final convergence result
     all_normal = all(
         results[t].get('is_normal', False) if isinstance(results[t], dict) and 'charge' not in results[t]
         else all(results[t][ch]['is_normal'] for ch in ['charge', 'time'] if ch in results[t])
         for t in timesteps[-3:]  # Check last 3 timesteps
     )
     
+    print(f"\n📊 Convergence Result:")
     if all_normal:
-        print("\n✅ Forward diffusion successfully converges to Gaussian!")
+        print("✅ Forward diffusion successfully converges to Gaussian!")
+        print("   All tests passed: KS p > 0.05 AND Shapiro p > 0.05")
     else:
-        print("\n⚠️ Forward diffusion may not fully converge to Gaussian.")
+        print("⚠️ Forward diffusion may not fully converge to Gaussian.")
+        print("   Failed tests:")
+        for failed_test in failed_tests:
+            print(f"     • {failed_test}")
         print("   Consider: increasing timesteps, adjusting beta schedule, or checking data preprocessing.")
     
     print("="*80)
@@ -570,7 +658,7 @@ def main():
         "-t", "--timesteps",
         type=int,
         nargs="+",
-        default=[0, 100, 200, 500, 999],
+        default=[0, 1, 250, 500, 750, 1000],
         help="Timesteps to analyze"
     )
     
@@ -584,7 +672,7 @@ def main():
     parser.add_argument(
         "-q", "--quick",
         action="store_true",
-        help="Quick mode: only t=0, t=T/2, t=T-1"
+        help="Quick mode: only t=0, t=1, t=T/2, t=T (final timestep)"
     )
     
     parser.add_argument(
@@ -608,40 +696,61 @@ def main():
     
     args = parser.parse_args()
     
-    # Quick mode
-    if args.quick:
-        T = 1000  # Default timesteps
-        args.timesteps = [0, T//2, T-1]
-        print(f"🚀 Quick mode: timesteps = {args.timesteps}")
-    
-    print("\n" + "="*80)
-    print("📊 Comprehensive Forward Diffusion Statistical Analysis")
-    print("="*80)
-    
-    # Load batch and diffusion
-    x_sig, geom, labels, diffusion, config, device = load_batch_and_diffusion(
-        args.config, args.batch_size
-    )
-    
-    # Run comprehensive analysis
-    results = analyze_forward_diffusion(
-        x_sig,
-        diffusion,
-        timesteps_to_check=args.timesteps,
-        per_channel=args.per_channel,
-        compute_snr=not args.no_snr,
-        compute_percentiles=not args.no_percentiles,
-        save_dir=args.output_dir
-    )
-    
-    # Save results to text file
+    # Setup output directory
     output_path = Path(args.output_dir)
-    save_results_to_txt(results, args.timesteps, output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
     
-    print(f"\n📁 All analysis results saved to: {output_path}")
-    print("\n" + "="*80)
-    print("✅ Comprehensive analysis complete!")
-    print("="*80)
+    # Setup terminal output capture
+    terminal_log_file = output_path / 'terminal_output.log'
+    tee = TeeOutput(str(terminal_log_file))
+    original_stdout = sys.stdout
+    sys.stdout = tee
+    
+    try:
+        # Quick mode
+        if args.quick:
+            T = 1000  # Default timesteps
+            args.timesteps = [0, 1, T//2, T]
+            print(f"🚀 Quick mode: timesteps = {args.timesteps}")
+        
+        print("\n" + "="*80)
+        print("📊 Comprehensive Forward Diffusion Statistical Analysis")
+        print("="*80)
+        
+        # Load batch and diffusion
+        x_sig, geom, labels, diffusion, config, device = load_batch_and_diffusion(
+            args.config, args.batch_size
+        )
+        
+        # Run comprehensive analysis
+        results = analyze_forward_diffusion(
+            x_sig,
+            diffusion,
+            timesteps_to_check=args.timesteps,
+            per_channel=args.per_channel,
+            compute_snr=not args.no_snr,
+            compute_percentiles=not args.no_percentiles,
+            save_dir=args.output_dir
+        )
+        
+        print(f"\n📁 All analysis results saved to: {output_path}")
+        print("\n" + "="*80)
+        print("✅ Comprehensive analysis complete!")
+        print("="*80)
+        
+    finally:
+        # Restore original stdout
+        sys.stdout = original_stdout
+        tee.close()
+    
+    # Read terminal output for txt file
+    terminal_output = ""
+    if terminal_log_file.exists():
+        with open(terminal_log_file, 'r', encoding='utf-8') as f:
+            terminal_output = f.read()
+    
+    # Save results to text file with terminal output
+    save_results_to_txt(results, args.timesteps, output_path, terminal_output)
 
 
 if __name__ == "__main__":

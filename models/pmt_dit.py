@@ -390,8 +390,10 @@ class PMTDit(nn.Module):
 
 # For backward compatibility, import from diffusion module
 # Users should update their code to:
-#   from diffusion import GaussianDiffusion, DiffusionConfig
-from diffusion import GaussianDiffusion, DiffusionConfig
+#   from diffusion import GaussianDiffusion
+#   from config import DiffusionConfig
+from diffusion import GaussianDiffusion
+from config import DiffusionConfig
 
 
 # -------------------------
@@ -419,7 +421,7 @@ if False:  # This code is not executed, kept for reference only
         """
         B = x0_sig.size(0)
         device = x0_sig.device
-        t = torch.randint(0, self.cfg.timesteps, (B,), device=device, dtype=torch.long)
+        t = torch.randint(1, self.cfg.timesteps + 1, (B,), device=device, dtype=torch.long)  # t=1~T (exclude t=0 which is original)
         noise = torch.randn_like(x0_sig)
         x_sig_t = self.q_sample(x0_sig, t, noise=noise)        # add noise to signals
         pred = self.model(x_sig_t, geom, t, label)             # (B,2,L)

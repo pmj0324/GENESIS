@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 
 # Project imports
 from models.pmt_dit import PMTDit
-from diffusion import GaussianDiffusion, DiffusionConfig
+from diffusion import GaussianDiffusion
+from config import DiffusionConfig
 from config import get_small_model_config
 
 
@@ -81,7 +82,7 @@ def main():
     print("\nTesting model forward pass...")
     model.eval()
     with torch.no_grad():
-        t = torch.randint(0, config.diffusion.timesteps, (B,), device=device)
+        t = torch.randint(1, config.diffusion.timesteps + 1, (B,), device=device)  # t=1~T (exclude t=0 which is original)
         output = model(x_sig, geom, t, label)
         print(f"Model output shape: {output.shape}")
         print(f"Output range: [{output.min().item():.3f}, {output.max().item():.3f}]")

@@ -22,6 +22,9 @@ def create_task(task_name: str, config_template: str = "default", base_dir: Path
     if base_dir is None:
         base_dir = Path(__file__).parent
     
+    # Get project root (two levels up from tasks/)
+    project_root = base_dir.parent
+    
     # Create task directory path
     task_dir = base_dir / task_name
     
@@ -33,16 +36,39 @@ def create_task(task_name: str, config_template: str = "default", base_dir: Path
         print(f"   rm -rf {task_dir}")
         return False
     
-    # Get project root (two levels up from tasks/)
-    project_root = base_dir.parent
-    configs_dir = project_root / "configs"
-    
     # Find config template
-    config_file = configs_dir / f"{config_template}.yaml"
+    # Handle both relative and absolute paths, with and without .yaml extension
+    config_path = Path(config_template)
+    
+    # If it's a relative path, resolve it relative to current working directory
+    if not config_path.is_absolute():
+        # Resolve relative path from current working directory
+        config_file = config_path.resolve()
+        
+        # If the resolved path doesn't exist, try looking in configs directory
+        if not config_file.exists():
+            configs_dir = project_root / "configs"
+            
+            # Handle both cases: with and without .yaml extension
+            if config_template.endswith('.yaml'):
+                config_file = configs_dir / config_template
+                template_name = config_template
+            else:
+                config_file = configs_dir / f"{config_template}.yaml"
+                template_name = f"{config_template}.yaml"
+        else:
+            template_name = config_template
+    else:
+        # Absolute path - use as is
+        config_file = config_path
+        template_name = config_template
+    
     if not config_file.exists():
-        print(f"❌ Error: Config template '{config_template}.yaml' not found!")
-        print(f"   Looking in: {configs_dir}")
+        print(f"❌ Error: Config template '{template_name}' not found!")
+        print(f"   Looking for: {config_file}")
         print(f"\n💡 Available configs:")
+        # Show available configs from the configs directory
+        configs_dir = project_root / "configs"
         for cfg in configs_dir.glob("*.yaml"):
             print(f"   - {cfg.stem}")
         return False
