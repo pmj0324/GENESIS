@@ -682,13 +682,27 @@ class Trainer:
             # Update scheduler (after evaluation)
             if self.scheduler:
                 if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                    # Plateau scheduler needs validation loss
-                    self.scheduler.step(current_loss)
+                    # Plateau scheduler needs validation loss - evaluate every epoch
+                    if (epoch + 1) % self.config.training.eval_interval == 0:
+                        # Use validation loss
+                        self.scheduler.step(current_loss)
+                    else:
+                        # Evaluate validation set for plateau scheduler
+                        eval_metrics = self.evaluate()
+                        val_loss = eval_metrics['eval/loss']
+                        old_lr = self.optimizer.param_groups[0]['lr']
+                        self.scheduler.step(val_loss)
+                        new_lr = self.optimizer.param_groups[0]['lr']
+                        
+                        # Log learning rate changes
+                        if new_lr != old_lr:
+                            print(f"📉 Learning rate reduced: {old_lr:.2e} → {new_lr:.2e}")
+                            print(f"   Val loss: {val_loss:.6f}, Plateau patience: {self.scheduler.patience}")
                 else:
                     # Other schedulers step every epoch
                     self.scheduler.step()
             
-            # Save checkpoint every epoch + best model separately
+            # Save only best model checkpoint
             is_best = current_loss < self.best_loss
             if is_best:
                 self.best_loss = current_loss
@@ -697,8 +711,7 @@ class Trainer:
                 print(f"  💾 New best model! Val loss: {val_loss_display:.6f}")
                 self._save_checkpoint(epoch, epoch_metrics, is_best=True)
             
-            # Save regular checkpoint every epoch
-            self._save_checkpoint(epoch, epoch_metrics, is_best=False)
+            # No regular checkpoint saving - only best model
             
             # Early stopping check (using validation loss)
             if self.early_stopping is not None:
@@ -717,8 +730,8 @@ class Trainer:
                         self.early_stopping.restore_weights(self.model)
                         print("✅ Restored best model weights")
                     
-                    # Save final checkpoint
-                    self._save_checkpoint(epoch, epoch_metrics, is_best=False, suffix='early_stop')
+                    # Save final checkpoint (best model already saved)
+                    self._save_checkpoint(epoch, epoch_metrics, is_best=True, suffix='early_stop')
                     break
             
             # Print epoch summary
@@ -741,6 +754,16 @@ class Trainer:
             else:
                 patience_str = "patience=N/A"
             
+            # Scheduler patience info
+            scheduler_str = "scheduler=N/A"
+            if self.scheduler is not None:
+                if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                    # Plateau scheduler patience info
+                    scheduler_str = f"scheduler=plateau patience={self.scheduler.num_bad_epochs}/{self.scheduler.patience}"
+                else:
+                    # Other schedulers
+                    scheduler_str = f"scheduler={self.config.training.scheduler}"
+            
             print(f"\n{'='*70}")
             print(f"📊 Epoch {epoch+1}/{self.config.training.num_epochs} Summary")
             print(f"{'='*70}")
@@ -749,11 +772,17 @@ class Trainer:
             print(f"  Train Loss: {train_loss:.6f}")
             print(f"  Val Loss:   {val_loss_str}")
             print(f"  Early Stop: {patience_str}")
+            print(f"  Scheduler:  {scheduler_str}")
             print(f"{'='*70}\n")
         
         # Save final checkpoint if training completed normally
         if epoch + 1 == self.config.training.num_epochs:
-            self._save_checkpoint(epoch, epoch_metrics, is_best, suffix='final')
+            # Save final model (best model if available, otherwise current)
+            if is_best:
+                self._save_checkpoint(epoch, epoch_metrics, is_best=True, suffix='final')
+            else:
+                # If no best model was found, save current as final
+                self._save_checkpoint(epoch, epoch_metrics, is_best=False, suffix='final')
         
         # Post-training evaluation: Compare generated vs real samples
         print(f"\n{'='*70}")

@@ -19,8 +19,8 @@ model:
   mlp_ratio: 4.0
   
   # Normalization metadata
-  affine_offsets: [0.0, 0.0, -600.0, -550.0, -550.0]
-  affine_scales: [100.0, 5.0, 1200.0, 1100.0, 1100.0]
+  affine_offsets: [14.0, 7.59, -600.0, -550.0, -550.0]
+  affine_scales: [25.0, 0.55, 1200.0, 1100.0, 1100.0]
   label_offsets: [0.0, 0.0, 0.0, -600.0, -550.0, -550.0]
   label_scales: [100000000.0, 3.14159, 6.28318, 1200.0, 1100.0, 1100.0]
   time_transform: "ln"
@@ -57,8 +57,8 @@ data:
   
   # Normalization
   time_transform: "ln"
-  affine_offsets: [0.0, 0.0, -600.0, -550.0, -550.0]
-  affine_scales: [200.0, 10.0, 1200.0, 1100.0, 1100.0]
+  affine_offsets: [14.0, 7.59, -600.0, -550.0, -550.0]
+  affine_scales: [25.0, 0.55, 1200.0, 1100.0, 1100.0]
   label_offsets: [0.0, 0.0, 0.0, -600.0, -550.0, -550.0]
   label_scales: [100000000.0, 3.14159, 6.28318, 1200.0, 1100.0, 1100.0]
 
@@ -78,7 +78,7 @@ training:
   plateau_factor: 0.5
   plateau_mode: "min"
   plateau_threshold: 1e-6
-  plateau_cooldown: 1
+  plateau_cooldown: 0
   
   # Early stopping
   early_stopping: true

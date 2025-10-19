@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 from scipy import stats
+from typing import List
 
 from config import load_config_from_file, get_default_config
 from dataloader.pmt_dataloader import make_dataloader
@@ -22,7 +23,7 @@ from models.factory import ModelFactory
 from utils.denormalization import denormalize_signal
 
 
-def visualize_diffusion_histograms(config_path: str = None, num_samples: int = 4, output_path: str = None):
+def visualize_diffusion_histograms(config_path: str = None, num_samples: int = 4, output_path: str = None, timesteps: List[int] = None):
     """
     Visualize normalized and denormalized signal histograms at different timesteps.
     
@@ -30,6 +31,7 @@ def visualize_diffusion_histograms(config_path: str = None, num_samples: int = 4
         config_path: Path to config file (if None, uses default)
         num_samples: Number of samples to visualize
         output_path: Output file path (if None, uses default)
+        timesteps: List of timesteps to visualize (if None, uses default)
     """
     # Load config
     if config_path:
@@ -67,10 +69,18 @@ def visualize_diffusion_histograms(config_path: str = None, num_samples: int = 4
         device=torch.device('cpu')
     )
     
-    # Timesteps to visualize (t=0 is original, then show noise steps from t=1 to t=T)
-    timesteps = [0, 1, 250, 500, 1000]
+    # Timesteps to visualize (t=0 is original, then show noise steps from t=1 to t=T-1)
+    if timesteps is None:
+        timesteps = [0, 1, 250, 500, 999]  # Default timesteps
+    else:
+        # Ensure timesteps are within valid range (0 to T)
+        T = diffusion.cfg.timesteps
+        timesteps = [max(0, min(t, T)) for t in timesteps]
+        timesteps = sorted(list(set(timesteps)))  # Remove duplicates and sort
+    
     T = diffusion.cfg.timesteps
-    print(f"Note: t=0 is original data, t=1 is first noise step, t={T} is final timestep")
+    print(f"Note: t=0 is x0 (original data), t=1 is x1 (first noise step), t={T} is xT (final timestep, completely noisy)")
+    print(f"Visualizing timesteps: {timesteps}")
     
     # Create figure with 4 rows: NPE normalized, NPE denormalized, Time normalized, Time denormalized
     fig, axes = plt.subplots(4, len(timesteps) + 1, figsize=(20, 16))
@@ -460,8 +470,33 @@ def visualize_diffusion_histograms(config_path: str = None, num_samples: int = 4
     
     print(f"\nDiffusion parameters:")
     print(f"  Timesteps: {config.diffusion.timesteps}")
+    print(f"  Schedule: {config.diffusion.schedule}")
+    if hasattr(config.diffusion, 'cosine_s'):
+        print(f"  Cosine_s: {config.diffusion.cosine_s}")
     print(f"  Beta: [{config.diffusion.beta_start}, {config.diffusion.beta_end}]")
     print(f"  Objective: {config.diffusion.objective}")
+    
+    # Verify noise schedule
+    print(f"\n🔍 NOISE SCHEDULE VERIFICATION:")
+    print(f"  Actual beta range: [{diffusion.betas.min():.6f}, {diffusion.betas.max():.6f}]")
+    print(f"  First 5 betas: {diffusion.betas[:5].tolist()}")
+    print(f"  Last 5 betas: {diffusion.betas[-5:].tolist()}")
+    
+    # Test q_sample with different timesteps
+    print(f"\n🧪 Q_SAMPLE TEST:")
+    x0_test = torch.randn(1, 2, 5160)
+    test_timesteps = [0, 1, 100, 500, 999]
+    for t in test_timesteps:
+        if t == 0:
+            print(f"  t={t} (x0): No noise added (original data)")
+            continue
+        t_tensor = torch.tensor([t], dtype=torch.long)
+        x_t = diffusion.q_sample(x0_test, t_tensor)
+        noise_added = x_t - x0_test
+        noise_std = noise_added.std().item()
+        theoretical_std = diffusion.sqrt_one_minus_alphas_cumprod[t].item()
+        print(f"  t={t}: noise_std={noise_std:.4f}, theoretical_std={theoretical_std:.4f}")
+    
     print("="*80)
 
 
@@ -475,6 +510,8 @@ if __name__ == "__main__":
                         help="Number of samples to visualize")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output directory path")
+    parser.add_argument("-t", "--timesteps", type=int, nargs="+", default=None,
+                        help="Timesteps to visualize (e.g., -t 0 1 100 500 999)")
     
     args = parser.parse_args()
-    visualize_diffusion_histograms(args.config, args.num_samples, args.output)
+    visualize_diffusion_histograms(args.config, args.num_samples, args.output, args.timesteps)

@@ -74,7 +74,7 @@ training:
   plateau_factor: 0.5
   plateau_mode: "min"
   plateau_threshold: 1e-6
-  plateau_cooldown: 1
+  plateau_cooldown: 0
   
   # Early stopping
   early_stopping: true

@@ -403,8 +403,8 @@ def main():
     parser.add_argument(
         "--output", "-o",
         type=str,
-        default=None,
-        help="Output path for the visualization (PNG/PDF/SVG)"
+        default="event_grid_visualization.png",
+        help="Output path for the visualization (PNG/PDF/SVG). Default: event_grid_visualization.png"
     )
     
     parser.add_argument(

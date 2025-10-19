@@ -57,7 +57,7 @@ def load_model_and_event(config_path: str, pth_path: str, event_index: int):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Load checkpoint
-    checkpoint = torch.load(pth_path, map_location=device)
+    checkpoint = torch.load(pth_path, map_location=device, weights_only=False)
     if 'model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
     else:
@@ -158,9 +158,8 @@ def generate_with_timesteps(
     # We'll use a custom sampling function that saves intermediate steps
     T = diffusion.cfg.timesteps
     print(f"Note: t=0 is original data, t=1 is first noise step, t={T} is final timestep")
-    ddim_steps = max(timesteps) + 1  # Ensure we go to max timestep
     
-    print(f"   Using DDIM with {ddim_steps} steps")
+    print(f"   Using DDPM sampling")
     
     # Generate sample with return_all_timesteps=True
     generated_samples = diffusion.sample(
@@ -168,7 +167,6 @@ def generate_with_timesteps(
         geom,
         shape=shape,
         return_all_timesteps=True,
-        ddim_steps=ddim_steps,
     )
     
     # Extract requested timesteps
@@ -430,7 +428,7 @@ def main():
     parser.add_argument(
         "-d", "--detector-csv",
         type=str,
-        default="./configs/detector_geometry.csv",
+        default="/home/work/GENESIS/GENESIS-pmj0324/GENESIS/configs/detector_geometry.csv",
         help="Path to detector geometry CSV file"
     )
     

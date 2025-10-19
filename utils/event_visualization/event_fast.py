@@ -409,7 +409,7 @@ Examples:
     parser.add_argument("--time", required=True, help="Path to time data (5160,) numpy array")
     parser.add_argument("--geometry", required=True, help="Path to geometry data (5160, 3) numpy array")
     parser.add_argument("--labels", required=True, help="Path to labels data (6,) numpy array")
-    parser.add_argument("--output", help="Output PNG path")
+    parser.add_argument("--output", default="event_fast_visualization.png", help="Output PNG path. Default: event_fast_visualization.png")
     parser.add_argument("--plot-type", choices=["npe", "time", "both"], default="both", help="Type of plot to generate")
     parser.add_argument("--figure-size", nargs=2, type=int, default=[20, 8], help="Figure size (width height)")
     parser.add_argument("--sphere-size", type=float, default=10.0, help="Sphere size")

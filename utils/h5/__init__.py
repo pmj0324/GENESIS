@@ -19,6 +19,9 @@ from .h5_hist import plot_hist_pair
 from .h5_stats import analyze_h5_dataset, get_dataset_stats
 from .h5_time_align import align_time_data
 from .h5_reader import read_h5_event, read_h5_batch
+from .h5_quick_stats import analyze_icecube_data
+from .h5_normalize_check import check_normalization
+from .h5_find_optimal_norm import find_optimal_normalization
 
 __all__ = [
     "plot_hist_pair",
@@ -27,7 +30,10 @@ __all__ = [
     "get_dataset_stats",
     "align_time_data",
     "read_h5_event",
-    "read_h5_batch"
+    "read_h5_batch",
+    "analyze_icecube_data",
+    "check_normalization",
+    "find_optimal_normalization"
 ]
 
 __version__ = "1.0.0"
