@@ -1,0 +1,140 @@
+# Dataloader
+
+CAMELS IllustrisTNG LH suite 3채널 멀티필드 데이터 로더.
+
+## 파일 구조
+
+```
+dataloader/
+  build_dataset.py    — 채널 3개 파일 → 단일 stacked .npy 생성 (1회 실행)
+  dataset.py          — CAMELSDataset, build_dataloaders
+  normalization.py    — Normalizer 클래스, 채널별 정규화/역정규화
+```
+
+---
+
+## 사용 순서
+
+### 1. 데이터 준비 (1회)
+
+```bash
+python -m dataloader.build_dataset
+```
+
+`Maps_Mcdm`, `Maps_Mgas`, `Maps_T` 세 파일을 합쳐
+`Maps_3ch_IllustrisTNG_LH_z=0.00.npy [15000, 3, 256, 256]` 하나로 저장.
+
+### 2. 학습 코드에서 사용
+
+```python
+from dataloader import build_dataloaders
+from dataloader.normalization import Normalizer
+
+# 기본 config 사용
+train_loader, val_loader, test_loader = build_dataloaders(batch_size=32)
+
+# YAML config 사용
+norm = Normalizer.from_yaml("configs/base.yaml")
+train_loader, val_loader, test_loader = build_dataloaders(normalizer=norm)
+```
+
+---
+
+## 데이터셋
+
+| 항목 | 값 |
+|---|---|
+| Suite | IllustrisTNG LH |
+| Redshift | z=0.00 |
+| Simulations | 1000 |
+| Maps per sim | 15 |
+| Total maps | 15,000 |
+| Map size | 256 × 256 |
+| Channels | Mcdm=0, Mgas=1, T=2 |
+| Params | 6 (Ωm, σ8, A_SN1, A_SN2, A_AGN1, A_AGN2) |
+| Split | sim 단위 (train 80 / val 10 / test 10) |
+
+반환:
+- `maps`:   `[3, 256, 256]` float32 (normalized)
+- `params`: `[6]` float32 (raw)
+
+---
+
+## 정규화
+
+### 파이프라인
+
+```
+raw → log10(x) → (x - center) / scale
+```
+
+clip 없음. 역변환: `10^(x * scale + center)`
+
+### 확정 파라미터 (전체 15000맵 기준)
+
+| 채널 | center | scale | 방식 |
+|---|---|---|---|
+| Mcdm | 10.876 | 0.590 | robust (median/IQR) |
+| Mgas | 10.344 | 0.627 | robust (median/IQR) |
+| T | 4.2234 | 0.8163 | zscore (mean/std) |
+
+### 정규화 후 분포 통계
+
+| 채널 | mean | std | skew | kurt | \|x\|>3 | \|x\|>4 | \|x\|>5 |
+|---|---|---|---|---|---|---|---|
+| Mcdm | +0.183 | 0.861 | +1.169 | +2.469 | 0.9719% | 0.2067% | 0.0301% |
+| Mgas | +0.113 | 0.784 | +0.814 | +1.100 | 0.3028% | 0.0244% | 0.0008% |
+| T | ≈0.000 | 1.000 | +0.817 | −0.463 | 0.1719% | 0.0004% | 0.0000% |
+| N(0,1) | 0 | 1 | 0 | 0 | 0.2700% | 0.0063% | 0.0001% |
+
+### 지원 method
+
+| method | 수식 | 파라미터 |
+|---|---|---|
+| `affine` | `(log10(x) - center) / scale` | center, scale |
+| `softclip` | affine 후 `c * tanh(z/c)` | center, scale, clip_c |
+
+`scale_mult` 옵션으로 scale 배율 조정 가능 (예: `scale_mult: 1.25`).
+
+### YAML config 예시
+
+```yaml
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.876
+    scale: 0.590
+  Mgas:
+    method: affine
+    center: 10.344
+    scale: 0.627
+  T:
+    method: affine
+    center: 4.2234
+    scale: 0.8163
+```
+
+softclip 적용 예시:
+```yaml
+  Mcdm:
+    method: softclip
+    center: 10.876
+    scale: 0.590
+    clip_c: 4.5
+```
+
+---
+
+## 통계 비교 스크립트
+
+```bash
+# 여러 config 비교 (통계 테이블 + 그래프)
+python scripts/normalization_stats.py
+
+# 옵션
+--n 15000      # 사용할 맵 수 (기본 200)
+--no-plot      # 그래프 생략
+--out PATH     # 그래프 저장 경로
+```
+
+`scripts/normalization_stats.py`의 `CONFIGS` 딕셔너리에 비교할 설정 추가.

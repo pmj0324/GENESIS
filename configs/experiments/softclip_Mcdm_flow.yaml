@@ -1,0 +1,47 @@
+# softclip normalization 실험: Mcdm에 softclip 적용
+# 비교 대상: dit_flow.yaml (affine baseline)
+
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/softclip_Mcdm
+model:
+  architecture: dit
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+  dit:
+    preset: B
+    patch_size: 8
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.1
+    sigma_min: 1.0e-4
+  sampler:
+    method: heun
+    steps: 25
+    cfg_scale: 1.0
+    viz:
+      sampler_a: euler
+      sampler_b: heun
+
+training:
+  batch_size: 32
+  num_workers: 4
+  max_epochs: 200
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine
+  T_max: 200
+  eta_min: 1.0e-6
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: checkpoints/softclip_Mcdm_flow/
+  ckpt_name: best.pt

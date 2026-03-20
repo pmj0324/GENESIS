@@ -1,0 +1,25 @@
+# Mcdm softclip 실험용 정규화
+# Mcdm: affine 후 c * tanh(z / c) 로 tail 압축
+# Mgas, T: affine 그대로
+#
+# 사용법:
+#   python -m dataloader.build_dataset splits \
+#       --maps-path   /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+#       --params-path /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt \
+#       --out-dir     GENESIS-data/softclip_Mcdm/ \
+#       --norm-config configs/normalization/softclip_Mcdm.yaml
+
+normalization:
+  Mcdm:
+    method: softclip
+    center: 10.876
+    scale: 0.590
+    clip_c: 4.5
+  Mgas:
+    method: affine
+    center: 10.344
+    scale: 0.627
+  T:
+    method: affine
+    center: 4.2234
+    scale: 0.8163

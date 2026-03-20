@@ -1,0 +1,12 @@
+# RK4 Sampler (4차 Runge-Kutta)
+# 4차 적분, NFE = 4×steps, 최고 정확도
+# 15 steps (NFE 60) ≈ Euler 50보다 정밀
+# framework: flow_matching 전용
+
+sampler:
+  method: rk4
+  steps: 15
+  cfg_scale: 1.0
+  viz:
+    sampler_a: heun
+    sampler_b: rk4

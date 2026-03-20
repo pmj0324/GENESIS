@@ -1,0 +1,12 @@
+# DDIM Sampler
+# deterministic ODE, K steps (eta=0) / stochastic (eta>0)
+# framework: diffusion 전용
+
+sampler:
+  method: ddim
+  steps: 50
+  eta: 0.0        # 0.0 = deterministic / 1.0 = DDPM-equivalent
+  cfg_scale: 1.0
+  viz:
+    sampler_a: ddpm
+    sampler_b: ddim

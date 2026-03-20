@@ -1,0 +1,47 @@
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_default
+model:
+  architecture: dit
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+  dit:
+    preset: B
+    patch_size: 8
+
+generative:
+  framework: diffusion
+  diffusion:
+    schedule: cosine
+    timesteps: 1000
+    cfg_prob: 0.1
+    prediction: epsilon    # epsilon 또는 x0
+    x0_clamp: 5.0          # 샘플링 중 x0 클램핑 범위 (null이면 비활성화)
+  sampler:
+    method: ddim
+    steps: 50
+    eta: 0.0
+    cfg_scale: 1.0
+    viz:
+      sampler_a: ddpm
+      sampler_b: ddim
+
+training:
+  batch_size: 32
+  num_workers: 4
+  max_epochs: 200
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine
+  T_max: 200
+  eta_min: 1.0e-6
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: checkpoints/dit_diffusion/
+  ckpt_name: best.pt

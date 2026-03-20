@@ -1,0 +1,38 @@
+# 데이터 / 체크포인트 (용량 큰 파일들)
+GENESIS-data/
+checkpoints/
+logs/
+
+# 출력물 (재생성 가능)
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# 환경
+.env
+.venv
+venv/
+env/
+
+# 에디터
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler Comparison Animation
+# 여러 스케줄러의 forward diffusion을 나란히 비교
+#
+# 사용법:
+#   python scripts/animate_forward.py --config configs/visualize/compare_schedulers.yaml
+#   python scripts/animate_forward.py --config configs/visualize/compare_schedulers.yaml \
+#       --mode histogram --space normalized
+# ─────────────────────────────────────────────────────────────────────────────
+
+data:
+  data_dir:   GENESIS-data/affine_default
+  split:      val
+  sample_idx: 0      # image 모드 전용
+  n_samples:  10     # histogram 모드 전용
+
+schedules:
+  - name: linear
+    timesteps: 1000
+  - name: cosine
+    timesteps: 1000
+  - name: sigmoid
+    timesteps: 1000
+  - name: edm
+    timesteps: 1000
+
+animation:
+  mode:   image       # image / histogram
+  space:  physical    # physical / normalized
+  frames: 50
+  fps:    12
+  n_bins: 60
+  cmap:
+    Mcdm: viridis
+    Mgas: magma
+    T:    inferno
+
+output:
+  out_dir:  outputs/animations
+  filename: compare_schedulers
+  dpi:      110

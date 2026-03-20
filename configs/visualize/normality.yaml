@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Normality Diagnostic Config
+#
+# 사용법:
+#   python scripts/plot_normality.py --config configs/visualize/normality.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+data:
+  data_dir:  GENESIS-data/affine_default
+  split:     val
+  n_samples: 200        # 사용할 맵 수 (전체 val 중 앞에서부터)
+
+input_scale: 0.4        # v2 학습 설정과 동일
+
+n_bins: 100             # 히스토그램 bin 수
+qq_subsample: 20000     # Q-Q 플롯 서브샘플 수 (속도)
+
+output:
+  out_dir:  outputs/normality
+  dpi:      130

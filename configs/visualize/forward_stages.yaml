@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Forward Diffusion Stages — 3-space histogram animation
+#
+# 단일 샘플의 forward diffusion을 3가지 공간에서 동시 시각화:
+#   raw    : log₁₀(field)  — 정규화 전 물리 공간
+#   norm   : z-score       — 정규화 후 (데이터셋 저장 공간)
+#   scaled : z × b         — input_scale 적용 후 (모델 학습 공간)
+#
+# 사용법:
+#   python scripts/plot_forward_stages.py --config configs/visualize/forward_stages.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+data:
+  data_dir:   GENESIS-data/affine_default
+  split:      val
+  sample_idx: 0          # 0번 샘플 (15000장 중)
+
+schedule:
+  name:      sigmoid     # linear / cosine / sigmoid / edm
+  timesteps: 1000
+
+input_scale: 0.4         # v2 학습 설정과 동일
+
+animation:
+  frames: 80
+  fps:    12
+  n_bins: 80
+
+output:
+  out_dir:  outputs/forward_stages
+  filename: forward_stages
+  dpi:      120

@@ -1,0 +1,49 @@
+# 기본 정규화 설정 (모든 채널 affine)
+# log10(x) → (x - center) / scale
+#
+# 사용법:
+#   python -m dataloader.build_dataset splits \
+#       --maps-path   /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+#       --params-path /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt \
+#       --out-dir     GENESIS-data/affine_default/ \
+#       --norm-config configs/normalization/affine_default.yaml
+
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.876
+    scale: 0.590
+    # clip_c: 4.5       # softclip 시 사용
+    # scale_mult: 1.25  # scale 배율 조정 시 사용
+    stats:              # 전체 15000맵 기준 (참고용)
+      mean: +0.183
+      std: 0.861
+      skew: +1.169
+      kurt: +2.469
+      gt3: 0.9719
+      gt4: 0.2067
+      gt5: 0.0301
+  Mgas:
+    method: affine
+    center: 10.344
+    scale: 0.627
+    stats:
+      mean: +0.113
+      std: 0.784
+      skew: +0.814
+      kurt: +1.100
+      gt3: 0.3028
+      gt4: 0.0244
+      gt5: 0.0008
+  T:
+    method: affine
+    center: 4.2234
+    scale: 0.8163
+    stats:
+      mean: -0.000
+      std: 1.000
+      skew: +0.817
+      kurt: -0.463
+      gt3: 0.1719
+      gt4: 0.0004
+      gt5: 0.0000

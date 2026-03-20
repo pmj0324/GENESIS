@@ -1,0 +1,82 @@
+data:
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data
+model:
+  architecture: dit         # dit / unet / swin
+  in_channels: 3
+  cond_dim: 6               # 우주론 파라미터 수
+  dropout: 0.0              # 0.0~0.3, 기본 비활성화
+
+  # DiT 옵션
+  dit:
+    preset: B               # S (~33M) / B (~130M) / L (~458M)
+    patch_size: 8           # 8 (1024 tokens) / 4 (4096 tokens, 메모리 4배)
+
+  # UNet 옵션
+  unet:
+    preset: B               # S (~30M) / B (~87M) / L (~480M)
+    attention_resolution: 32  # 이 크기 이하 레이어에 self-attention 적용
+
+  # Swin 옵션
+  swin:
+    preset: B               # S (~40M) / B (~90M) / L (~200M)
+    window_size: 8
+
+generative:
+  framework: flow_matching  # flow_matching / diffusion
+
+  flow_matching:
+    method: ot              # ot / stochastic / vp
+    cfg_prob: 0.1
+    sigma_min: 1.0e-4
+    # stochastic 전용
+    # interpolant: trig     # trig / linear (기본: trig)
+    # vp 전용
+    # T_cont: 1000          # 연속 timestep 수 (기본: 1000)
+
+  diffusion:
+    schedule: cosine        # linear / cosine / sigmoid / edm
+    timesteps: 1000
+    cfg_prob: 0.1
+    # edm 전용
+    # sigma_min: 0.002
+    # sigma_max: 80.0
+    # rho: 7.0
+
+  sampler:                  # 추론 시 사용
+    # flow_matching용
+    method: heun            # euler (50 steps) / heun (25 steps) / rk4 (15 steps)
+    steps: 25
+    # diffusion용
+    # method: ddim          # ddpm / ddim
+    # steps: 50
+    # eta: 0.0              # 0=deterministic, 1=stochastic
+    cfg_scale: 1.0
+
+training:
+  batch_size: 32
+  num_workers: 4
+  max_epochs: 200
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw            # adamw / adam / sgd
+  # SGD 전용
+  # momentum: 0.9
+  # nesterov: true
+  schedule: cosine            # cosine / cosine_warmup / cosine_restarts / plateau
+  # cosine / cosine_warmup 공통
+  T_max: 200
+  eta_min: 1.0e-6
+  # cosine_restarts 전용
+  # T_0: 50
+  # T_mult: 2
+  # plateau 전용
+  # plateau_patience: 5
+  # plateau_factor: 0.5
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: checkpoints/
+  ckpt_name: best.pt

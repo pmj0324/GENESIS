@@ -1,0 +1,10 @@
+# DDPM Sampler
+# stochastic reverse process, T steps (느리지만 다양성 높음)
+# framework: diffusion 전용
+
+sampler:
+  method: ddpm
+  cfg_scale: 1.0
+  viz:
+    sampler_a: ddpm
+    sampler_b: ddim   # 비교용

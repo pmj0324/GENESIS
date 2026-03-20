@@ -1,0 +1,12 @@
+# Heun Sampler (Predictor-Corrector)
+# 2차 적분, NFE = 2×steps
+# Euler 50 steps와 동일 NFE에서 정확도 우수 → 권장
+# framework: flow_matching 전용
+
+sampler:
+  method: heun
+  steps: 25
+  cfg_scale: 1.0
+  viz:
+    sampler_a: euler
+    sampler_b: heun

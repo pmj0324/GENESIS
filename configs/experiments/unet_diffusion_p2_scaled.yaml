@@ -1,0 +1,62 @@
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_default
+
+model:
+  architecture: unet
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.1
+  unet:
+    preset: B
+    attention_resolution: 32
+    channel_se: true
+    circular_conv: false
+
+generative:
+  framework: diffusion
+  diffusion:
+    schedule:     cosine
+    timesteps:    1000
+    cfg_prob:     0.1
+    prediction:   epsilon
+    x0_clamp:     5.0
+
+    # ── P2 Weighting (Choi et al. CVPR 2022) ──────────────────────────────
+    # w_t = 1 / (k + SNR_t)^γ  →  고-SNR clean-up 단계 down-weight
+    # γ=1.0: 일반 데이터셋 권장 / γ=0.0: 비활성화
+    p2_gamma:     1.0
+    p2_k:         1.0
+
+    # ── Input Scaling (Ting Chen, Google Brain 2023) ───────────────────────
+    # 학습 시 x0 * b → log-SNR 커브를 2·log(b) 하강
+    # 256×256에서 b=0.4 권장 / 1.0: 비활성화
+    input_scale:  0.4
+
+  sampler:
+    method: ddim
+    steps: 50
+    eta: 0.0
+    cfg_scale: 1.0
+    viz:
+      sampler_a: ddpm
+      sampler_b: ddim
+
+training:
+  batch_size: 8
+  num_workers: 4
+  max_epochs: 300
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: plateau
+  plateau_patience: 3
+  plateau_factor: 0.5
+  early_stop_patience: 30
+
+checkpoint:
+  ckpt_dir: checkpoints/unet_diffusion_p2_scaled/
+  ckpt_name: best.pt
