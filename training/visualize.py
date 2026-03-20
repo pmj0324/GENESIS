@@ -139,7 +139,7 @@ class EpochVisualizer:
             self._plot_samples(epoch, sample_a, sample_b)
             self._plot_power_spectrum(epoch, sample_a, sample_b)
             self._plot_loss(history)
-            self._print_metrics(epoch)
+            self._print_metrics(epoch, model)
 
             torch.cuda.empty_cache()
             print(f"  [viz] saved → {self.plot_dir}", flush=True)
@@ -244,7 +244,7 @@ class EpochVisualizer:
     # ── 3. Per-epoch Metrics ───────────────────────────────────────────────────
 
     @torch.no_grad()
-    def _print_metrics(self, epoch: int):
+    def _print_metrics(self, epoch: int, model):
         """
         eval_maps (N개) 각각에 대해 sampler_b로 생성 → log10 공간에서 메트릭 계산 후 출력.
         sampler_b (보통 DDIM)로 N개를 한 번에 배치 샘플링.
@@ -253,10 +253,9 @@ class EpochVisualizer:
             N = self.eval_maps_norm.shape[0]
 
             # ── 배치 샘플링 (sampler_b 사용) ──────────────────────────────────
-            shape = (N, 3, self.eval_maps_norm.shape[-2], self.eval_maps_norm.shape[-1])
-            raw_gen = self.fn_b(self.eval_conds.__class__(self.eval_conds),
-                                shape,
-                                self.eval_conds)        # [N, 3, H, W] normalized
+            print(f"  [metrics] {self.name_b} sampling (N={N}) ...", flush=True)
+            shape   = (N, 3, self.eval_maps_norm.shape[-2], self.eval_maps_norm.shape[-1])
+            raw_gen = self.fn_b(model, shape, self.eval_conds)   # [N, 3, H, W] normalized
             raw_gen = raw_gen[0] if isinstance(raw_gen, tuple) else raw_gen
 
             # ── log10 공간 변환 ───────────────────────────────────────────────
