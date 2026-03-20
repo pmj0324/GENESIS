@@ -29,9 +29,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from pathlib import Path
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from analysis.power_spectrum import compute_power_spectrum_2d
+from analysis.cross_spectrum import compute_spectrum_errors
+from analysis.correlation import compute_correlation_errors
+from analysis.pixel_distribution import compare_pixel_distributions
 from dataloader.normalization import Normalizer, denormalize_params, PARAM_NAMES
 
 CHANNEL_NAMES = ["Mcdm", "Mgas", "T"]
@@ -55,13 +58,15 @@ class EpochVisualizer:
 
     def __init__(
         self,
-        sampler_a: Tuple[str, SamplerFn],
-        sampler_b: Tuple[str, SamplerFn],
+        sampler_a:  Tuple[str, SamplerFn],
+        sampler_b:  Tuple[str, SamplerFn],
         plot_dir,
         ref_maps,
         ref_cond,
-        norm_cfg: Dict,
+        norm_cfg:   Dict,
         device,
+        eval_conds: Optional[torch.Tensor] = None,   # [N, 6] — 에폭 메트릭용 N개 조건
+        eval_n:     int = 8,                          # 메트릭 평가에 사용할 샘플 수
     ):
         self.name_a, self.fn_a = sampler_a
         self.name_b, self.fn_b = sampler_b
@@ -85,6 +90,16 @@ class EpochVisualizer:
         self.ref_cond_norm = ref_cond.numpy().flatten()          # [6] 정규화값
         self.ref_cond_raw  = denormalize_params(ref_cond).numpy().flatten()  # [6] 실제값
         self.ref_cond      = ref_cond.view(1, -1).float().to(device)
+
+        # 에폭 메트릭용: N개의 (맵, 조건) 쌍
+        n = min(eval_n, len(self.ref_maps_norm))
+        self.eval_maps_norm = self.ref_maps_norm[:n]          # [N, 3, H, W] normalized
+        if eval_conds is not None:
+            ec = eval_conds[:n]
+            self.eval_conds = (ec.cpu() if hasattr(ec, "cpu") else torch.from_numpy(ec)).float().to(device)
+        else:
+            # fallback: ref_cond 반복
+            self.eval_conds = self.ref_cond.repeat(n, 1)
 
     # ── Denormalize helpers ────────────────────────────────────────────────────
 
@@ -124,6 +139,7 @@ class EpochVisualizer:
             self._plot_samples(epoch, sample_a, sample_b)
             self._plot_power_spectrum(epoch, sample_a, sample_b)
             self._plot_loss(history)
+            self._print_metrics(epoch)
 
             torch.cuda.empty_cache()
             print(f"  [viz] saved → {self.plot_dir}", flush=True)
@@ -225,7 +241,84 @@ class EpochVisualizer:
         )
         plt.close(fig)
 
-    # ── 3. Loss curve ──────────────────────────────────────────────────────────
+    # ── 3. Per-epoch Metrics ───────────────────────────────────────────────────
+
+    @torch.no_grad()
+    def _print_metrics(self, epoch: int):
+        """
+        eval_maps (N개) 각각에 대해 sampler_b로 생성 → log10 공간에서 메트릭 계산 후 출력.
+        sampler_b (보통 DDIM)로 N개를 한 번에 배치 샘플링.
+        """
+        try:
+            N = self.eval_maps_norm.shape[0]
+
+            # ── 배치 샘플링 (sampler_b 사용) ──────────────────────────────────
+            shape = (N, 3, self.eval_maps_norm.shape[-2], self.eval_maps_norm.shape[-1])
+            raw_gen = self.fn_b(self.eval_conds.__class__(self.eval_conds),
+                                shape,
+                                self.eval_conds)        # [N, 3, H, W] normalized
+            raw_gen = raw_gen[0] if isinstance(raw_gen, tuple) else raw_gen
+
+            # ── log10 공간 변환 ───────────────────────────────────────────────
+            true_log = self._to_log10(self.eval_maps_norm)   # [N, 3, H, W]
+            gen_log  = self._to_log10(raw_gen.cpu().numpy() if hasattr(raw_gen, "cpu") else raw_gen)
+
+            # ── Auto/Cross Power Spectrum ──────────────────────────────────────
+            spec_err  = compute_spectrum_errors(true_log, gen_log)
+            corr_err  = compute_correlation_errors(true_log, gen_log)
+            pdf_res   = compare_pixel_distributions(true_log, gen_log, log=False, ks_subsample=20000)
+
+            # ── 출력 ──────────────────────────────────────────────────────────
+            sep = "─" * 68
+            print(f"\n  {sep}")
+            print(f"  Epoch {epoch+1:04d} Metrics  (N={N}, {self.name_b})  [log₁₀ space]")
+            print(f"  {sep}")
+
+            # Auto-Power
+            print("  Auto-Power  [mean rel.err | max | rms]:")
+            for ch in ["Mcdm", "Mgas", "T"]:
+                e = spec_err[ch]
+                ok = "✓" if e["passed"] else "✗"
+                print(f"    {ch:<6}  {e['mean_error']*100:5.1f}%  {e['max_error']*100:5.1f}%  {e['rms_error']*100:5.1f}%  {ok}")
+
+            # Cross-Power
+            print("  Cross-Power [mean rel.err]:")
+            for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
+                e = spec_err[pair]
+                ok = "✓" if e["passed"] else "✗"
+                print(f"    {pair:<12}  {e['mean_error']*100:5.1f}%  {ok}")
+
+            # Correlation
+            print("  Correlation [max Δr]:")
+            for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
+                c = corr_err[pair]
+                ok = "✓" if c["passed"] else "✗"
+                print(f"    {pair:<12}  Δr={c['max_delta_r']:.3f}  {ok}")
+
+            # PDF KS
+            print("  PDF KS-test [statistic | p-value]:")
+            for ch in ["Mcdm", "Mgas", "T"]:
+                p = pdf_res[ch]
+                ok = "✓" if p["passed"] else "✗"
+                print(f"    {ch:<6}  stat={p['ks_statistic']:.3f}  p={p['ks_pvalue']:.3e}  {ok}")
+
+            print(f"  {sep}\n")
+
+        except Exception as e:
+            print(f"  [metrics] WARNING: metric computation failed — {e}", flush=True)
+
+    def _to_log10(self, x) -> np.ndarray:
+        """normalized z-space → log10(physical field)"""
+        if hasattr(x, "cpu"):
+            x = x.cpu().numpy()
+        x = np.asarray(x, dtype=np.float32)
+        t = torch.from_numpy(x)
+        if t.ndim == 3:
+            t = t.unsqueeze(0)
+        phys = self.normalizer.denormalize(t).numpy()          # 10^(z*scale+center)
+        return np.log10(np.clip(phys, 1e-30, None))            # log10 space
+
+    # ── 4. Loss curve ──────────────────────────────────────────────────────────
 
     def _plot_loss(self, history: dict):
         epochs = range(1, len(history["train_loss"]) + 1)

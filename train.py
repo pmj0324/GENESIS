@@ -221,6 +221,7 @@ def main():
     val_dataset = val_loader.dataset
     ref_maps    = torch.stack([val_dataset[i][0] for i in range(8)])  # [8, 3, 256, 256]
     ref_cond    = val_dataset[0][1]                                    # [6]
+    eval_conds  = torch.stack([val_dataset[i][1] for i in range(8)])  # [8, 6] 메트릭용
     gcfg_s      = cfg["generative"].get("sampler", {})
     cfg_scale   = gcfg_s.get("cfg_scale", 1.0)
     framework   = cfg["generative"]["framework"]
@@ -279,13 +280,15 @@ def main():
     norm_cfg = _meta.get("normalization", {})
 
     epoch_callback = EpochVisualizer(
-        sampler_a = sampler_a,
-        sampler_b = sampler_b,
-        plot_dir  = Path(ckpt_cfg.get("ckpt_dir", "checkpoints/")) / "plots",
-        ref_maps  = ref_maps,
-        ref_cond  = ref_cond,
-        norm_cfg  = norm_cfg,
-        device    = device,
+        sampler_a  = sampler_a,
+        sampler_b  = sampler_b,
+        plot_dir   = Path(ckpt_cfg.get("ckpt_dir", "checkpoints/")) / "plots",
+        ref_maps   = ref_maps,
+        ref_cond   = ref_cond,
+        norm_cfg   = norm_cfg,
+        device     = device,
+        eval_conds = eval_conds,
+        eval_n     = 8,
     )
 
     trainer = Trainer(
