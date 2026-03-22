@@ -1,10 +1,18 @@
-# 데이터 / 체크포인트 (용량 큰 파일들)
-GENESIS-data/
-checkpoints/
+# 데이터 / 모델 (용량 큰 바이너리)
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.h5
+
+# 로그 텍스트
 logs/
 
 # 출력물 (재생성 가능)
 outputs/
+
+# 체크포인트 플롯 (용량 큰 이미지)
+checkpoints/**/plots/
 
 # Python
 __pycache__/

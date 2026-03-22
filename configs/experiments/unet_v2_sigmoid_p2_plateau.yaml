@@ -38,7 +38,7 @@ generative:
 
 training:
   batch_size: 8
-  num_workers: 4
+  num_workers: 16
   max_epochs: 300
   lr: 1.0e-4
   weight_decay: 1.0e-2
@@ -49,7 +49,7 @@ training:
   schedule: plateau
   plateau_patience: 3
   plateau_factor: 0.5
-  early_stop_patience: 30
+  early_stop_patience: 20
 
 checkpoint:
   ckpt_dir: checkpoints/unet_v2_sigmoid_p2_plateau/

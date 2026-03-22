@@ -13,9 +13,9 @@ model:
 generative:
   framework: diffusion
   diffusion:
-    schedule: cosine
-    timesteps: 1000
-    cfg_prob: 0.1
+    schedule:     sigmoid
+    timesteps:    1000
+    cfg_prob:     0.2
     prediction: epsilon    # epsilon 또는 x0
     x0_clamp: 5.0          # 샘플링 중 x0 클램핑 범위 (null이면 비활성화)
   sampler:
