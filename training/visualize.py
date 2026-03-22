@@ -22,6 +22,7 @@ power spectrum:
   → 모두 denormalize된 log10 맵 기준 P(k)
 """
 
+import shutil
 import torch
 import numpy as np
 import matplotlib
@@ -193,10 +194,9 @@ class EpochVisualizer:
                 ax.axis("off")
                 fig.colorbar(im, ax=ax, shrink=0.85, pad=0.02)
 
-        fig.savefig(
-            self.plot_dir / f"ep{epoch+1:04d}_samples.png",
-            dpi=100, bbox_inches="tight",
-        )
+        path = self.plot_dir / f"ep{epoch+1:04d}_samples.png"
+        fig.savefig(path, dpi=100, bbox_inches="tight")
+        shutil.copy(path, self.plot_dir / "latest_samples.png")
         plt.close(fig)
 
     # ── 2. Power spectrum ──────────────────────────────────────────────────────
@@ -235,10 +235,9 @@ class EpochVisualizer:
             ax.grid(True, alpha=0.3, which="both")
 
         fig.tight_layout()
-        fig.savefig(
-            self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png",
-            dpi=100, bbox_inches="tight",
-        )
+        path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
+        fig.savefig(path, dpi=100, bbox_inches="tight")
+        shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
         plt.close(fig)
 
     # ── 3. Per-epoch Metrics ───────────────────────────────────────────────────

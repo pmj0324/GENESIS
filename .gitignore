@@ -14,7 +14,7 @@ outputs/
 # 실험 결과 (runs/)
 runs/**/*.pt
 runs/**/*.pth
-runs/**/plots/
+runs/**/plots/ep*.png
 
 # Python
 __pycache__/
