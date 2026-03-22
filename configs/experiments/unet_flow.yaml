@@ -42,5 +42,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/unet_flow/
+  ckpt_dir: runs/unet_flow/
   ckpt_name: best.pt

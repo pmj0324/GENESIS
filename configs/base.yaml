@@ -78,5 +78,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/
+  ckpt_dir: runs/
   ckpt_name: best.pt

@@ -52,5 +52,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/unet_v2_sigmoid_p2_plateau/
+  ckpt_dir: runs/unet_v2_sigmoid_p2_plateau/
   ckpt_name: best.pt

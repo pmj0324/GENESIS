@@ -11,8 +11,10 @@ logs/
 # 출력물 (재생성 가능)
 outputs/
 
-# 체크포인트 플롯 (용량 큰 이미지)
-checkpoints/**/plots/
+# 실험 결과 (runs/)
+runs/**/*.pt
+runs/**/*.pth
+runs/**/plots/
 
 # Python
 __pycache__/

@@ -40,5 +40,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/swin_flow/
+  ckpt_dir: runs/swin_flow/
   ckpt_name: best.pt

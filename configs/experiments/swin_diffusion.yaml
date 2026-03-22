@@ -43,5 +43,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/swin_diffusion/
+  ckpt_dir: runs/swin_diffusion/
   ckpt_name: best.pt

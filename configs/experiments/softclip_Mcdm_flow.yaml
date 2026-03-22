@@ -43,5 +43,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/softclip_Mcdm_flow/
+  ckpt_dir: runs/softclip_Mcdm_flow/
   ckpt_name: best.pt

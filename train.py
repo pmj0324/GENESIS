@@ -9,6 +9,7 @@ GENESIS - Training Entry Point
 
 import argparse
 import random
+import shutil
 import numpy as np
 import torch
 import yaml
@@ -195,8 +196,14 @@ def main():
 
     print(f"[train] framework={framework}")
 
-    # Trainer
+    # Run 디렉토리 준비 및 config 복사 (재현성)
     ckpt_cfg = cfg.get("checkpoint", {})
+    run_dir = Path(ckpt_cfg.get("ckpt_dir", "runs/"))
+    run_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(args.config, run_dir / "config.yaml")
+    print(f"[train] config saved → {run_dir / 'config.yaml'}")
+
+    # Trainer
     schedule = tcfg.get("schedule", "cosine")
     schedule_kwargs = {}
     if schedule == "cosine":

@@ -46,5 +46,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: checkpoints/unet_diffusion_circ_se/
+  ckpt_dir: runs/unet_diffusion_circ_se/
   ckpt_name: best.pt

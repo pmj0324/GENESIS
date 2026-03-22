@@ -58,5 +58,5 @@ training:
   early_stop_patience: 30
 
 checkpoint:
-  ckpt_dir: checkpoints/unet_edm/
+  ckpt_dir: runs/unet_edm/
   ckpt_name: best.pt

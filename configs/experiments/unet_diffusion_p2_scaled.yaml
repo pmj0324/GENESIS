@@ -58,5 +58,5 @@ training:
   early_stop_patience: 30
 
 checkpoint:
-  ckpt_dir: checkpoints/unet_diffusion_p2_scaled/
+  ckpt_dir: runs/unet_diffusion_p2_scaled/
   ckpt_name: best.pt
