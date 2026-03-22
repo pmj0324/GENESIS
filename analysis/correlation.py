@@ -7,6 +7,10 @@ r_ij(k) = P_ij(k) / sqrt(P_ii(k) * P_jj(k))
   k < 0.1 h/Mpc:  r ≈ 0.95~0.98
   k ~ 1 h/Mpc:    r ≈ 0.85~0.90
   k > 3 h/Mpc:    r ≈ 0.70~0.80
+
+평가 기준 (§4.3):
+  k < 5 h/Mpc:  Δr < 0.1  (well-defined, physically interpretable)
+  k > 5 h/Mpc:  Δr < 0.2  (noisy due to limited mode counts)
 """
 import numpy as np
 
@@ -17,6 +21,15 @@ from .cross_spectrum import (
     CHANNELS,
     CROSS_PAIRS,
 )
+
+# ── Scale-dependent correlation thresholds (§4.3) ────────────────────────
+CORRELATION_THRESHOLDS = [
+    # (label, k_min, k_max, max_delta_r)
+    ("k<5",  0.0, 5.0,  0.1),   # r(k) well-defined, feedback-scale decorrelation
+    ("k>=5", 5.0, 1e6,  0.2),   # noisy due to limited mode counts + cosmic variance
+]
+# [OLD] Uniform threshold:
+# CORRELATION_THRESHOLD_OLD = 0.1  # max_delta_r < 0.1 for all k
 
 
 def compute_correlation_coefficient(
@@ -88,6 +101,12 @@ def compute_correlation_errors(
 ) -> dict:
     """Compute errors in cross-correlation coefficients between true and generated maps.
 
+    Scale-dependent thresholds (§4.3):
+        k < 5 h/Mpc:  Δr < 0.1
+        k >= 5 h/Mpc: Δr < 0.2
+
+    # [OLD] Uniform threshold: passed = max_delta_r < 0.1 for all k
+
     Args:
         x_true: (B, 3, H, W) true maps (torch or numpy).
         x_gen: (B, 3, H, W) generated maps (torch or numpy).
@@ -96,9 +115,9 @@ def compute_correlation_errors(
 
     Returns:
         dict mapping pair name -> {
-            "k", "r_true", "r_gen", "delta_r", "max_delta_r", "passed"
+            "k", "r_true", "r_gen", "delta_r", "max_delta_r", "passed",
+            "scale_errors": per-range breakdown
         }
-        passed = True when max_delta_r < 0.1.
     """
     r_true_dict = compute_correlation_coefficient(x_true, box_size=box_size, n_bins=n_bins)
     r_gen_dict = compute_correlation_coefficient(x_gen, box_size=box_size, n_bins=n_bins)
@@ -111,7 +130,32 @@ def compute_correlation_errors(
 
         delta_r = np.abs(r_gen - r_true)
         max_delta_r = float(delta_r.max())
-        passed = bool(max_delta_r < 0.1)
+
+        # ── [OLD] Uniform pass criterion ──
+        # passed = bool(max_delta_r < 0.1)
+
+        # ── [NEW] Scale-dependent pass criterion (§4.3) ──
+        scale_errors = {}
+        all_ranges_pass = True
+        for label, k_lo, k_hi, thr in CORRELATION_THRESHOLDS:
+            mask = (k >= k_lo) & (k < k_hi)
+            if mask.sum() == 0:
+                scale_errors[label] = {
+                    "max_delta_r": 0.0, "threshold": thr, "passed": True, "n_bins": 0,
+                }
+                continue
+            range_max = float(delta_r[mask].max())
+            range_pass = bool(range_max < thr)
+            if not range_pass:
+                all_ranges_pass = False
+            scale_errors[label] = {
+                "max_delta_r": range_max,
+                "threshold": thr,
+                "passed": range_pass,
+                "n_bins": int(mask.sum()),
+            }
+
+        passed = all_ranges_pass
 
         results[pair_key] = {
             "k": k,
@@ -120,6 +164,7 @@ def compute_correlation_errors(
             "delta_r": delta_r,
             "max_delta_r": max_delta_r,
             "passed": passed,
+            "scale_errors": scale_errors,
         }
 
     return results

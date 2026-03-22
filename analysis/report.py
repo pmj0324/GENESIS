@@ -3,6 +3,12 @@ GENESIS - Evaluation Report
 
 시각화 + JSON/텍스트 저장.
 EpochVisualizer 스타일 (matplotlib, log-log, viridis/plasma/inferno).
+
+Updated to reflect Evaluation Criteria Report (§4):
+  - Auto-power: field+scale-dependent threshold bands
+  - CV: 0.7-1.3 acceptance band (was 0.8-1.2)
+  - PDF: KS statistic D as primary metric (not p-value)
+  - Correlation: scale-dependent Δr thresholds
 """
 import json
 from pathlib import Path
@@ -13,6 +19,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 
+from .cross_spectrum import AUTO_POWER_THRESHOLDS, CROSS_POWER_THRESHOLDS
+from .correlation import CORRELATION_THRESHOLDS
+from .pixel_distribution import PDF_KS_D_THRESHOLD
 
 CHANNELS = ["Mcdm", "Mgas", "T"]
 CROSS_PAIRS = ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]
@@ -93,16 +102,36 @@ def plot_auto_power_comparison(results: dict, save_dir, title: str = ""):
         ax_top.grid(True, alpha=0.3, which="both")
         ax_top.set_facecolor("white")
 
-        # Lower: relative error
+        # Lower: relative error with scale-dependent threshold bands (§4.1)
         ax_bot.semilogx(k, rel_err * 100, color="k", lw=1.5)
-        ax_bot.axhline(5.0, color="orange", ls="--", lw=1.2, label="5%")
-        ax_bot.axhline(15.0, color="red", ls="--", lw=1.2, label="15%")
+
+        # ── [OLD] Uniform threshold lines ──
+        # ax_bot.axhline(5.0, color="orange", ls="--", lw=1.2, label="5%")
+        # ax_bot.axhline(15.0, color="red", ls="--", lw=1.2, label="15%")
+
+        # ── [NEW] Scale-dependent threshold bands per field ──
+        if ch in AUTO_POWER_THRESHOLDS:
+            band_colors = ["#2ca02c", "#ff7f0e", "#d62728"]  # green, orange, red
+            for bi, (label, k_lo, k_hi, thr_mean, thr_rms) in enumerate(AUTO_POWER_THRESHOLDS[ch]):
+                k_mask = (k >= k_lo) & (k < k_hi)
+                if k_mask.sum() > 0:
+                    k_range = k[k_mask]
+                    ax_bot.fill_between(
+                        k_range, 0, thr_mean * 100,
+                        alpha=0.12, color=band_colors[bi],
+                        label=f"{label}: <{thr_mean*100:.0f}%"
+                    )
+                    ax_bot.hlines(
+                        thr_mean * 100, k_range.min(), k_range.max(),
+                        colors=band_colors[bi], ls="--", lw=1.2
+                    )
+
         ax_bot.set_ylabel("Relative error [%]")
         ax_bot.set_xlabel("k  [h/Mpc]")
         pass_str = "PASS" if passed else ("FAIL" if passed is False else "")
         color = "green" if passed else ("red" if passed is False else "gray")
         ax_bot.set_title(pass_str, fontsize=10, color=color)
-        ax_bot.legend(fontsize=8)
+        ax_bot.legend(fontsize=7, loc="upper left")
         ax_bot.grid(True, alpha=0.3, which="both")
         ax_bot.set_facecolor("white")
 
@@ -162,7 +191,14 @@ def plot_cross_power_grid(results: dict, save_dir, title: str = ""):
 
         if passed is not None:
             color = "green" if passed else "red"
-            ax.text(0.97, 0.05, "PASS" if passed else "FAIL",
+            # Show threshold for cross spectra
+            threshold_str = ""
+            if "Cross:" in label:
+                pair_name = label.replace("Cross: ", "")
+                thr = CROSS_POWER_THRESHOLDS.get(pair_name, None)
+                if thr is not None:
+                    threshold_str = f"  (thr={thr*100:.0f}%)"
+            ax.text(0.97, 0.05, f"{'PASS' if passed else 'FAIL'}{threshold_str}",
                     transform=ax.transAxes, ha="right", va="bottom",
                     fontsize=10, color=color, fontweight="bold")
 
@@ -227,12 +263,29 @@ def plot_correlation_coefficients(results: dict, save_dir, title: str = ""):
         ax.grid(True, alpha=0.3)
         ax.set_facecolor("white")
 
+        # ── [NEW] Scale-dependent Δr threshold lines (§4.3) ──
+        for label, k_lo, k_hi, thr in CORRELATION_THRESHOLDS:
+            k_mask = (k >= k_lo) & (k < k_hi)
+            if k_mask.sum() > 0:
+                k_range = k[k_mask]
+                # Show Δr threshold as horizontal annotation
+                ax.axhline(1.0 - thr, color="orange", ls=":", lw=0.8, alpha=0.5)
+
         if passed is not None:
             color = "green" if passed else "red"
             max_str = f"max Δr={max_dr:.3f}" if max_dr is not None else ""
-            ax.text(0.97, 0.05, f"{'PASS' if passed else 'FAIL'}  {max_str}",
+            # Show scale-dependent pass info
+            scale_info = ""
+            scale_errors = d.get("scale_errors", {})
+            if scale_errors:
+                parts = []
+                for lbl, se in scale_errors.items():
+                    p = "✓" if se["passed"] else "✗"
+                    parts.append(f"{lbl}:{se['max_delta_r']:.2f}{p}")
+                scale_info = "  " + " ".join(parts)
+            ax.text(0.97, 0.05, f"{'PASS' if passed else 'FAIL'}  {max_str}{scale_info}",
                     transform=ax.transAxes, ha="right", va="bottom",
-                    fontsize=9, color=color, fontweight="bold")
+                    fontsize=8, color=color, fontweight="bold")
 
     fig.tight_layout()
     fig.savefig(save_dir / "correlation_coefficients.png", dpi=100, bbox_inches="tight",
@@ -289,18 +342,31 @@ def plot_pdf_comparison(results: dict, save_dir, title: str = ""):
         ax.grid(True, alpha=0.3)
         ax.set_facecolor("white")
 
-        # Annotation
+        # Annotation — KS D as primary metric (§4.4)
         ann_lines = []
         if ks_stat is not None:
-            ann_lines.append(f"KS={ks_stat:.3f}")
+            # ── [OLD] ann_lines.append(f"KS={ks_stat:.3f}")
+            # ── [OLD] ann_lines.append(f"p={ks_pval:.3f}")
+            # ── [NEW] Show D statistic as primary, p-value secondary
+            ks_pass_str = "✓" if d.get("ks_passed", ks_stat < PDF_KS_D_THRESHOLD) else "✗"
+            ann_lines.append(f"KS D={ks_stat:.3f} {ks_pass_str} (<{PDF_KS_D_THRESHOLD})")
         if ks_pval is not None:
-            ann_lines.append(f"p={ks_pval:.3f}")
+            ann_lines.append(f"p={ks_pval:.2e}")
+        # Show mean/std relative errors
+        mean_rel = d.get("mean_rel_error", None)
+        std_rel = d.get("std_rel_error", None)
+        if mean_rel is not None:
+            m_pass = "✓" if d.get("mean_rel_passed", False) else "✗"
+            ann_lines.append(f"μ_err={mean_rel*100:.1f}% {m_pass}")
+        if std_rel is not None:
+            s_pass = "✓" if d.get("std_rel_passed", False) else "✗"
+            ann_lines.append(f"σ_err={std_rel*100:.1f}% {s_pass}")
         if bimodal is not None:
             ann_lines.append("bimodal" if bimodal else "unimodal")
         ann_text = "\n".join(ann_lines)
         if ann_text:
             ax.text(0.97, 0.95, ann_text, transform=ax.transAxes, ha="right", va="top",
-                    fontsize=9, bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                    fontsize=8, bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
                                           alpha=0.8, edgecolor="gray"))
 
         if passed is not None:
@@ -351,9 +417,14 @@ def plot_cv_variance_ratio(results: dict, save_dir, title: str = ""):
 
         ax.semilogx(k, var_ratio, color="steelblue", lw=2.0)
         ax.axhline(1.0, color="k", ls="-", lw=1.0, alpha=0.5)
-        ax.axhspan(0.8, 1.2, alpha=0.15, color="green", label="0.8–1.2 band")
-        ax.axhline(0.8, color="green", ls="--", lw=1.0)
-        ax.axhline(1.2, color="green", ls="--", lw=1.0)
+        # ── [OLD] 0.8-1.2 acceptance band ──
+        # ax.axhspan(0.8, 1.2, alpha=0.15, color="green", label="0.8–1.2 band")
+        # ax.axhline(0.8, color="green", ls="--", lw=1.0)
+        # ax.axhline(1.2, color="green", ls="--", lw=1.0)
+        # ── [NEW] 0.7-1.3 acceptance band (§4.5) ──
+        ax.axhspan(0.7, 1.3, alpha=0.15, color="green", label="0.7–1.3 band")
+        ax.axhline(0.7, color="green", ls="--", lw=1.0)
+        ax.axhline(1.3, color="green", ls="--", lw=1.0)
 
         ax.set_title(f"{ch}", fontsize=11, fontweight="bold")
         ax.set_xlabel("k  [h/Mpc]")
@@ -550,10 +621,10 @@ def save_text_summary(all_results: dict, save_path):
         lines.append(f"\nProtocol: {protocol_name.upper()}")
         lines.append("")
 
-        # Auto Power Spectrum
+        # Auto Power Spectrum (scale-dependent thresholds, §4.1)
         auto_power = lh.get("auto_power", {})
         if auto_power:
-            lines.append("Auto-Power Spectrum:")
+            lines.append("Auto-Power Spectrum (field+scale-dependent thresholds):")
             for ch in CHANNELS:
                 if ch in auto_power:
                     d = auto_power[ch]
@@ -565,48 +636,83 @@ def save_text_summary(all_results: dict, save_path):
                         f"  {ch:<8s}: mean={me:5.1f}%  max={mx:5.1f}%  "
                         f"rms={rm:5.1f}%  → {passed}"
                     )
+                    # Show per-range breakdown
+                    scale_errors = d.get("scale_errors", {})
+                    for label, se in scale_errors.items():
+                        se_pass = _fmt_passed(se.get("passed"))
+                        lines.append(
+                            f"    {label:>6s}: mean={se['mean_error']*100:5.1f}% "
+                            f"(thr={se['threshold_mean']*100:.0f}%)  "
+                            f"rms={se['rms_error']*100:5.1f}% "
+                            f"(thr={se['threshold_rms']*100:.0f}%)  → {se_pass}"
+                        )
             lines.append("")
 
-        # Cross Power Spectrum
+        # Cross Power Spectrum (pair-dependent thresholds, §4.2)
         cross_power = lh.get("cross_power", {})
         if cross_power:
-            lines.append("Cross-Power Spectrum:")
+            lines.append("Cross-Power Spectrum (pair-dependent thresholds):")
             for pair in CROSS_PAIRS:
                 if pair in cross_power:
                     d = cross_power[pair]
                     me = d.get("mean_error", float("nan")) * 100
+                    thr = d.get("threshold", CROSS_POWER_THRESHOLDS.get(pair, 0.15)) * 100
                     passed = _fmt_passed(d.get("passed"))
-                    lines.append(f"  {pair:<12s}: mean={me:5.1f}%  → {passed}")
+                    lines.append(f"  {pair:<12s}: mean={me:5.1f}%  (thr={thr:.0f}%)  → {passed}")
             lines.append("")
 
-        # Correlation Coefficient
+        # Correlation Coefficient (scale-dependent, §4.3)
         correlation = lh.get("correlation", {})
         if correlation:
-            lines.append("Correlation Coefficient:")
+            lines.append("Correlation Coefficient (scale-dependent thresholds):")
             for pair in CROSS_PAIRS:
                 if pair in correlation:
                     d = correlation[pair]
                     max_dr = d.get("max_delta_r", float("nan"))
                     passed = _fmt_passed(d.get("passed"))
                     lines.append(f"  {pair:<12s}: max_Δr={max_dr:.3f}  → {passed}")
+                    # Show per-range breakdown
+                    scale_errors = d.get("scale_errors", {})
+                    for label, se in scale_errors.items():
+                        se_pass = _fmt_passed(se.get("passed"))
+                        lines.append(
+                            f"    {label:>6s}: max_Δr={se['max_delta_r']:.3f}  "
+                            f"(thr={se['threshold']:.2f})  → {se_pass}"
+                        )
             lines.append("")
 
-        # Pixel Distribution (KS test)
+        # Pixel Distribution (§4.4: KS D statistic + mean/std relative error)
         pdf = lh.get("pdf", {})
         if pdf:
-            lines.append("Pixel Distribution (KS test):")
+            # ── [OLD] lines.append("Pixel Distribution (KS test):")
+            # ── [OLD] criterion: p-value > 0.05
+            lines.append("Pixel Distribution (KS D<0.05, μ_err<5%, σ_err<10%):")
             for ch in CHANNELS:
                 if ch in pdf:
                     d = pdf[ch]
                     stat = d.get("ks_statistic", float("nan"))
                     pval = d.get("ks_pvalue", float("nan"))
+                    mean_rel = d.get("mean_rel_error", float("nan")) * 100
+                    std_rel = d.get("std_rel_error", float("nan")) * 100
                     passed = _fmt_passed(d.get("passed"))
                     bimodal_str = ""
                     if "bimodal" in d:
                         bimodal_str = "  [bimodal]" if d["bimodal"] else "  [unimodal]"
                     lines.append(
-                        f"  {ch:<8s}: stat={stat:.3f}  p={pval:.3f}{bimodal_str}  → {passed}"
+                        f"  {ch:<8s}: D={stat:.3f}  p={pval:.2e}  "
+                        f"μ_err={mean_rel:.1f}%  σ_err={std_rel:.1f}%"
+                        f"{bimodal_str}  → {passed}"
                     )
+                    # T channel: show bimodal peak details
+                    if ch == "T" and d.get("bimodal", False):
+                        peaks_true = d.get("bimodal_peaks_true", [])
+                        peaks_gen = d.get("bimodal_peaks_gen", [])
+                        if peaks_true:
+                            peak_strs = [f"pos={p['position']:.2f} h={p['height']:.2f}" for p in peaks_true]
+                            lines.append(f"    true peaks: {', '.join(peak_strs)}")
+                        if peaks_gen:
+                            peak_strs = [f"pos={p['position']:.2f} h={p['height']:.2f}" for p in peaks_gen]
+                            lines.append(f"    gen  peaks: {', '.join(peak_strs)}")
             lines.append("")
 
         # Pass summary
@@ -624,13 +730,14 @@ def save_text_summary(all_results: dict, save_path):
             cv = all_results["cv"]
             lines.append("Protocol: CV")
             lines.append("")
-            lines.append("CV Variance Ratio:")
+            # ── [OLD] lines.append("CV Variance Ratio:  ... in [0.8,1.2]")
+            lines.append("CV Variance Ratio (§4.5: 0.7-1.3 band):")
             for ch in CHANNELS:
                 if ch in cv:
                     d = cv[ch]
                     frac = d.get("frac_in_band", float("nan")) * 100
                     passed = _fmt_passed(d.get("passed"))
-                    lines.append(f"  {ch:<8s}: {frac:.0f}% in [0.8,1.2]  → {passed}")
+                    lines.append(f"  {ch:<8s}: {frac:.0f}% in [0.7,1.3]  → {passed}")
             lines.append("")
     elif "auto_power" in all_results or "pass_summary" in all_results:
         # Direct evaluate_lh output

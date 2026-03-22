@@ -15,7 +15,7 @@ Peebles & Xie 2023 기반, 3채널 256×256 멀티필드에 맞게 재설계.
   "L": hidden=1024, depth=24, heads=16  ~ 458M params
 
 patch_size=8 기본:  256/8=32, 32²=1024 tokens
-patch_size=4 옵션:  256/4=64, 64²=4096 tokens (더 정밀, 메모리 4배)
+patch_size=4 옵션:  256/4=64, 64²=4096 tokens (더 정밀하지만 attention 비용 급증)
 """
 
 import torch
@@ -222,6 +222,17 @@ class DiT(nn.Module):
             elif isinstance(m, nn.Conv2d):
                 nn.init.xavier_uniform_(m.weight.view(m.weight.size(0), -1))
         self.apply(_init)
+
+        # Preserve DiT's intended zero-init behavior after generic Xavier init.
+        # Otherwise adaLN-Zero starts with non-zero residual gates and the final
+        # prediction head no longer starts from exact zero.
+        for block in self.blocks:
+            nn.init.zeros_(block.adaLN[-1].weight)
+            nn.init.zeros_(block.adaLN[-1].bias)
+        nn.init.zeros_(self.final.adaLN[-1].weight)
+        nn.init.zeros_(self.final.adaLN[-1].bias)
+        nn.init.zeros_(self.final.linear.weight)
+        nn.init.zeros_(self.final.linear.bias)
 
     def forward(
         self,

@@ -1,0 +1,62 @@
+data:
+  data_fraction: 1.0
+  seed: 42
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_default
+
+model:
+  architecture: dit
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.1
+  dit:
+    img_size: 256
+    patch_size: 8
+    hidden_size: 640
+    depth: 10
+    num_heads: 10
+    mlp_ratio: 3.0
+
+generative:
+  framework: diffusion
+  diffusion:
+    schedule: sigmoid
+    timesteps: 1000
+    cfg_prob: 0.2
+    prediction: epsilon
+    x0_clamp: 5.0
+    p2_gamma: 0.0
+    p2_k: 1.0
+    input_scale: 1.0
+  sampler:
+    method: ddim
+    steps: 50
+    eta: 0.0
+    cfg_scale: 1.0
+    viz:
+      sampler_a: ddpm
+      sampler_b: ddim
+
+training:
+  batch_size: 24
+  num_workers: 4
+  max_epochs: 200
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw
+  momentum: 0.9
+  nesterov: true
+  schedule: cosine_restarts
+  T_max: 200
+  eta_min: 1.0e-6
+  T_0: 10
+  T_mult: 1
+  plateau_patience: 5
+  plateau_factor: 0.5
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: runs/tunable/dit_diffusion_fully_custom/
+  ckpt_name: best.pt

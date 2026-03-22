@@ -124,7 +124,7 @@ class Trainer:
         else:
             raise ValueError(f"Unknown schedule: {schedule!r}")
 
-        self._history = {"train_loss": [], "val_loss": []}
+        self._history = {"train_loss": [], "val_loss": [], "lr": []}
         self._best_val = math.inf
         self._best_epoch = -1
         self._no_improve = 0
@@ -216,6 +216,15 @@ class Trainer:
         print(f"Loaded: epoch={ck['epoch']}  val_loss={ck['val_loss']:.5f}")
         return ck["epoch"]
 
+    def load_weights_only(self, path: Union[str, Path]) -> None:
+        """모델 가중치만 로드 (optimizer state / epoch 은 유지)."""
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {p}")
+        ck = torch.load(p, map_location=self.device)
+        self.model.load_state_dict(ck["model"])
+        print(f"Weights loaded: epoch={ck['epoch']}  val_loss={ck['val_loss']:.5f}  (optimizer reset)")
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def fit(
@@ -280,6 +289,7 @@ class Trainer:
                     self.scheduler.step(val_loss)
 
             cur_lr = self.optimizer.param_groups[0]["lr"]
+            self._history["lr"].append(float(cur_lr))
 
             # Best checkpoint
             improved = val_loss < self._best_val

@@ -1,0 +1,48 @@
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_default
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+  swin:
+    preset: B
+    window_size: 8
+
+generative:
+  framework: diffusion
+  diffusion:
+    schedule:     sigmoid
+    timesteps:    1000
+    cfg_prob:     0.2
+    prediction:   epsilon
+    x0_clamp:     5.0
+  sampler:
+    method: ddim
+    steps: 50
+    eta: 0.0
+    cfg_scale: 1.0
+    viz:
+      sampler_a: ddpm
+      sampler_b: ddim
+
+training:
+  batch_size: 16
+  num_workers: 4
+  max_epochs: 300
+  lr: 5.0e-5
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 0
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: plateau
+  plateau_patience: 10
+  plateau_factor: 0.5
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: runs/swin_diffusion_ft_plateau/
+  ckpt_name: best.pt

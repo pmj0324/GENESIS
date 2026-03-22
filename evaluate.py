@@ -216,13 +216,17 @@ def parse_args():
         help="Directory to save evaluation results"
     )
     parser.add_argument(
+        # [OLD] "--n-samples", type=int, default=100,
+        # [NEW] §4.6: N ≥ 32 per conditioning for final evaluation
         "--n-samples", type=int, default=100,
-        help="Maximum number of validation samples to evaluate"
+        help="Maximum number of validation samples to evaluate (§4.6 recommends ≥32)"
     )
     parser.add_argument(
+        # [OLD] choices=["lh", "cv"],
+        # [NEW] Added 1p and ex protocols (§4.5)
         "--protocols", type=str, nargs="+", default=["lh"],
-        choices=["lh", "cv"],
-        help="Evaluation protocols to run"
+        choices=["lh", "cv", "1p", "ex"],
+        help="Evaluation protocols to run (lh/cv/1p/ex)"
     )
     parser.add_argument(
         "--device", type=str, default="cuda",
@@ -235,6 +239,11 @@ def parse_args():
     parser.add_argument(
         "--cfg-scale", type=float, default=None,
         help="Classifier-free guidance scale (overrides config)"
+    )
+    parser.add_argument(
+        "--n-multirun", type=int, default=0,
+        help="Number of independent sampling runs for uncertainty quantification "
+             "(§4.6: 5 runs recommended). 0 = disabled."
     )
     return parser.parse_args()
 
@@ -289,7 +298,7 @@ def main():
     # Optionally load CV data
     cv_maps = None
     fiducial_cond = None
-    if "cv" in args.protocols:
+    if "cv" in args.protocols or "1p" in args.protocols:
         cv_maps_path = data_dir / "cv_maps.npy"
         cv_params_path = data_dir / "cv_params.npy"
         if cv_maps_path.exists():
@@ -299,7 +308,46 @@ def main():
             print(f"[evaluate] loaded CV data: {cv_maps.shape}")
         else:
             print(f"[evaluate] WARNING: cv_maps.npy not found at {cv_maps_path}, skipping CV.")
-            args.protocols = [p for p in args.protocols if p != "cv"]
+            args.protocols = [p for p in args.protocols if p not in ("cv", "1p")]
+
+    # Optionally load 1P data (§4.5)
+    onep_maps = None
+    onep_params = None
+    fiducial_maps = None
+    if "1p" in args.protocols:
+        onep_dir = data_dir / "1p"
+        if onep_dir.exists():
+            from dataloader.normalization import PARAM_NAMES
+            onep_maps = {}
+            onep_params = {}
+            for pname in PARAM_NAMES:
+                mp = onep_dir / f"{pname}_maps.npy"
+                pp = onep_dir / f"{pname}_params.npy"
+                if mp.exists() and pp.exists():
+                    onep_maps[pname] = np.load(mp)
+                    onep_params[pname] = np.load(pp)
+                    print(f"[evaluate] loaded 1P/{pname}: {onep_maps[pname].shape}")
+            fiducial_maps = cv_maps if cv_maps is not None else val_maps[:27]
+            if len(onep_maps) == 0:
+                print("[evaluate] WARNING: no 1P data found, skipping 1P.")
+                args.protocols = [p for p in args.protocols if p != "1p"]
+        else:
+            print(f"[evaluate] WARNING: 1p/ directory not found at {onep_dir}, skipping 1P.")
+            args.protocols = [p for p in args.protocols if p != "1p"]
+
+    # Optionally load EX data (§4.5)
+    ex_maps = None
+    ex_params = None
+    if "ex" in args.protocols:
+        ex_maps_path = data_dir / "ex_maps.npy"
+        ex_params_path = data_dir / "ex_params.npy"
+        if ex_maps_path.exists() and ex_params_path.exists():
+            ex_maps = np.load(ex_maps_path)
+            ex_params = np.load(ex_params_path)
+            print(f"[evaluate] loaded EX data: {ex_maps.shape}")
+        else:
+            print(f"[evaluate] WARNING: ex_maps.npy not found, skipping EX.")
+            args.protocols = [p for p in args.protocols if p != "ex"]
 
     # Build evaluator
     evaluator = CAMELSEvaluator(
@@ -317,7 +365,13 @@ def main():
         val_params=val_params,
         cv_maps=cv_maps,
         fiducial_cond=fiducial_cond,
+        onep_maps=onep_maps,
+        onep_params=onep_params,
+        fiducial_maps=fiducial_maps,
+        ex_maps=ex_maps,
+        ex_params=ex_params,
         protocols=args.protocols,
+        n_multirun=args.n_multirun,
     )
 
     # Output directory

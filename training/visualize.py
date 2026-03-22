@@ -4,7 +4,8 @@ GENESIS - EpochVisualizer
 에폭 끝마다 호출:
   1. 샘플 맵         → plots/ep{N:04d}_samples.png       3×3 grid (Real / sampler_a / sampler_b)
   2. Power spectrum  → plots/ep{N:04d}_power_spectrum.png
-  3. Loss curve      → plots/loss.png                    (매 에폭 덮어씀)
+  3. Loss curve      → plots/loss.png                    (선형 + log-y loss; 매 에폭 덮어씀)
+  4. Learning rate   → plots/lr.png                      (lr 히스토리 있을 때만; 매 에폭 덮어씀)
 
 conditioning:
   ref_cond = val_dataset[0][1]  →  val set 첫 번째 샘플의 z-score 정규화된 cosmological params
@@ -267,38 +268,54 @@ class EpochVisualizer:
             pdf_res   = compare_pixel_distributions(true_log, gen_log, log=False, ks_subsample=20000)
 
             # ── 출력 ──────────────────────────────────────────────────────────
-            sep = "─" * 68
+            sep = "─" * 78
             print(f"\n  {sep}")
             print(f"  Epoch {epoch+1:04d} Metrics  (N={N}, {self.name_b})  [log₁₀ space]")
             print(f"  {sep}")
 
-            # Auto-Power
-            print("  Auto-Power  [mean rel.err | max | rms]:")
+            # Auto-Power (scale-dependent thresholds, §4.1)
+            print("  Auto-Power  [mean | max | rms]  (field+scale-dependent thresholds):")
             for ch in ["Mcdm", "Mgas", "T"]:
                 e = spec_err[ch]
                 ok = "✓" if e["passed"] else "✗"
                 print(f"    {ch:<6}  {e['mean_error']*100:5.1f}%  {e['max_error']*100:5.1f}%  {e['rms_error']*100:5.1f}%  {ok}")
+                # Show per-range breakdown
+                scale_errors = e.get("scale_errors", {})
+                for label, se in scale_errors.items():
+                    se_ok = "✓" if se["passed"] else "✗"
+                    print(f"      {label:>5}: mean={se['mean_error']*100:5.1f}%(<{se['threshold_mean']*100:.0f}%)  rms={se['rms_error']*100:5.1f}%(<{se['threshold_rms']*100:.0f}%)  {se_ok}")
 
-            # Cross-Power
-            print("  Cross-Power [mean rel.err]:")
+            # Cross-Power (pair-dependent thresholds, §4.2)
+            # ── [OLD] print("  Cross-Power [mean rel.err]:")
+            # ── [OLD] uniform threshold: 10%
+            print("  Cross-Power [mean rel.err]  (pair-dependent thresholds):")
             for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
                 e = spec_err[pair]
                 ok = "✓" if e["passed"] else "✗"
-                print(f"    {pair:<12}  {e['mean_error']*100:5.1f}%  {ok}")
+                thr = e.get("threshold", 0.15) * 100
+                print(f"    {pair:<12}  {e['mean_error']*100:5.1f}% (<{thr:.0f}%)  {ok}")
 
-            # Correlation
-            print("  Correlation [max Δr]:")
+            # Correlation (scale-dependent, §4.3)
+            print("  Correlation [max Δr]  (k<5: <0.1, k≥5: <0.2):")
             for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
                 c = corr_err[pair]
                 ok = "✓" if c["passed"] else "✗"
                 print(f"    {pair:<12}  Δr={c['max_delta_r']:.3f}  {ok}")
+                scale_errors = c.get("scale_errors", {})
+                for label, se in scale_errors.items():
+                    se_ok = "✓" if se["passed"] else "✗"
+                    print(f"      {label:>5}: Δr={se['max_delta_r']:.3f} (<{se['threshold']:.1f})  {se_ok}")
 
-            # PDF KS
-            print("  PDF KS-test [statistic | p-value]:")
+            # PDF (§4.4: KS D < 0.05 primary criterion)
+            # ── [OLD] print("  PDF KS-test [statistic | p-value]:")
+            # ── [OLD] criterion: p-value > 0.05
+            print("  PDF  [KS D<0.05 | μ_err<5% | σ_err<10%]:")
             for ch in ["Mcdm", "Mgas", "T"]:
                 p = pdf_res[ch]
                 ok = "✓" if p["passed"] else "✗"
-                print(f"    {ch:<6}  stat={p['ks_statistic']:.3f}  p={p['ks_pvalue']:.3e}  {ok}")
+                mean_rel = p.get("mean_rel_error", float("nan")) * 100
+                std_rel = p.get("std_rel_error", float("nan")) * 100
+                print(f"    {ch:<6}  D={p['ks_statistic']:.3f}  μ={mean_rel:.1f}%  σ={std_rel:.1f}%  {ok}")
 
             print(f"  {sep}\n")
 
@@ -319,15 +336,45 @@ class EpochVisualizer:
     # ── 4. Loss curve ──────────────────────────────────────────────────────────
 
     def _plot_loss(self, history: dict):
-        epochs = range(1, len(history["train_loss"]) + 1)
-        fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(epochs, history["train_loss"], label="train", color="steelblue", linewidth=1.5)
-        ax.plot(epochs, history["val_loss"],   label="val",   color="tomato",    linewidth=1.5)
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("Loss")
-        ax.set_title("Training Loss")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        train = history["train_loss"]
+        val = history["val_loss"]
+        n = len(train)
+        if n == 0:
+            return
+        epochs = np.arange(1, n + 1, dtype=float)
+        lr_hist = history.get("lr", [])
+        lr_ok = len(lr_hist) == n
+
+        fig, (ax_lin, ax_log) = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
+
+        ax_lin.plot(epochs, train, label="train", color="steelblue", linewidth=1.5)
+        ax_lin.plot(epochs, val, label="val", color="tomato", linewidth=1.5)
+        ax_lin.set_ylabel("Loss")
+        ax_lin.set_title("Training loss (linear)")
+        ax_lin.grid(True, alpha=0.3)
+        ax_lin.legend(loc="upper right")
+
+        eps = 1e-12
+        ax_log.semilogy(epochs, np.maximum(train, eps), label="train", color="steelblue", linewidth=1.5)
+        ax_log.semilogy(epochs, np.maximum(val, eps), label="val", color="tomato", linewidth=1.5)
+        ax_log.set_xlabel("Epoch")
+        ax_log.set_ylabel("Loss (log scale)")
+        ax_log.set_title("Training loss (log y)")
+        ax_log.legend(loc="upper right")
+        ax_log.grid(True, alpha=0.3, which="both")
+
         fig.tight_layout()
         fig.savefig(self.plot_dir / "loss.png", dpi=100, bbox_inches="tight")
         plt.close(fig)
+
+        if lr_ok:
+            fig_lr, ax_lr = plt.subplots(figsize=(8, 4))
+            ax_lr.plot(epochs, lr_hist, color="tab:green", linewidth=1.5)
+            ax_lr.set_xlabel("Epoch")
+            ax_lr.set_ylabel("Learning rate")
+            ax_lr.set_title("Learning rate")
+            ax_lr.set_yscale("log")
+            ax_lr.grid(True, alpha=0.3, which="both")
+            fig_lr.tight_layout()
+            fig_lr.savefig(self.plot_dir / "lr.png", dpi=100, bbox_inches="tight")
+            plt.close(fig_lr)

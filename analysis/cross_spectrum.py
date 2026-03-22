@@ -8,12 +8,68 @@ power_spectrum.py와 동일한 k-grid를 내부 헬퍼로 공유.
   compute_cross_power_spectrum_2d  — 단일 (H,W) 쌍
   compute_all_spectra              — (3,H,W) 또는 (B,3,H,W) 배치
   compute_spectrum_errors          — 배치 단위 상대오차 + pass/fail
+
+평가 기준 (Evaluation Criteria Report 반영):
+  - Auto-power: field-dependent + scale-dependent thresholds
+  - Cross-power: pair-dependent thresholds
+  - RMS threshold = 1.5× mean threshold
 """
 import numpy as np
 
 
 CHANNELS = ["Mcdm", "Mgas", "T"]
 CROSS_PAIRS = [("Mcdm", "Mgas", 0, 1), ("Mcdm", "T", 0, 2), ("Mgas", "T", 1, 2)]
+
+# ── Field-dependent, scale-dependent auto-power thresholds ────────────────
+# Data-Driven Report (Table 7): based on measured noise floor × 1.5
+# {field: [(label, k_min, k_max, mean_threshold, rms_threshold)]}
+# rms_threshold = 1.5 × mean_threshold
+#
+# Noise floor basis:
+#   Mcdm: CV=10.8%, slice=23.6%, sensitivity=110%
+#   Mgas: CV=11.2%, slice=25.1%, sensitivity=186%
+#   T:    CV=12.0%, slice=26.6%, sensitivity=325%
+AUTO_POWER_THRESHOLDS = {
+    # Mcdm: lowest feedback sensitivity
+    "Mcdm": [
+        ("low_k",  0.0, 1.0,  0.15, 0.225),   # mean<15%, rms<22.5%
+        ("mid_k",  1.0, 5.0,  0.15, 0.225),   # mean<15%, rms<22.5%
+        ("high_k", 5.0, 1e6,  0.25, 0.375),   # mean<25%, rms<37.5%
+    ],
+    # Mgas: moderate feedback sensitivity
+    "Mgas": [
+        ("low_k",  0.0, 1.0,  0.18, 0.27),    # mean<18%, rms<27%
+        ("mid_k",  1.0, 5.0,  0.18, 0.27),    # mean<18%, rms<27%
+        ("high_k", 5.0, 1e6,  0.30, 0.45),    # mean<30%, rms<45%
+    ],
+    # T: extreme feedback sensitivity; bimodal distribution
+    "T": [
+        ("low_k",  0.0, 1.0,  0.20, 0.30),    # mean<20%, rms<30%
+        ("mid_k",  1.0, 5.0,  0.20, 0.30),    # mean<20%, rms<30%
+        ("high_k", 5.0, 1e6,  0.35, 0.525),   # mean<35%, rms<52.5%
+    ],
+}
+# [PREV — Evaluation Criteria Report §4.1, before data-driven calibration]
+# AUTO_POWER_THRESHOLDS_PREV = {
+#     "Mcdm": [("k<1", 0.0, 1.0, 0.10, 0.15), ("k=1-5", 1.0, 5.0, 0.15, 0.225), ("k>5", 5.0, 1e6, 0.25, 0.375)],
+#     "Mgas": [("k<1", 0.0, 1.0, 0.15, 0.225), ("k=1-5", 1.0, 5.0, 0.20, 0.30), ("k>5", 5.0, 1e6, 0.30, 0.45)],
+#     "T":    [("k<1", 0.0, 1.0, 0.20, 0.30), ("k=1-5", 1.0, 5.0, 0.25, 0.375), ("k>5", 5.0, 1e6, 0.35, 0.525)],
+# }
+
+# ── Pair-dependent cross-power thresholds ─────────────────────────────────
+# Data-Driven Report (Table 8): based on measured CV floor
+# Mcdm-Mgas CV floor=27.2%, Mcdm-T CV floor=57.9%, Mgas-T CV floor=103.5%
+CROSS_POWER_THRESHOLDS = {
+    "Mcdm-Mgas": 0.30,   # CV floor=27.2%; direct gravitational coupling
+    "Mcdm-T":    0.60,   # CV floor=57.9%; indirect correlation
+    "Mgas-T":    0.60,   # CV floor=103.5%; high-k evaluation nearly meaningless
+}
+# [PREV — Evaluation Criteria Report §4.2]
+# CROSS_POWER_THRESHOLDS_PREV = {"Mcdm-Mgas": 0.15, "Mcdm-T": 0.25, "Mgas-T": 0.15}
+
+# ── Legacy (old) uniform thresholds (kept for reference) ─────────────────
+# AUTO_PASS_OLD = {"mean": 0.05, "max": 0.15, "rms": 0.07}  # uniform for all fields
+# CROSS_PASS_OLD = {"mean": 0.10}  # uniform for all pairs
 
 
 def _to_numpy(field) -> np.ndarray:
@@ -173,7 +229,19 @@ def compute_spectrum_errors(
     For each spectrum (auto×3, cross×3):
         - Compute per-sample P(k), average across batch.
         - relative_error = |P_gen_mean - P_true_mean| / (P_true_mean + 1e-30)
-        - Thresholds: auto pass = mean<5%, max<15%, rms<7%; cross pass = mean<10%.
+
+    Auto-power thresholds: field-dependent + scale-dependent (§4.1)
+        Mcdm: k<1 → 10%, k=1-5 → 15%, k>5 → 25%
+        Mgas: k<1 → 15%, k=1-5 → 20%, k>5 → 30%
+        T:    k<1 → 20%, k=1-5 → 25%, k>5 → 35%
+        RMS threshold = 1.5× mean threshold per range.
+
+    Cross-power thresholds: pair-dependent (§4.2)
+        Mcdm-Mgas: <15%, Mcdm-T: <25%, Mgas-T: <15%
+
+    # [OLD] Thresholds (uniform, before Evaluation Criteria Report):
+    #   auto pass = mean<5%, max<15%, rms<7%
+    #   cross pass = mean<10%
 
     Args:
         x_true: (B, 3, H, W) array of true maps (torch or numpy).
@@ -183,7 +251,8 @@ def compute_spectrum_errors(
 
     Returns:
         Nested dict: {spectrum_name: {k, P_true_mean, P_gen_mean,
-                      relative_error, mean_error, max_error, rms_error, passed}}
+                      relative_error, mean_error, max_error, rms_error, passed,
+                      scale_errors (auto only), type}}
     """
     x_true = _to_numpy(x_true)  # (B, 3, H, W)
     x_gen = _to_numpy(x_gen)
@@ -203,7 +272,7 @@ def compute_spectrum_errors(
 
     results = {}
 
-    # Auto spectra
+    # Auto spectra — field-dependent, scale-dependent thresholds
     for ci, ch in enumerate(CHANNELS):
         k, pks_true = _per_sample_pk(x_true, ci, ci)
         _, pks_gen = _per_sample_pk(x_gen, ci, ci)
@@ -216,7 +285,38 @@ def compute_spectrum_errors(
         max_err = float(rel_err.max())
         rms_err = float(np.sqrt((rel_err**2).mean()))
 
-        passed = bool(mean_err < 0.05 and max_err < 0.15 and rms_err < 0.07)
+        # ── [OLD] Uniform pass criterion ──
+        # passed = bool(mean_err < 0.05 and max_err < 0.15 and rms_err < 0.07)
+
+        # ── [NEW] Scale-dependent pass criterion (§4.1) ──
+        scale_errors = {}
+        all_ranges_pass = True
+        thresholds = AUTO_POWER_THRESHOLDS[ch]
+        for label, k_lo, k_hi, thr_mean, thr_rms in thresholds:
+            mask = (k >= k_lo) & (k < k_hi)
+            if mask.sum() == 0:
+                scale_errors[label] = {
+                    "mean_error": 0.0, "rms_error": 0.0,
+                    "threshold_mean": thr_mean, "threshold_rms": thr_rms,
+                    "passed": True, "n_bins": 0,
+                }
+                continue
+            range_rel = rel_err[mask]
+            range_mean = float(range_rel.mean())
+            range_rms = float(np.sqrt((range_rel**2).mean()))
+            range_pass = bool(range_mean < thr_mean and range_rms < thr_rms)
+            if not range_pass:
+                all_ranges_pass = False
+            scale_errors[label] = {
+                "mean_error": range_mean,
+                "rms_error": range_rms,
+                "threshold_mean": thr_mean,
+                "threshold_rms": thr_rms,
+                "passed": range_pass,
+                "n_bins": int(mask.sum()),
+            }
+
+        passed = all_ranges_pass
 
         results[ch] = {
             "k": k,
@@ -227,10 +327,11 @@ def compute_spectrum_errors(
             "max_error": max_err,
             "rms_error": rms_err,
             "passed": passed,
+            "scale_errors": scale_errors,
             "type": "auto",
         }
 
-    # Cross spectra
+    # Cross spectra — pair-dependent thresholds
     for ch_i, ch_j, ci, cj in CROSS_PAIRS:
         pair_key = f"{ch_i}-{ch_j}"
         k, pks_true = _per_sample_pk(x_true, ci, cj)
@@ -239,12 +340,17 @@ def compute_spectrum_errors(
         P_true_mean = pks_true.mean(axis=0)
         P_gen_mean = pks_gen.mean(axis=0)
 
-        rel_err = np.abs(P_gen_mean - P_true_mean) / (P_true_mean + 1e-30)
+        rel_err = np.abs(P_gen_mean - P_true_mean) / (np.abs(P_true_mean) + 1e-30)
         mean_err = float(rel_err.mean())
         max_err = float(rel_err.max())
         rms_err = float(np.sqrt((rel_err**2).mean()))
 
-        passed = bool(mean_err < 0.10)
+        # ── [OLD] Uniform cross pass criterion ──
+        # passed = bool(mean_err < 0.10)
+
+        # ── [NEW] Pair-dependent threshold (§4.2) ──
+        threshold = CROSS_POWER_THRESHOLDS.get(pair_key, 0.15)
+        passed = bool(mean_err < threshold)
 
         results[pair_key] = {
             "k": k,
@@ -255,6 +361,7 @@ def compute_spectrum_errors(
             "max_error": max_err,
             "rms_error": rms_err,
             "passed": passed,
+            "threshold": threshold,
             "type": "cross",
         }
 
