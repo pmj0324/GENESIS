@@ -1,0 +1,65 @@
+##############################################################################
+# swin_flow_custom_resume.yaml
+# Resume training for runs/swin_flow_custom/ from the latest checkpoint.
+#
+# Usage:
+#   python train.py --config configs/experiments/swin_flow_custom_resume.yaml --resume
+#
+# Notes:
+#   - `--resume` now prefers runs/swin_flow_custom/last.pt by default.
+#   - `best.pt` remains reserved for the best-validation checkpoint.
+#   - `max_epochs: 300` means "continue until total epoch count reaches 300".
+##############################################################################
+
+data:
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_default
+  data_fraction: 1.0
+  augment: true
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.05
+
+  swin:
+    embed_dim: 128
+    depths: [2, 4, 10, 2]
+    num_heads: [4, 8, 16, 32]
+    window_size: 8
+    patch_size: 4
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.15
+    sigma_min: 1.0e-4
+
+  sampler:
+    method: heun
+    steps: 50
+    cfg_scale: 1.5
+    viz:
+      sampler_a: euler
+      sampler_b: heun
+
+training:
+  batch_size: 16
+  num_workers: 4
+  max_epochs: 300
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  optimizer: adamw
+  grad_clip: 1.0
+  schedule: cosine_restarts
+  T_0: 50
+  T_mult: 2
+  eta_min: 1.0e-6
+  warmup_epochs: 5
+  early_stop_patience: 60
+
+checkpoint:
+  ckpt_dir: runs/swin_flow_custom/
+  ckpt_name: best.pt

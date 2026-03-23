@@ -34569,5 +34569,2720 @@
       }
     },
     "passed_overall": false
+  },
+  {
+    "epoch": 192,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.1421,
+        "max_error": 2.53291,
+        "rms_error": 0.47162,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.38761,
+            "rms_error": 0.90472,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.0781,
+            "rms_error": 0.08808,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.03531,
+            "rms_error": 0.06492,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.14316,
+        "max_error": 2.30053,
+        "rms_error": 0.43312,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.34021,
+            "rms_error": 0.81813,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.05302,
+            "rms_error": 0.06514,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.08431,
+            "rms_error": 0.13437,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.2599,
+        "max_error": 1.85712,
+        "rms_error": 0.44619,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.29191,
+            "rms_error": 0.66468,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.28409,
+            "rms_error": 0.32356,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.22347,
+            "rms_error": 0.33923,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.13618,
+        "max_error": 2.42191,
+        "rms_error": 0.44871,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.45528,
+        "max_error": 3.79515,
+        "rms_error": 0.89795,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.51299,
+        "max_error": 5.98181,
+        "rms_error": 1.21536,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.0654,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.0654,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.21535,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.21535,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.16733,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.16733,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.0553,
+        "mean_rel_error": 0.00415,
+        "std_rel_error": 0.03112,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.04235,
+        "mean_rel_error": 0.00217,
+        "std_rel_error": 0.01825,
+        "passed": true
+      },
+      "T": {
+        "ks_statistic": 0.11555,
+        "mean_rel_error": 0.05029,
+        "std_rel_error": 0.04552,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 193,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.16207,
+        "max_error": 0.34297,
+        "rms_error": 0.1867,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.12955,
+            "rms_error": 0.1765,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.14202,
+            "rms_error": 0.16637,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.19596,
+            "rms_error": 0.20519,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.16453,
+        "max_error": 0.46175,
+        "rms_error": 0.19911,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.11595,
+            "rms_error": 0.16082,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.13139,
+            "rms_error": 0.15093,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.21736,
+            "rms_error": 0.24454,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.12449,
+        "max_error": 0.55722,
+        "rms_error": 0.20005,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.12063,
+            "rms_error": 0.1684,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.04838,
+            "rms_error": 0.06285,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.17956,
+            "rms_error": 0.26865,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.16215,
+        "max_error": 0.35624,
+        "rms_error": 0.19001,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.22362,
+        "max_error": 1.45815,
+        "rms_error": 0.36374,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.25613,
+        "max_error": 3.0133,
+        "rms_error": 0.58367,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.02244,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.02244,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.15458,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.15458,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.1183,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.1183,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.13585,
+        "mean_rel_error": 0.00901,
+        "std_rel_error": 0.0764,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.1192,
+        "mean_rel_error": 0.00903,
+        "std_rel_error": 0.09132,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.14135,
+        "mean_rel_error": 0.03755,
+        "std_rel_error": 0.09966,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 194,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.18041,
+        "max_error": 1.56377,
+        "rms_error": 0.33129,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.30318,
+            "rms_error": 0.58009,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.12218,
+            "rms_error": 0.14499,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.14518,
+            "rms_error": 0.1779,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.22792,
+        "max_error": 1.31377,
+        "rms_error": 0.32911,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.27986,
+            "rms_error": 0.4934,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.24108,
+            "rms_error": 0.25138,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.18685,
+            "rms_error": 0.23747,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.1919,
+        "max_error": 0.73411,
+        "rms_error": 0.27391,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.15649,
+            "rms_error": 0.23503,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.15216,
+            "rms_error": 0.16778,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.24119,
+            "rms_error": 0.34591,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.19671,
+        "max_error": 1.44963,
+        "rms_error": 0.3217,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.67679,
+        "max_error": 6.42795,
+        "rms_error": 1.31778,
+        "threshold": 0.6,
+        "passed": false
+      },
+      "Mgas-T": {
+        "mean_error": 0.81745,
+        "max_error": 11.27397,
+        "rms_error": 2.13623,
+        "threshold": 0.6,
+        "passed": false
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.03765,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.03765,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.32478,
+        "passed": false,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.32478,
+            "threshold": 0.3,
+            "passed": false
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.27135,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.27135,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.16455,
+        "mean_rel_error": 0.01236,
+        "std_rel_error": 0.03833,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.16435,
+        "mean_rel_error": 0.0146,
+        "std_rel_error": 0.06281,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.19195,
+        "mean_rel_error": 0.08186,
+        "std_rel_error": 0.03743,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 195,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.09735,
+        "max_error": 1.22177,
+        "rms_error": 0.23501,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.20156,
+            "rms_error": 0.43898,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.07817,
+            "rms_error": 0.08826,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.04649,
+            "rms_error": 0.05896,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.1103,
+        "max_error": 1.21575,
+        "rms_error": 0.24415,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.19827,
+            "rms_error": 0.4368,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.05431,
+            "rms_error": 0.06654,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.09493,
+            "rms_error": 0.13072,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.1522,
+        "max_error": 0.93057,
+        "rms_error": 0.26898,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.23849,
+            "rms_error": 0.39003,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.06448,
+            "rms_error": 0.07999,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.15982,
+            "rms_error": 0.26252,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.09537,
+        "max_error": 1.22807,
+        "rms_error": 0.2355,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.19265,
+        "max_error": 1.38575,
+        "rms_error": 0.36733,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.19836,
+        "max_error": 1.75869,
+        "rms_error": 0.41809,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.04006,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.04006,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.26125,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.26125,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.20214,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.20214,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.0089,
+        "mean_rel_error": 0.00027,
+        "std_rel_error": 0.01241,
+        "passed": true
+      },
+      "Mgas": {
+        "ks_statistic": 0.01805,
+        "mean_rel_error": 0.00029,
+        "std_rel_error": 0.0173,
+        "passed": true
+      },
+      "T": {
+        "ks_statistic": 0.0272,
+        "mean_rel_error": 0.00495,
+        "std_rel_error": 0.01606,
+        "passed": true
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 196,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.0932,
+        "max_error": 0.38756,
+        "rms_error": 0.14437,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.16633,
+            "rms_error": 0.23214,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.11021,
+            "rms_error": 0.13737,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.03641,
+            "rms_error": 0.04327,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.09802,
+        "max_error": 0.37858,
+        "rms_error": 0.14474,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.17017,
+            "rms_error": 0.22577,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.09014,
+            "rms_error": 0.1291,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.05908,
+            "rms_error": 0.07376,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.11907,
+        "max_error": 0.33241,
+        "rms_error": 0.14972,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.1184,
+            "rms_error": 0.15292,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.08103,
+            "rms_error": 0.10219,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.14582,
+            "rms_error": 0.17353,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.09292,
+        "max_error": 0.38483,
+        "rms_error": 0.14302,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.29983,
+        "max_error": 2.0589,
+        "rms_error": 0.48109,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.2643,
+        "max_error": 2.77317,
+        "rms_error": 0.54762,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.04182,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.04182,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.14574,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.14574,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.15618,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.15618,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.0314,
+        "mean_rel_error": 0.00088,
+        "std_rel_error": 0.10452,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.04735,
+        "mean_rel_error": 0.00474,
+        "std_rel_error": 0.11166,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.05795,
+        "mean_rel_error": 0.02562,
+        "std_rel_error": 0.08393,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 197,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.13271,
+        "max_error": 1.16421,
+        "rms_error": 0.2462,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.20201,
+            "rms_error": 0.42313,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.13957,
+            "rms_error": 0.15609,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.0853,
+            "rms_error": 0.11329,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.18123,
+        "max_error": 0.97862,
+        "rms_error": 0.26629,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.18572,
+            "rms_error": 0.36061,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.17957,
+            "rms_error": 0.18853,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.17961,
+            "rms_error": 0.2429,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.20614,
+        "max_error": 0.9952,
+        "rms_error": 0.3373,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.18329,
+            "rms_error": 0.32254,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.10224,
+            "rms_error": 0.11294,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.29212,
+            "rms_error": 0.43554,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.14659,
+        "max_error": 1.06722,
+        "rms_error": 0.24204,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.51984,
+        "max_error": 4.60074,
+        "rms_error": 0.96784,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.6669,
+        "max_error": 8.90245,
+        "rms_error": 1.69901,
+        "threshold": 0.6,
+        "passed": false
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.05047,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.05047,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.19717,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.19717,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.21795,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.21795,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.091,
+        "mean_rel_error": 0.00557,
+        "std_rel_error": 0.06457,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.09635,
+        "mean_rel_error": 0.00772,
+        "std_rel_error": 0.07404,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.1159,
+        "mean_rel_error": 0.05005,
+        "std_rel_error": 0.01103,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 198,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.15713,
+        "max_error": 0.49131,
+        "rms_error": 0.19561,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.20073,
+            "rms_error": 0.27232,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.09647,
+            "rms_error": 0.11511,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.17229,
+            "rms_error": 0.18299,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.1467,
+        "max_error": 0.66802,
+        "rms_error": 0.22573,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.16874,
+            "rms_error": 0.24191,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.05975,
+            "rms_error": 0.07824,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.19334,
+            "rms_error": 0.27809,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.18626,
+        "max_error": 0.99517,
+        "rms_error": 0.32892,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.12126,
+            "rms_error": 0.18711,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.0974,
+            "rms_error": 0.12289,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.28776,
+            "rms_error": 0.46655,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.12571,
+        "max_error": 0.51516,
+        "rms_error": 0.18431,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.57192,
+        "max_error": 5.83091,
+        "rms_error": 1.17344,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.70558,
+        "max_error": 10.12553,
+        "rms_error": 1.91401,
+        "threshold": 0.6,
+        "passed": false
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.04042,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.04042,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.27197,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.27197,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.22944,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.22944,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.15785,
+        "mean_rel_error": 0.01416,
+        "std_rel_error": 0.02982,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.17755,
+        "mean_rel_error": 0.01853,
+        "std_rel_error": 0.00296,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.20905,
+        "mean_rel_error": 0.09089,
+        "std_rel_error": 0.01824,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 199,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.11964,
+        "max_error": 0.39227,
+        "rms_error": 0.14963,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.11269,
+            "rms_error": 0.17809,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.10697,
+            "rms_error": 0.12217,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.13269,
+            "rms_error": 0.14771,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.13985,
+        "max_error": 0.46688,
+        "rms_error": 0.18204,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.10665,
+            "rms_error": 0.17183,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.11491,
+            "rms_error": 0.12601,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.17755,
+            "rms_error": 0.2175,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.16182,
+        "max_error": 0.69122,
+        "rms_error": 0.24217,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.16002,
+            "rms_error": 0.26555,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.12172,
+            "rms_error": 0.12637,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.19068,
+            "rms_error": 0.2844,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.12785,
+        "max_error": 0.38099,
+        "rms_error": 0.15838,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.30956,
+        "max_error": 2.87744,
+        "rms_error": 0.58972,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.38731,
+        "max_error": 5.066,
+        "rms_error": 0.96613,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.02243,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.02243,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.1703,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.1703,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.16022,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.16022,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.15555,
+        "mean_rel_error": 0.01127,
+        "std_rel_error": 0.07103,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.11665,
+        "mean_rel_error": 0.00934,
+        "std_rel_error": 0.08822,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.1407,
+        "mean_rel_error": 0.04902,
+        "std_rel_error": 0.04297,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 200,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.17378,
+        "max_error": 1.78997,
+        "rms_error": 0.36432,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.34692,
+            "rms_error": 0.65968,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.07472,
+            "rms_error": 0.09016,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.13581,
+            "rms_error": 0.18129,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.24604,
+        "max_error": 1.41639,
+        "rms_error": 0.37604,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.2623,
+            "rms_error": 0.52065,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.16236,
+            "rms_error": 0.20131,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.29398,
+            "rms_error": 0.36256,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.36952,
+        "max_error": 1.26958,
+        "rms_error": 0.50719,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.22521,
+            "rms_error": 0.44701,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.29033,
+            "rms_error": 0.3079,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.51317,
+            "rms_error": 0.63642,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": false,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.19308,
+        "max_error": 1.60899,
+        "rms_error": 0.34667,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.94442,
+        "max_error": 9.62831,
+        "rms_error": 1.95303,
+        "threshold": 0.6,
+        "passed": false
+      },
+      "Mgas-T": {
+        "mean_error": 1.18543,
+        "max_error": 17.24787,
+        "rms_error": 3.26276,
+        "threshold": 0.6,
+        "passed": false
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.07164,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.07164,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.34389,
+        "passed": false,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.34389,
+            "threshold": 0.3,
+            "passed": false
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.40441,
+        "passed": false,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.40441,
+            "threshold": 0.3,
+            "passed": false
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.29925,
+        "mean_rel_error": 0.02746,
+        "std_rel_error": 0.04705,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.27465,
+        "mean_rel_error": 0.02989,
+        "std_rel_error": 0.00987,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.29515,
+        "mean_rel_error": 0.14121,
+        "std_rel_error": 0.01589,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 201,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.14644,
+        "max_error": 0.61298,
+        "rms_error": 0.19974,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.16677,
+            "rms_error": 0.2794,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.09979,
+            "rms_error": 0.11057,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.16624,
+            "rms_error": 0.18859,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.1493,
+        "max_error": 0.60434,
+        "rms_error": 0.22123,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.13732,
+            "rms_error": 0.24056,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.07379,
+            "rms_error": 0.08894,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.20895,
+            "rms_error": 0.26806,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.17181,
+        "max_error": 0.72658,
+        "rms_error": 0.2678,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.10264,
+            "rms_error": 0.16403,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.16486,
+            "rms_error": 0.19314,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.21919,
+            "rms_error": 0.35088,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.14414,
+        "max_error": 0.57446,
+        "rms_error": 0.19921,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.31547,
+        "max_error": 2.48317,
+        "rms_error": 0.55862,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.37191,
+        "max_error": 4.49825,
+        "rms_error": 0.87191,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.0275,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.0275,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.11854,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.11854,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.15893,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.15893,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.11925,
+        "mean_rel_error": 0.00657,
+        "std_rel_error": 0.08589,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.15705,
+        "mean_rel_error": 0.01134,
+        "std_rel_error": 0.1099,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.1387,
+        "mean_rel_error": 0.03916,
+        "std_rel_error": 0.09424,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 202,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.09745,
+        "max_error": 0.49711,
+        "rms_error": 0.13639,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.11815,
+            "rms_error": 0.20039,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.07806,
+            "rms_error": 0.10269,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.09813,
+            "rms_error": 0.10448,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.11706,
+        "max_error": 0.46201,
+        "rms_error": 0.16867,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.10653,
+            "rms_error": 0.18167,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.08207,
+            "rms_error": 0.09683,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.14776,
+            "rms_error": 0.19712,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.1488,
+        "max_error": 0.60252,
+        "rms_error": 0.23077,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.13099,
+            "rms_error": 0.18655,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.07989,
+            "rms_error": 0.09962,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.20747,
+            "rms_error": 0.3076,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.09903,
+        "max_error": 0.47959,
+        "rms_error": 0.13972,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.2701,
+        "max_error": 2.01117,
+        "rms_error": 0.4476,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.3185,
+        "max_error": 3.70348,
+        "rms_error": 0.71815,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.05241,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.05241,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.19091,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.19091,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.16158,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.16158,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.0632,
+        "mean_rel_error": 0.00334,
+        "std_rel_error": 0.04388,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.0738,
+        "mean_rel_error": 0.00493,
+        "std_rel_error": 0.06275,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.0992,
+        "mean_rel_error": 0.03562,
+        "std_rel_error": 0.03224,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 203,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.14622,
+        "max_error": 0.3517,
+        "rms_error": 0.16982,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.13297,
+            "rms_error": 0.17091,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.11079,
+            "rms_error": 0.12887,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.17891,
+            "rms_error": 0.19256,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.14039,
+        "max_error": 0.60142,
+        "rms_error": 0.19669,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.09372,
+            "rms_error": 0.12362,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.09292,
+            "rms_error": 0.12096,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.20197,
+            "rms_error": 0.26409,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.15847,
+        "max_error": 0.71854,
+        "rms_error": 0.2516,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.10191,
+            "rms_error": 0.14289,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.10593,
+            "rms_error": 0.13801,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.22965,
+            "rms_error": 0.34689,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.13353,
+        "max_error": 0.41202,
+        "rms_error": 0.16619,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.2431,
+        "max_error": 1.84906,
+        "rms_error": 0.41924,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.30468,
+        "max_error": 3.84382,
+        "rms_error": 0.74215,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.03007,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.03007,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.19181,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.19181,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.1531,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.1531,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.13815,
+        "mean_rel_error": 0.00944,
+        "std_rel_error": 0.06585,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.12385,
+        "mean_rel_error": 0.00995,
+        "std_rel_error": 0.08223,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.14255,
+        "mean_rel_error": 0.04475,
+        "std_rel_error": 0.07962,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 204,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.12954,
+        "max_error": 1.77423,
+        "rms_error": 0.34378,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.3374,
+            "rms_error": 0.65628,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.04849,
+            "rms_error": 0.06189,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.05774,
+            "rms_error": 0.07096,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.13193,
+        "max_error": 1.61008,
+        "rms_error": 0.31839,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.29391,
+            "rms_error": 0.59292,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.05873,
+            "rms_error": 0.07004,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.08294,
+            "rms_error": 0.11918,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.1635,
+        "max_error": 0.97523,
+        "rms_error": 0.27259,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.19617,
+            "rms_error": 0.37128,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.11433,
+            "rms_error": 0.15299,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.17743,
+            "rms_error": 0.26542,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.12278,
+        "max_error": 1.70992,
+        "rms_error": 0.33021,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.23635,
+        "max_error": 1.68092,
+        "rms_error": 0.43675,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.22798,
+        "max_error": 1.61275,
+        "rms_error": 0.43984,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.04995,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.04995,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.12983,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.12983,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.14647,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.14647,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.07355,
+        "mean_rel_error": 0.00488,
+        "std_rel_error": 0.03494,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.0645,
+        "mean_rel_error": 0.00552,
+        "std_rel_error": 0.03845,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.06015,
+        "mean_rel_error": 0.01398,
+        "std_rel_error": 0.03111,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 205,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.10436,
+        "max_error": 0.46174,
+        "rms_error": 0.1546,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.1691,
+            "rms_error": 0.23932,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.11719,
+            "rms_error": 0.15056,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.05565,
+            "rms_error": 0.06493,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.11168,
+        "max_error": 0.41475,
+        "rms_error": 0.15083,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.14925,
+            "rms_error": 0.21462,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.10412,
+            "rms_error": 0.13415,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.09378,
+            "rms_error": 0.10814,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.15489,
+        "max_error": 0.43491,
+        "rms_error": 0.20006,
+        "passed": true,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.12045,
+            "rms_error": 0.19616,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.12403,
+            "rms_error": 0.15,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.19745,
+            "rms_error": 0.23045,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.10774,
+        "max_error": 0.44068,
+        "rms_error": 0.15138,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.42393,
+        "max_error": 3.63673,
+        "rms_error": 0.76341,
+        "threshold": 0.6,
+        "passed": true
+      },
+      "Mgas-T": {
+        "mean_error": 0.43087,
+        "max_error": 5.37608,
+        "rms_error": 1.03251,
+        "threshold": 0.6,
+        "passed": true
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.03836,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.03836,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.14976,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.14976,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.15128,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.15128,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.04605,
+        "mean_rel_error": 0.00114,
+        "std_rel_error": 0.10502,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.04855,
+        "mean_rel_error": 0.00148,
+        "std_rel_error": 0.11789,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.0716,
+        "mean_rel_error": 0.02294,
+        "std_rel_error": 0.08823,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  },
+  {
+    "epoch": 206,
+    "n_samples": 8,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error": 0.11182,
+        "max_error": 1.1279,
+        "rms_error": 0.23524,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.22171,
+            "rms_error": 0.42191,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.0988,
+            "rms_error": 0.11802,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.05322,
+            "rms_error": 0.09227,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error": 0.15557,
+        "max_error": 0.9605,
+        "rms_error": 0.24074,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.20343,
+            "rms_error": 0.36883,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.10829,
+            "rms_error": 0.12947,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.15884,
+            "rms_error": 0.19603,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      },
+      "T": {
+        "mean_error": 0.20387,
+        "max_error": 0.8685,
+        "rms_error": 0.30357,
+        "passed": false,
+        "scale_errors": {
+          "low_k": {
+            "mean_error": 0.19995,
+            "rms_error": 0.35112,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": false,
+            "n_bins": 8
+          },
+          "mid_k": {
+            "mean_error": 0.1137,
+            "rms_error": 0.13318,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "passed": true,
+            "n_bins": 9
+          },
+          "high_k": {
+            "mean_error": 0.26871,
+            "rms_error": 0.35287,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "passed": true,
+            "n_bins": 13
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error": 0.11635,
+        "max_error": 1.04679,
+        "rms_error": 0.2227,
+        "threshold": 0.3,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "mean_error": 0.73975,
+        "max_error": 6.87508,
+        "rms_error": 1.42559,
+        "threshold": 0.6,
+        "passed": false
+      },
+      "Mgas-T": {
+        "mean_error": 0.87561,
+        "max_error": 11.80307,
+        "rms_error": 2.25053,
+        "threshold": 0.6,
+        "passed": false
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r": 0.05067,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.05067,
+            "threshold": 0.1,
+            "passed": true
+          }
+        }
+      },
+      "Mcdm-T": {
+        "max_delta_r": 0.27235,
+        "passed": true,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.27235,
+            "threshold": 0.3,
+            "passed": true
+          }
+        }
+      },
+      "Mgas-T": {
+        "max_delta_r": 0.30536,
+        "passed": false,
+        "scale_errors": {
+          "all_k": {
+            "max_delta_r": 0.30536,
+            "threshold": 0.3,
+            "passed": false
+          }
+        }
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic": 0.1339,
+        "mean_rel_error": 0.01171,
+        "std_rel_error": 0.02248,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic": 0.13065,
+        "mean_rel_error": 0.01352,
+        "std_rel_error": 0.00296,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic": 0.2218,
+        "mean_rel_error": 0.09599,
+        "std_rel_error": 0.0201,
+        "passed": false
+      }
+    },
+    "passed_overall": false
   }
 ]

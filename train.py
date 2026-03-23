@@ -378,6 +378,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config",   type=str, required=True,  help="YAML config 경로")
     parser.add_argument("--resume",   action="store_true",       help="체크포인트에서 재개 (model+optimizer)")
+    parser.add_argument("--resume-path", type=str, default=None, help="재개할 체크포인트 경로 (기본: ckpt_dir/last.pt)")
     parser.add_argument("--finetune", type=str, default=None,    help="모델 가중치만 로드 후 새 스케줄로 학습")
     parser.add_argument("--device",   type=str, default="cuda",  help="학습 디바이스 (기본: cuda)")
     args = parser.parse_args()
@@ -442,8 +443,10 @@ def main():
     ckpt_cfg = cfg.get("checkpoint", {})
     run_dir = Path(ckpt_cfg.get("ckpt_dir", "runs/"))
     run_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(args.config, run_dir / "config.yaml")
-    print(f"[train] config saved → {run_dir / 'config.yaml'}")
+    config_copy_name = "config_resume.yaml" if (args.resume or args.finetune) else "config.yaml"
+    config_copy_path = run_dir / config_copy_name
+    shutil.copy(args.config, config_copy_path)
+    print(f"[train] config saved → {config_copy_path}")
 
     # Trainer
     schedule = tcfg.get("schedule", "cosine")
@@ -564,7 +567,15 @@ def main():
 
     # Resume / Finetune
     if args.resume:
-        start_epoch = trainer.load()
+        resume_path = Path(args.resume_path) if args.resume_path else None
+        if resume_path is not None:
+            print(f"[train] resume checkpoint → {resume_path}")
+        else:
+            default_resume = run_dir / "last.pt"
+            fallback_resume = run_dir / ckpt_cfg.get("ckpt_name", "best.pt")
+            chosen = default_resume if default_resume.exists() else fallback_resume
+            print(f"[train] resume checkpoint → {chosen}")
+        start_epoch = trainer.load(resume_path)
     elif args.finetune:
         trainer.load_weights_only(args.finetune)
         start_epoch = 0

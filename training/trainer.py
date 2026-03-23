@@ -201,20 +201,81 @@ class Trainer:
             "epoch":     epoch,
             "model":     self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
+            "scheduler": self.scheduler.state_dict(),
             "val_loss":  val_loss,
+            "history":   self._history,
+            "best_val":  self._best_val,
+            "best_epoch": self._best_epoch,
+            "no_improve": self._no_improve,
+            "schedule_type": self._schedule_type,
         }
         torch.save(payload, self.ckpt_dir / (name or self.ckpt_name))
 
     def load(self, path: Optional[Path] = None) -> int:
         """체크포인트 로드 후 시작 epoch 반환."""
-        p = path or (self.ckpt_dir / self.ckpt_name if self.ckpt_dir else None)
+        p = Path(path) if path is not None else None
+        if p is None and self.ckpt_dir is not None:
+            last_path = self.ckpt_dir / self.last_name
+            best_path = self.ckpt_dir / self.ckpt_name
+            p = last_path if last_path.exists() else best_path
         if p is None or not Path(p).exists():
             return 0
         ck = torch.load(p, map_location=self.device)
         self.model.load_state_dict(ck["model"])
         self.optimizer.load_state_dict(ck["optimizer"])
-        print(f"Loaded: epoch={ck['epoch']}  val_loss={ck['val_loss']:.5f}")
-        return ck["epoch"]
+        start_epoch = int(ck["epoch"]) + 1
+
+        if ck.get("scheduler") is not None:
+            self.scheduler.load_state_dict(ck["scheduler"])
+            scheduler_msg = "scheduler=restored"
+        elif self._schedule_type != "plateau":
+            # Older checkpoints do not have scheduler state. For non-plateau
+            # schedulers we can still recover the closed-form state at epoch N.
+            self.scheduler.step(start_epoch)
+            scheduler_msg = f"scheduler=fast-forwarded({start_epoch})"
+        else:
+            scheduler_msg = "scheduler=fresh(no state)"
+
+        if ck.get("history") is not None:
+            self._history = ck["history"]
+
+        if ck.get("best_val") is not None:
+            self._best_val = float(ck["best_val"])
+        elif self.ckpt_dir is not None:
+            best_path = self.ckpt_dir / self.ckpt_name
+            if best_path.exists() and best_path.resolve() != p.resolve():
+                best_ck = torch.load(best_path, map_location="cpu")
+                self._best_val = float(best_ck.get("best_val", best_ck.get("val_loss", math.inf)))
+            else:
+                self._best_val = float(ck["val_loss"])
+        else:
+            self._best_val = float(ck["val_loss"])
+
+        if ck.get("best_epoch") is not None:
+            self._best_epoch = int(ck["best_epoch"])
+        elif self.ckpt_dir is not None:
+            best_path = self.ckpt_dir / self.ckpt_name
+            if best_path.exists() and best_path.resolve() != p.resolve():
+                best_ck = torch.load(best_path, map_location="cpu")
+                self._best_epoch = int(best_ck.get("best_epoch", int(best_ck.get("epoch", -1)) + 1))
+            else:
+                self._best_epoch = int(ck["epoch"]) + 1
+        else:
+            self._best_epoch = int(ck["epoch"]) + 1
+
+        if ck.get("no_improve") is not None:
+            self._no_improve = int(ck["no_improve"])
+        elif self._best_epoch > 0:
+            self._no_improve = max(0, start_epoch - self._best_epoch)
+        else:
+            self._no_improve = 0
+
+        print(
+            f"Loaded: epoch={ck['epoch']}  next_epoch={start_epoch}  "
+            f"val_loss={ck['val_loss']:.5f}  best={self._best_val:.5f}@ep{self._best_epoch}  "
+            f"{scheduler_msg}"
+        )
+        return start_epoch
 
     def load_weights_only(self, path: Union[str, Path]) -> None:
         """모델 가중치만 로드 (optimizer state / epoch 은 유지)."""

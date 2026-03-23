@@ -22,7 +22,6 @@ import yaml
 # Allow running from the GENESIS directory directly
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from models import build_dit, build_unet, build_swin
 from dataloader.normalization import Normalizer
 from flow_matching.flows import build_flow
 from flow_matching.samplers import build_sampler
@@ -31,6 +30,7 @@ from diffusion.schedules import build_schedule
 from diffusion.edm import EDMPrecond, EDMDiffusion
 from diffusion.samplers_edm import heun_sample, euler_sample
 from analysis.camels_evaluator import CAMELSEvaluator
+from train import build_model as build_train_model
 from analysis.report import (
     plot_auto_power_comparison,
     plot_cross_power_grid,
@@ -43,10 +43,10 @@ from analysis.report import (
 )
 
 
-# ── Model builder (mirrors train.py) ──────────────────────────────────────────
+# ── Model builder (delegates to train.py shared resolver) ─────────────────────
 
 def build_model(cfg: dict) -> torch.nn.Module:
-    """Build model from config dict.
+    """Build model from config dict using the shared train.py resolver.
 
     Args:
         cfg: Full experiment config dict.
@@ -54,44 +54,8 @@ def build_model(cfg: dict) -> torch.nn.Module:
     Returns:
         Instantiated torch.nn.Module.
     """
-    mcfg = cfg["model"]
-    arch = mcfg["architecture"]
-    common = dict(
-        in_channels=mcfg.get("in_channels", 3),
-        cond_dim=mcfg.get("cond_dim", 6),
-    )
-
-    if arch == "dit":
-        dcfg = mcfg["dit"]
-        return build_dit(
-            preset=dcfg.get("preset", "B"),
-            patch_size=dcfg.get("patch_size", 8),
-            dropout=mcfg.get("dropout", 0.0),
-            **common,
-        )
-    elif arch == "unet":
-        ucfg = mcfg["unet"]
-        return build_unet(
-            preset=ucfg.get("preset", "B"),
-            attention_resolution=ucfg.get("attention_resolution", 32),
-            channel_se=ucfg.get("channel_se", True),
-            circular_conv=ucfg.get("circular_conv", False),
-            dropout=mcfg.get("dropout", 0.0),
-            cross_attn_cond=ucfg.get("cross_attn_cond", True),
-            per_scale_cond=ucfg.get("per_scale_cond", True),
-            cond_depth=ucfg.get("cond_depth", 4),
-            **common,
-        )
-    elif arch == "swin":
-        scfg = mcfg["swin"]
-        return build_swin(
-            preset=scfg.get("preset", "B"),
-            window_size=scfg.get("window_size", 8),
-            dropout=mcfg.get("dropout", 0.0),
-            **common,
-        )
-    else:
-        raise ValueError(f"Unknown architecture: {arch!r}. Options: dit / unet / swin")
+    model, _ = build_train_model(cfg)
+    return model
 
 
 # ── Sampler builder ────────────────────────────────────────────────────────────
