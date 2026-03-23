@@ -1,0 +1,73 @@
+##############################################################################
+# swin_flow_ft.yaml
+# Fine-tuning from runs/swin_flow/best.pt (ep97, val=0.21022)
+#
+# Usage:
+#   python train.py --config configs/experiments/swin_flow_ft.yaml \
+#                   --finetune runs/swin_flow/best.pt
+#
+# 변경 포인트 vs 원본 swin_flow.yaml:
+#   - lr: 1e-4  →  3e-5  (원본의 1/3; fine-tuning은 낮은 LR 필요)
+#   - schedule: cosine → plateau  (개선 없으면 LR 자동 감소; FT에 더 적합)
+#   - patience: 5, factor: 0.5  (plateau 파라미터)
+#   - warmup_epochs: 0  (가중치 이미 수렴된 상태)
+#   - early_stop_patience: 30  (plateau는 수렴이 느리므로 여유 있게)
+#   - max_epochs: 150
+#   - ckpt_dir: runs/swin_flow_ft/  (원본 덮어쓰지 않도록 분리)
+#   - cfg_scale: 1.5  (추론 시 분포 선명도 향상 → PDF KS D 개선 기대)
+##############################################################################
+
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_default
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.1            # 원본 0.0 → 약간 regularization (과적합 방지)
+  swin:
+    preset: B
+    window_size: 8
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.1
+    sigma_min: 1.0e-4
+  sampler:
+    method: heun
+    steps: 50             # 원본 25 → 50 (PDF 분포 정확도 향상)
+    cfg_scale: 1.2        # 원본 1.0 → 1.5 (조건부 신호 강화)
+    viz:
+      sampler_a: euler
+      sampler_b: heun
+
+training:
+  batch_size: 32
+  num_workers: 4
+  max_epochs: 150
+
+  # ── Optimizer ──
+  lr: 3.0e-5              # 원본 1e-4의 1/3; FT는 낮은 LR
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  optimizer: adamw
+  grad_clip: 1.0
+
+  # ── LR Schedule: ReduceLROnPlateau ──
+  # cosine은 총 epoch이 끝나면 더 내려갈 곳이 없음
+  # plateau는 val_loss 정체 시마다 LR × factor로 자동 감소
+  schedule: plateau
+  plateau_patience: 3     # 8 epoch 개선 없으면 LR 감소
+  plateau_factor: 0.65     # LR × 0.5
+  eta_min: 1.0e-7         # 최소 LR
+
+  warmup_epochs: 0        # 이미 수렴된 가중치 → warmup 불필요
+
+  early_stop_patience: 30 # plateau 스케줄은 수렴이 느리므로 여유 있게
+
+checkpoint:
+  ckpt_dir: runs/swin_flow_ft/
+  ckpt_name: best.pt

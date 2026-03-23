@@ -263,13 +263,17 @@ def plot_correlation_coefficients(results: dict, save_dir, title: str = ""):
         ax.grid(True, alpha=0.3)
         ax.set_facecolor("white")
 
-        # ── [NEW] Scale-dependent Δr threshold lines (§4.3) ──
-        for label, k_lo, k_hi, thr in CORRELATION_THRESHOLDS:
+        # ── [NEW] Pair-dependent Δr threshold lines (Data-Driven Report Table 8) ──
+        # [OLD — §4.3 scale-dependent, uniform across pairs]
+        # for label, k_lo, k_hi, thr in CORRELATION_THRESHOLDS:  # was a list
+        #     ...
+        pair_thresholds = CORRELATION_THRESHOLDS.get(pair, [("all_k", 0.0, 1e6, 0.3)])
+        for label, k_lo, k_hi, thr in pair_thresholds:
             k_mask = (k >= k_lo) & (k < k_hi)
             if k_mask.sum() > 0:
-                k_range = k[k_mask]
-                # Show Δr threshold as horizontal annotation
-                ax.axhline(1.0 - thr, color="orange", ls=":", lw=0.8, alpha=0.5)
+                # Show Δr threshold as horizontal annotation (1 - thr line on r-axis)
+                ax.axhline(1.0 - thr, color="orange", ls=":", lw=0.8, alpha=0.5,
+                           label=f"thr Δr<{thr}")
 
         if passed is not None:
             color = "green" if passed else "red"

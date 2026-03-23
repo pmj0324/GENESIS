@@ -8,9 +8,10 @@ r_ij(k) = P_ij(k) / sqrt(P_ii(k) * P_jj(k))
   k ~ 1 h/Mpc:    r ≈ 0.85~0.90
   k > 3 h/Mpc:    r ≈ 0.70~0.80
 
-평가 기준 (§4.3):
-  k < 5 h/Mpc:  Δr < 0.1  (well-defined, physically interpretable)
-  k > 5 h/Mpc:  Δr < 0.2  (noisy due to limited mode counts)
+평가 기준 (Data-Driven Report Table 8):
+  Mcdm-Mgas: Δr < 0.1  (all k; CV floor=3.1%, achievable target)
+  Mcdm-T:    Δr < 0.3  (all k; CV floor=29%, indirect correlation)
+  Mgas-T:    Δr < 0.3  (all k; CV floor=29%, high-k nearly noise-floor)
 """
 import numpy as np
 
@@ -22,13 +23,32 @@ from .cross_spectrum import (
     CROSS_PAIRS,
 )
 
-# ── Scale-dependent correlation thresholds (§4.3) ────────────────────────
-CORRELATION_THRESHOLDS = [
-    # (label, k_min, k_max, max_delta_r)
-    ("k<5",  0.0, 5.0,  0.1),   # r(k) well-defined, feedback-scale decorrelation
-    ("k>=5", 5.0, 1e6,  0.2),   # noisy due to limited mode counts + cosmic variance
-]
-# [OLD] Uniform threshold:
+# ── Pair-dependent correlation thresholds (Data-Driven Report Table 8) ───
+# {pair: [(label, k_min, k_max, max_delta_r)]}
+#
+# Mcdm-Mgas: CV floor 3.1% → tight target Δr < 0.1
+# Mcdm-T:    CV floor 29%  → relaxed target Δr < 0.3  (indirect coupling)
+# Mgas-T:    CV floor 29%  → relaxed target Δr < 0.3  (high-k noise-dominated)
+#
+# k < 1000 px ≈ all physically meaningful k (256×256 grid max ~181 px)
+# so "k<1000 px" threshold covers all bins; no high-k report-only zone needed.
+CORRELATION_THRESHOLDS = {
+    "Mcdm-Mgas": [
+        ("all_k", 0.0, 1e6, 0.1),   # Δr < 0.1 all scales
+    ],
+    "Mcdm-T": [
+        ("all_k", 0.0, 1e6, 0.3),   # Δr < 0.3 all scales
+    ],
+    "Mgas-T": [
+        ("all_k", 0.0, 1e6, 0.3),   # Δr < 0.3 all scales
+    ],
+}
+# [OLD — §4.3, uniform scale-dependent, before data-driven calibration]
+# CORRELATION_THRESHOLDS_OLD = [
+#     ("k<5",  0.0, 5.0,  0.1),   # r(k) well-defined, feedback-scale decorrelation
+#     ("k>=5", 5.0, 1e6,  0.2),   # noisy due to limited mode counts + cosmic variance
+# ]
+# [OLD] Single uniform threshold:
 # CORRELATION_THRESHOLD_OLD = 0.1  # max_delta_r < 0.1 for all k
 
 
@@ -101,10 +121,14 @@ def compute_correlation_errors(
 ) -> dict:
     """Compute errors in cross-correlation coefficients between true and generated maps.
 
-    Scale-dependent thresholds (§4.3):
-        k < 5 h/Mpc:  Δr < 0.1
-        k >= 5 h/Mpc: Δr < 0.2
+    Pair-dependent thresholds (Data-Driven Report Table 8):
+        Mcdm-Mgas: Δr < 0.1  (all k; tight — CV floor 3.1%)
+        Mcdm-T:    Δr < 0.3  (all k; relaxed — CV floor 29%)
+        Mgas-T:    Δr < 0.3  (all k; relaxed — CV floor 29%)
 
+    # [OLD — §4.3 scale-dependent, uniform across pairs]
+    # k < 5 h/Mpc:  Δr < 0.1
+    # k >= 5 h/Mpc: Δr < 0.2
     # [OLD] Uniform threshold: passed = max_delta_r < 0.1 for all k
 
     Args:
@@ -134,10 +158,15 @@ def compute_correlation_errors(
         # ── [OLD] Uniform pass criterion ──
         # passed = bool(max_delta_r < 0.1)
 
-        # ── [NEW] Scale-dependent pass criterion (§4.3) ──
+        # ── [OLD] Scale-dependent (uniform across pairs) criterion ──
+        # for label, k_lo, k_hi, thr in CORRELATION_THRESHOLDS_OLD:
+        #     ...
+
+        # ── [NEW] Pair-dependent pass criterion (Data-Driven Report Table 8) ──
+        pair_thresholds = CORRELATION_THRESHOLDS.get(pair_key, [("all_k", 0.0, 1e6, 0.3)])
         scale_errors = {}
         all_ranges_pass = True
-        for label, k_lo, k_hi, thr in CORRELATION_THRESHOLDS:
+        for label, k_lo, k_hi, thr in pair_thresholds:
             mask = (k >= k_lo) & (k < k_hi)
             if mask.sum() == 0:
                 scale_errors[label] = {

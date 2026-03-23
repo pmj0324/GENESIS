@@ -29,9 +29,13 @@ def compute_power_spectrum_2d(field, box_size=25.0, n_bins=30):
     fft = np.fft.fft2(field)
     power_2d = np.abs(fft) ** 2 / (H * W) ** 2
 
-    # 물리 k (2π/L * mode index)
-    kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / (box_size / W)
-    ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / (box_size / H)
+    # 물리 k: k_m = m * 2π / L (m: 정수 모드 인덱스, L: 박스 길이)
+    # fftfreq(N, 1/N) → 정수 모드 인덱스 [0,1,...,N/2-1,-N/2,...,-1]
+    # 올바른 분모: box_size (L), 잘못된 분모: box_size/W (dx) → W배 과대평가
+    # [OLD-BUG] kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / (box_size / W)
+    # [OLD-BUG] ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / (box_size / H)
+    kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / box_size
+    ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / box_size
     kx, ky = np.meshgrid(kx, ky)
     k = np.sqrt(kx**2 + ky**2)
 

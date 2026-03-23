@@ -23,6 +23,7 @@ power spectrum:
   → 모두 denormalize된 log10 맵 기준 P(k)
 """
 
+import json
 import shutil
 import torch
 import numpy as np
@@ -295,8 +296,9 @@ class EpochVisualizer:
                 thr = e.get("threshold", 0.15) * 100
                 print(f"    {pair:<12}  {e['mean_error']*100:5.1f}% (<{thr:.0f}%)  {ok}")
 
-            # Correlation (scale-dependent, §4.3)
-            print("  Correlation [max Δr]  (k<5: <0.1, k≥5: <0.2):")
+            # Correlation (pair-dependent, Data-Driven Table 8)
+            # [OLD] print("  Correlation [max Δr]  (k<5: <0.1, k≥5: <0.2):")
+            print("  Correlation [max Δr]  (Mcdm-Mgas: <0.1 | T-pairs: <0.3):")
             for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
                 c = corr_err[pair]
                 ok = "✓" if c["passed"] else "✗"
@@ -319,8 +321,122 @@ class EpochVisualizer:
 
             print(f"  {sep}\n")
 
+            # ── JSON 저장 ────────────────────────────────────────────────────
+            self._save_metrics_json(epoch, N, spec_err, corr_err, pdf_res)
+
         except Exception as e:
             print(f"  [metrics] WARNING: metric computation failed — {e}", flush=True)
+
+    def _save_metrics_json(
+        self,
+        epoch: int,
+        n_samples: int,
+        spec_err: dict,
+        corr_err: dict,
+        pdf_res: dict,
+    ) -> None:
+        """에폭 metrics를 JSON으로 저장 (누적 history 파일에 append).
+
+        저장 위치: {plot_dir}/../metrics_history.json
+        각 에폭 항목 구조:
+            epoch, n_samples, auto_power, cross_power, correlation, pdf, passed_overall
+        """
+        # ── Auto-Power ────────────────────────────────────────────────────────
+        auto = {}
+        for ch in ["Mcdm", "Mgas", "T"]:
+            e = spec_err[ch]
+            auto[ch] = {
+                "mean_error": round(e["mean_error"], 5),
+                "max_error":  round(e["max_error"],  5),
+                "rms_error":  round(e["rms_error"],  5),
+                "passed":     e["passed"],
+                "scale_errors": {
+                    label: {
+                        "mean_error": round(se["mean_error"], 5),
+                        "rms_error":  round(se["rms_error"],  5),
+                        "threshold_mean": se["threshold_mean"],
+                        "threshold_rms":  se["threshold_rms"],
+                        "passed": se["passed"],
+                        "n_bins": se["n_bins"],
+                    }
+                    for label, se in e.get("scale_errors", {}).items()
+                },
+            }
+
+        # ── Cross-Power ───────────────────────────────────────────────────────
+        cross = {}
+        for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
+            e = spec_err[pair]
+            cross[pair] = {
+                "mean_error": round(e["mean_error"], 5),
+                "max_error":  round(e["max_error"],  5),
+                "rms_error":  round(e["rms_error"],  5),
+                "threshold":  e.get("threshold", None),
+                "passed":     e["passed"],
+            }
+
+        # ── Correlation ───────────────────────────────────────────────────────
+        corr = {}
+        for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
+            c = corr_err[pair]
+            corr[pair] = {
+                "max_delta_r": round(c["max_delta_r"], 5),
+                "passed":      c["passed"],
+                "scale_errors": {
+                    label: {
+                        "max_delta_r": round(se["max_delta_r"], 5),
+                        "threshold":   se["threshold"],
+                        "passed":      se["passed"],
+                    }
+                    for label, se in c.get("scale_errors", {}).items()
+                },
+            }
+
+        # ── PDF ───────────────────────────────────────────────────────────────
+        pdf = {}
+        for ch in ["Mcdm", "Mgas", "T"]:
+            p = pdf_res[ch]
+            pdf[ch] = {
+                "ks_statistic":  round(float(p["ks_statistic"]), 5),
+                "mean_rel_error": round(float(p.get("mean_rel_error", float("nan"))), 5),
+                "std_rel_error":  round(float(p.get("std_rel_error",  float("nan"))), 5),
+                "passed": p["passed"],
+            }
+
+        # ── overall pass ──────────────────────────────────────────────────────
+        passed_overall = (
+            all(auto[ch]["passed"] for ch in auto)
+            and all(cross[p]["passed"] for p in cross)
+            and all(corr[p]["passed"] for p in corr)
+            and all(pdf[ch]["passed"] for ch in pdf)
+        )
+
+        record = {
+            "epoch":          epoch + 1,
+            "n_samples":      n_samples,
+            "auto_power":     auto,
+            "cross_power":    cross,
+            "correlation":    corr,
+            "pdf":            pdf,
+            "passed_overall": passed_overall,
+        }
+
+        # ── 누적 history 파일에 append ────────────────────────────────────────
+        metrics_path = self.plot_dir.parent / "metrics_history.json"
+        history: list = []
+        if metrics_path.exists():
+            try:
+                with open(metrics_path) as f:
+                    history = json.load(f)
+            except Exception:
+                history = []
+        # epoch 중복 방지: 같은 epoch 있으면 덮어씀
+        history = [r for r in history if r.get("epoch") != record["epoch"]]
+        history.append(record)
+        history.sort(key=lambda r: r["epoch"])
+        with open(metrics_path, "w") as f:
+            json.dump(history, f, indent=2, allow_nan=True)
+        print(f"  [metrics] saved → {metrics_path}", flush=True)
 
     def _to_log10(self, x) -> np.ndarray:
         """normalized z-space → log10(physical field)"""

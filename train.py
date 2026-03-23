@@ -399,6 +399,7 @@ def main():
         batch_size=tcfg.get("batch_size", 32),
         num_workers=tcfg.get("num_workers", 4),
         data_fraction=cfg["data"].get("data_fraction", 1.0),
+        augment=cfg["data"].get("augment", False),   # D4 대칭 augmentation (train only)
         seed=cfg["data"].get("seed", 42),
     )
 

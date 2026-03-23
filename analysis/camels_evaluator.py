@@ -602,6 +602,7 @@ class CAMELSEvaluator:
         ex_maps=None,
         ex_params=None,
         protocols=None,
+        max_samples: int = 100,
         n_multirun: int = 0,
     ) -> dict:
         """Run all specified evaluation protocols.
@@ -617,6 +618,7 @@ class CAMELSEvaluator:
             ex_maps: (N_ex, 3, H, W) extreme maps (required for "ex" protocol).
             ex_params: (N_ex, 6) extreme params (required for "ex" protocol).
             protocols: List of protocol names to run. Default: ["lh"].
+            max_samples: Maximum number of LH validation samples to evaluate.
             n_multirun: If > 0, run multirun evaluation with this many seeds.
 
         Returns:
@@ -629,7 +631,9 @@ class CAMELSEvaluator:
 
         if "lh" in protocols:
             print("[run_all] Running LH protocol ...", flush=True)
-            all_results["lh"] = self.evaluate_lh(val_maps, val_params)
+            all_results["lh"] = self.evaluate_lh(
+                val_maps, val_params, max_samples=max_samples
+            )
 
         if "cv" in protocols:
             if cv_maps is None or fiducial_cond is None:
@@ -657,7 +661,7 @@ class CAMELSEvaluator:
         if n_multirun > 0:
             print(f"[run_all] Running multi-run evaluation (n={n_multirun}) ...", flush=True)
             all_results["multirun"] = self.evaluate_multirun(
-                val_maps, val_params, n_runs=n_multirun
+                val_maps, val_params, n_runs=n_multirun, max_samples=max_samples
             )
 
         return all_results

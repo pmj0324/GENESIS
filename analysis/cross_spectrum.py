@@ -109,9 +109,12 @@ def _fft_and_kgrid(field: np.ndarray, box_size: float = 25.0, n_bins: int = 30):
 
     fft_2d = np.fft.fft2(field)
 
-    # Physical k-grid: kx = fftfreq(W, 1/W) * 2pi / (box_size/W)
-    kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / (box_size / W)
-    ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / (box_size / H)
+    # Physical k-grid: k_m = m * 2π / L
+    # fftfreq(N, 1/N) → integer mode indices. Correct divisor: box_size (L)
+    # [OLD-BUG] kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / (box_size / W)
+    # [OLD-BUG] ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / (box_size / H)
+    kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / box_size
+    ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / box_size
     kx_2d, ky_2d = np.meshgrid(kx, ky)
     k_2d = np.sqrt(kx_2d**2 + ky_2d**2)
 
@@ -230,15 +233,28 @@ def compute_spectrum_errors(
         - Compute per-sample P(k), average across batch.
         - relative_error = |P_gen_mean - P_true_mean| / (P_true_mean + 1e-30)
 
-    Auto-power thresholds: field-dependent + scale-dependent (§4.1)
-        Mcdm: k<1 → 10%, k=1-5 → 15%, k>5 → 25%
-        Mgas: k<1 → 15%, k=1-5 → 20%, k>5 → 30%
-        T:    k<1 → 20%, k=1-5 → 25%, k>5 → 35%
-        RMS threshold = 1.5× mean threshold per range.
+    Auto-power thresholds: field-dependent + scale-dependent (Data-Driven Report Table 7)
+        Mcdm: low_k(<1)  → mean<15%, rms<22.5%
+              mid_k(1-5)  → mean<15%, rms<22.5%
+              high_k(>5)  → mean<25%, rms<37.5%
+        Mgas: low_k(<1)  → mean<18%, rms<27%
+              mid_k(1-5)  → mean<18%, rms<27%
+              high_k(>5)  → mean<30%, rms<45%
+        T:    low_k(<1)  → mean<20%, rms<30%
+              mid_k(1-5)  → mean<20%, rms<30%
+              high_k(>5)  → mean<35%, rms<52.5%
 
-    Cross-power thresholds: pair-dependent (§4.2)
-        Mcdm-Mgas: <15%, Mcdm-T: <25%, Mgas-T: <15%
+    Cross-power thresholds: pair-dependent (Data-Driven Report Table 8)
+        Mcdm-Mgas: mean<30%  (CV floor=27.2%)
+        Mcdm-T:    mean<60%  (CV floor=57.9%)
+        Mgas-T:    mean<60%  (CV floor=103.5%)
 
+    # [OLD — Evaluation Criteria Report §4.1, pre-data-driven]:
+    #   Mcdm: k<1→10%, k=1-5→15%, k>5→25%
+    #   Mgas: k<1→15%, k=1-5→20%, k>5→30%
+    #   T:    k<1→20%, k=1-5→25%, k>5→35%
+    # [OLD — §4.2 cross-power]:
+    #   Mcdm-Mgas: <15%, Mcdm-T: <25%, Mgas-T: <15%
     # [OLD] Thresholds (uniform, before Evaluation Criteria Report):
     #   auto pass = mean<5%, max<15%, rms<7%
     #   cross pass = mean<10%

@@ -122,7 +122,7 @@ def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
             cfg_prob=fcfg.get("cfg_prob", 0.1),
             sigma_min=fcfg.get("sigma_min", 1e-4),
         )
-        sampler_name = gcfg_s.get("sampler_a", "euler").lower()
+        sampler_name = gcfg_s.get("method", gcfg_s.get("sampler_a", "euler")).lower()
         sampler = build_sampler(sampler_name)
 
         def sampler_fn(m, shape, cond):
@@ -154,7 +154,7 @@ def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
             input_scale=dcfg.get("input_scale", 1.0),
         )
         eta = gcfg_s.get("eta", 0.0)
-        sampler_name = gcfg_s.get("sampler_a", "ddim").lower()
+        sampler_name = gcfg_s.get("method", gcfg_s.get("sampler_a", "ddim")).lower()
 
         if sampler_name == "ddim":
             def sampler_fn(m, shape, cond):
@@ -371,6 +371,7 @@ def main():
         ex_maps=ex_maps,
         ex_params=ex_params,
         protocols=args.protocols,
+        max_samples=args.n_samples,
         n_multirun=args.n_multirun,
     )
 
