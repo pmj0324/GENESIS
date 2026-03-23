@@ -27,6 +27,7 @@ LH/1P/CV/EX 프로토콜 기반 생성 모델 평가.
 import numpy as np
 import torch
 from typing import Callable, Optional, List
+from tqdm.auto import tqdm
 
 from .cross_spectrum import (
     _to_numpy, compute_spectrum_errors, CHANNELS, AUTO_POWER_THRESHOLDS,
@@ -65,6 +66,12 @@ class CAMELSEvaluator:
         self.device = device
         self.box_size = box_size
         self.n_gen_per_cond = n_gen_per_cond
+
+    def _progress(self, iterable, *, total=None, desc="", enabled=True, leave=False):
+        """Wrap iterables with tqdm so long evaluations show ETA and progress."""
+        if not enabled:
+            return iterable
+        return tqdm(iterable, total=total, desc=desc, leave=leave, dynamic_ncols=True)
 
     def _to_log10(self, x_norm) -> np.ndarray:
         """Denormalize z-space maps and convert to log10(physical) space.
@@ -150,10 +157,7 @@ class CAMELSEvaluator:
         true_log10_list = []
         gen_log10_list = []
 
-        for i in range(N):
-            if verbose and (i % 10 == 0 or i == N - 1):
-                print(f"  [evaluate_lh] {i+1}/{N} ...", flush=True)
-
+        for i in self._progress(range(N), total=N, desc="LH samples", enabled=verbose):
             true_l10 = self._to_log10(val_maps_np[i])  # (3, H, W)
             true_log10_list.append(true_l10)
 
@@ -240,23 +244,24 @@ class CAMELSEvaluator:
 
         # True log10 maps
         true_log10_list = []
-        for i in range(N_cv):
+        for i in self._progress(range(N_cv), total=N_cv, desc="CV true maps", enabled=True):
             true_log10_list.append(self._to_log10(cv_maps_np[i]))
         true_batch = np.stack(true_log10_list, axis=0)  # (N_cv, 3, H, W)
 
         # Generated log10 maps
+        print(f"  [evaluate_cv] generating {N_cv} fiducial samples ...", flush=True)
         gen_batch = self._generate_log10(fiducial_cond_norm, n_samples=N_cv)  # (N_cv, 3, H, W)
 
         from .cross_spectrum import compute_cross_power_spectrum_2d
         results = {}
 
-        for ci, ch in enumerate(CHANNELS):
+        for ci, ch in enumerate(self._progress(CHANNELS, total=len(CHANNELS), desc="CV channels", enabled=True)):
             # Per-sample P(k) for true and gen
             pk_true_list = []
             pk_gen_list = []
             k_centers = None
 
-            for b in range(N_cv):
+            for b in self._progress(range(N_cv), total=N_cv, desc=f"CV spectra {ch}", enabled=True):
                 k_c, Pk_t = compute_cross_power_spectrum_2d(
                     true_batch[b, ci], true_batch[b, ci], box_size=box_size
                 )
@@ -336,14 +341,30 @@ class CAMELSEvaluator:
 
         # Compute fiducial P(k) (average over fiducial maps)
         fid_np = _to_numpy(fiducial_maps_norm)
-        fid_log10 = np.stack([self._to_log10(fid_np[i]) for i in range(len(fid_np))], axis=0)
+        fid_log10 = np.stack(
+            [
+                self._to_log10(fid_np[i])
+                for i in self._progress(
+                    range(len(fid_np)),
+                    total=len(fid_np),
+                    desc="1P fiducial maps",
+                    enabled=True,
+                )
+            ],
+            axis=0,
+        )
 
         fid_pk = {}
         fid_pk_std = {}
-        for ci, ch in enumerate(CHANNELS):
+        for ci, ch in enumerate(self._progress(CHANNELS, total=len(CHANNELS), desc="1P fid channels", enabled=True)):
             pks = []
             k_c = None
-            for b in range(len(fid_log10)):
+            for b in self._progress(
+                range(len(fid_log10)),
+                total=len(fid_log10),
+                desc=f"1P fid spectra {ch}",
+                enabled=True,
+            ):
                 k_c, pk = compute_cross_power_spectrum_2d(
                     fid_log10[b, ci], fid_log10[b, ci], box_size=box_size
                 )
@@ -354,13 +375,15 @@ class CAMELSEvaluator:
 
         results = {}
 
-        for pname in param_names:
+        for pname in self._progress(param_names, total=len(param_names), desc="1P params", enabled=True):
             maps_np = _to_numpy(onep_maps_norm[pname])
             params_np = _to_numpy(onep_params_norm[pname])
             N_vals = len(maps_np)
 
             param_results = {}
-            for ci, ch in enumerate(CHANNELS):
+            for ci, ch in enumerate(
+                self._progress(CHANNELS, total=len(CHANNELS), desc=f"1P channels {pname}", enabled=True)
+            ):
                 k_centers = fid_pk[ch][0]
                 fid_mean = fid_pk[ch][1]
                 fid_std = fid_pk_std[ch]
@@ -368,7 +391,12 @@ class CAMELSEvaluator:
                 ratio_true_list = []
                 ratio_gen_list = []
 
-                for i in range(N_vals):
+                for i in self._progress(
+                    range(N_vals),
+                    total=N_vals,
+                    desc=f"1P {pname} {ch}",
+                    enabled=True,
+                ):
                     # True P(k) ratio
                     true_l10 = self._to_log10(maps_np[i])
                     _, pk_true = compute_cross_power_spectrum_2d(
@@ -448,7 +476,7 @@ class CAMELSEvaluator:
         has_nan = False
         has_divergence = False
 
-        for i in range(N_ex):
+        for i in self._progress(range(N_ex), total=N_ex, desc="EX samples", enabled=True):
             true_l10 = self._to_log10(ex_maps_np[i])
             true_log10_list.append(true_l10)
 
@@ -512,7 +540,7 @@ class CAMELSEvaluator:
                 "pass_robust": pass with mean+1σ criterion
         """
         runs = []
-        for run_idx in range(n_runs):
+        for run_idx in self._progress(range(n_runs), total=n_runs, desc="Multi-run", enabled=verbose):
             if verbose:
                 print(f"\n[multirun] === Run {run_idx+1}/{n_runs} ===", flush=True)
             # Set different random seed for each run (affects noise in sampling)
