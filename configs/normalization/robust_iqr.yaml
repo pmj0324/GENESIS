@@ -1,0 +1,45 @@
+# Robust Scaling using IQR (Interquartile Range)
+# 공식: z = (log10(x) - median) / IQR
+# 장점: 극값에 덜 민감, 분포 중앙 안정적
+#
+# 사용법:
+#   python -m dataloader.build_dataset splits \
+#       --maps-path   /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+#       --params-path /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt \
+#       --out-dir     GENESIS-data/robust_iqr/ \
+#       --norm-config configs/normalization/robust_iqr.yaml
+
+normalization:
+  Mcdm:
+    method: robust
+    center: 10.8853    # median of log10(x)
+    scale: 0.5874      # IQR (Q3 - Q1)
+    stats:
+      median: 10.8853
+      q1: 10.6268
+      q3: 11.2142
+      mean_z: 0.146
+      std_z: 0.862
+      gt3: 0.96%
+  Mgas:
+    method: robust
+    center: 10.3445
+    scale: 0.6253
+    stats:
+      median: 10.3445
+      q1: 10.0593
+      q3: 10.6846
+      mean_z: 0.099
+      std_z: 0.791
+      gt3: 0.32%
+  T:
+    method: robust
+    center: 3.9027
+    scale: 1.2693
+    stats:
+      median: 3.9027
+      q1: 3.5180
+      q3: 4.7873
+      mean_z: 0.238
+      std_z: 0.642
+      gt3: 0.00%

@@ -14,6 +14,6 @@ python -m dataloader.build_dataset
 # 2. 학습
 echo ""
 echo "[2/2] 학습 시작"
-echo "  config: configs/experiments/unet_diffusion.yaml"
+echo "  config: configs/experiments/diffusion/unet/unet_diffusion.yaml"
 echo ""
-python train.py --config configs/experiments/unet_diffusion.yaml "$@"
+python train.py --config configs/experiments/diffusion/unet/unet_diffusion.yaml "$@"

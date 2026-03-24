@@ -4,7 +4,7 @@ GENESIS - Evaluation Entry Point
 사용법:
     python evaluate.py \\
         --checkpoint checkpoints/unet_diffusion_v2/best.pt \\
-        --config configs/experiments/unet_diffusion_v2.yaml \\
+        --config configs/experiments/diffusion/unet/unet_diffusion_v2.yaml \\
         --data-dir GENESIS-data/affine_default \\
         --output-dir evaluation_results/ \\
         --n-samples 100 \\
@@ -15,6 +15,9 @@ import argparse
 import sys
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
@@ -22,7 +25,7 @@ import yaml
 # Allow running from the GENESIS directory directly
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dataloader.normalization import Normalizer
+from dataloader.normalization import CHANNELS, PARAM_NAMES, Normalizer, denormalize_params
 from flow_matching.flows import build_flow
 from flow_matching.samplers import build_sampler
 from diffusion.ddpm import GaussianDiffusion
@@ -41,6 +44,106 @@ from analysis.report import (
     save_json_report,
     save_text_summary,
 )
+
+
+# ── Sample preview helpers ─────────────────────────────────────────────────────
+
+CHANNEL_LABELS = ["log10(Mcdm)", "log10(Mgas)", "log10(T)"]
+CMAPS = ["viridis", "plasma", "inferno"]
+
+
+def _to_log10_phys(x: np.ndarray) -> np.ndarray:
+    return np.log10(np.clip(x, 1e-30, None))
+
+
+def _channel_ranges(real_phys: np.ndarray) -> list[tuple[float, float]]:
+    real_log = _to_log10_phys(real_phys)
+    ranges = []
+    for ci in range(len(CHANNELS)):
+        data = real_log[:, ci]
+        data = data[np.isfinite(data)]
+        if data.size == 0:
+            ranges.append((-1.0, 1.0))
+            continue
+        vmin = float(np.percentile(data, 1.0))
+        vmax = float(np.percentile(data, 99.0))
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
+            vmin, vmax = -1.0, 1.0
+        ranges.append((vmin, vmax))
+    return ranges
+
+
+def _cond_str(cond_norm: np.ndarray) -> str:
+    cond_raw = denormalize_params(torch.from_numpy(cond_norm)).numpy().astype(np.float32, copy=False)
+    return "  ".join(f"{name}={value:.4f}" for name, value in zip(PARAM_NAMES, cond_raw))
+
+
+def _save_condition_preview(
+    samples_phys: np.ndarray,
+    real_phys: np.ndarray,
+    cond_norm: np.ndarray,
+    out_path: Path,
+    split_name: str,
+    sample_index: int,
+) -> None:
+    n_gen = len(samples_phys)
+    if n_gen <= 0:
+        return
+
+    real_phys = np.asarray(real_phys, dtype=np.float32)
+    samples_phys = np.asarray(samples_phys, dtype=np.float32)
+    ch_ranges = _channel_ranges(np.concatenate([real_phys[None, ...], samples_phys], axis=0))
+    n_image_cols = 1 + n_gen
+    fig = plt.figure(figsize=(2.2 * n_image_cols + 1.2, 7.8))
+    width_ratios = [1.0] * n_image_cols + [0.07]
+    gs = fig.add_gridspec(
+        len(CHANNELS),
+        len(width_ratios),
+        width_ratios=width_ratios,
+        hspace=0.14,
+        wspace=0.08,
+    )
+
+    axes = []
+    cbar_axes = []
+    for ci in range(len(CHANNELS)):
+        row_axes = []
+        for col in range(n_image_cols):
+            row_axes.append(fig.add_subplot(gs[ci, col]))
+        axes.append(row_axes)
+        cbar_axes.append(fig.add_subplot(gs[ci, -1]))
+
+    fig.suptitle(
+        f"{split_name.upper()} condition #{sample_index}",
+        fontsize=10,
+    )
+
+    for ci, (ch_label, cmap) in enumerate(zip(CHANNEL_LABELS, CMAPS)):
+        vmin, vmax = ch_ranges[ci]
+        real_log = _to_log10_phys(real_phys[ci])
+        ax_real = axes[ci][0]
+        im_real = ax_real.imshow(real_log, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
+        ax_real.set_title("True", fontsize=8)
+        ax_real.axis("off")
+
+        last_im = im_real
+        for gen_idx in range(n_gen):
+            gen_log = _to_log10_phys(samples_phys[gen_idx, ci])
+            ax_gen = axes[ci][gen_idx + 1]
+            im_gen = ax_gen.imshow(gen_log, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
+            ax_gen.set_title(f"Gen #{gen_idx + 1}", fontsize=8)
+            ax_gen.axis("off")
+            last_im = im_gen
+
+        axes[ci][0].set_ylabel(ch_label, fontsize=10)
+        cbar = fig.colorbar(last_im, cax=cbar_axes[ci], orientation="vertical")
+        cbar.set_label(ch_label, rotation=90, labelpad=10)
+
+    footer = _cond_str(cond_norm)
+    fig.text(0.01, 0.01, footer, fontsize=8, family="monospace", va="bottom")
+    fig.subplots_adjust(top=0.90, left=0.04, right=0.98, bottom=0.10)
+    fig.savefig(out_path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
 
 
 # ── Model builder (delegates to train.py shared resolver) ─────────────────────
@@ -173,7 +276,11 @@ def parse_args():
     )
     parser.add_argument(
         "--data-dir", type=str, required=True,
-        help="Path to data directory (contains val_maps.npy, val_params.npy, metadata.yaml)"
+        help="Path to data directory (contains <split>_maps.npy, <split>_params.npy, metadata.yaml)"
+    )
+    parser.add_argument(
+        "--split", type=str, default="val", choices=["val", "test"],
+        help="Which split to evaluate from the data directory"
     )
     parser.add_argument(
         "--output-dir", type=str, default="evaluation_results/",
@@ -208,6 +315,18 @@ def parse_args():
         "--n-multirun", type=int, default=0,
         help="Number of independent sampling runs for uncertainty quantification "
              "(§4.6: 5 runs recommended). 0 = disabled."
+    )
+    parser.add_argument(
+        "--save-sample-images", action="store_true",
+        help="Also save per-condition preview images for the evaluated split"
+    )
+    parser.add_argument(
+        "--sample-preview-count", type=int, default=8,
+        help="Number of conditioning examples to save preview files for"
+    )
+    parser.add_argument(
+        "--sample-preview-generations", type=int, default=4,
+        help="Number of generated samples to render per conditioning example"
     )
     return parser.parse_args()
 
@@ -251,13 +370,13 @@ def main():
     # Sampler function
     sampler_fn, model = build_sampler_fn(cfg, model, device)
 
-    # Load validation data
-    val_maps_path = data_dir / "val_maps.npy"
-    val_params_path = data_dir / "val_params.npy"
-    print(f"[evaluate] loading val data from {data_dir} ...")
-    val_maps = np.load(val_maps_path)     # (N, 3, H, W)
-    val_params = np.load(val_params_path)  # (N, 6)
-    print(f"  val_maps={val_maps.shape}  val_params={val_params.shape}")
+    # Load selected split data
+    split_maps_path = data_dir / f"{args.split}_maps.npy"
+    split_params_path = data_dir / f"{args.split}_params.npy"
+    print(f"[evaluate] loading {args.split} data from {data_dir} ...")
+    val_maps = np.load(split_maps_path)      # (N, 3, H, W)
+    val_params = np.load(split_params_path)  # (N, 6)
+    print(f"  {args.split}_maps={val_maps.shape}  {args.split}_params={val_params.shape}")
 
     # Optionally load CV data
     cv_maps = None
@@ -348,7 +467,7 @@ def main():
     lh_results = all_results.get("lh", all_results)
 
     # Save plots
-    title = f"GENESIS Evaluation — {Path(args.checkpoint).parent.name}"
+    title = f"GENESIS Evaluation — {Path(args.checkpoint).parent.name} ({args.split})"
 
     plot_auto_power_comparison(lh_results, output_dir, title=title)
     print("  auto_power_comparison.png")
@@ -364,6 +483,40 @@ def main():
 
     plot_evaluation_dashboard(all_results, output_dir, title=title)
     print("  evaluation_dashboard.png")
+
+    if args.save_sample_images:
+        n_preview = min(args.sample_preview_count, args.n_samples, len(val_maps))
+        if n_preview > 0:
+            n_gen = max(1, args.sample_preview_generations)
+            preview_dir = output_dir / f"{args.split}_sample_previews"
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            print(
+                f"[evaluate] saving {args.split} preview images "
+                f"(conditions={n_preview}, generations_per_condition={n_gen}) ..."
+            )
+            with torch.no_grad():
+                for sample_index in range(n_preview):
+                    cond_np = np.asarray(val_params[sample_index], dtype=np.float32)
+                    cond = torch.from_numpy(cond_np[None, :]).to(device).expand(n_gen, -1)
+                    preview_gen = sampler_fn(model, (n_gen, 3, 256, 256), cond)
+                    if isinstance(preview_gen, tuple):
+                        preview_gen = preview_gen[0]
+                    preview_gen_phys = normalizer.denormalize(
+                        preview_gen.detach().cpu()
+                    ).numpy().astype(np.float32, copy=False)
+                    preview_real_phys = normalizer.denormalize(
+                        torch.from_numpy(np.asarray(val_maps[sample_index], dtype=np.float32)[None, ...])
+                    ).cpu().numpy().astype(np.float32, copy=False)[0]
+                    preview_path = preview_dir / f"{args.split}_cond_{sample_index:04d}.png"
+                    _save_condition_preview(
+                        samples_phys=preview_gen_phys,
+                        real_phys=preview_real_phys,
+                        cond_norm=cond_np,
+                        out_path=preview_path,
+                        split_name=args.split,
+                        sample_index=sample_index,
+                    )
+            print(f"  {preview_dir.name}/")
 
     if "cv" in all_results:
         plot_cv_variance_ratio(all_results, output_dir, title=title)

@@ -35,16 +35,27 @@ GENESIS/
 ├── configs/
 │   ├── base.yaml                   # 모든 옵션이 담긴 기본 config
 │   └── experiments/                # 실험별 config
-│       ├── dit_flow.yaml
-│       ├── dit_diffusion.yaml
-│       ├── unet_flow.yaml
-│       ├── unet_diffusion.yaml     # UNet + DDPM/DDIM (기본)
-│       ├── unet_diffusion_se.yaml  # + Channel SE
-│       ├── unet_diffusion_v2.yaml  # + SE + cross-attn cond + sigmoid schedule
-│       ├── unet_edm.yaml           # UNet + EDM (Karras et al. 2022)
-│       ├── swin_flow.yaml
-│       ├── swin_diffusion.yaml
-│       └── softclip_Mcdm_flow.yaml # 정규화 실험
+│       ├── flow/
+│       │   ├── dit/
+│       │   │   └── dit_flow.yaml
+│       │   ├── swin/
+│       │   │   └── swin_flow.yaml
+│       │   └── unet/
+│       │       └── unet_flow.yaml
+│       ├── diffusion/
+│       │   ├── dit/
+│       │   │   └── dit_diffusion.yaml
+│       │   ├── swin/
+│       │   │   └── swin_diffusion.yaml
+│       │   └── unet/
+│       │       ├── unet_diffusion.yaml
+│       │       ├── unet_diffusion_se.yaml
+│       │       └── unet_diffusion_v2.yaml
+│       ├── edm/
+│       │   └── unet/
+│       │       └── unet_edm.yaml
+│       └── normalization/
+│           └── softclip_Mcdm_flow.yaml
 │
 ├── dataloader/
 │   ├── build_dataset.py            # 전처리: 채널 파일 3개 → 단일 stacked 파일
@@ -166,43 +177,43 @@ python -m dataloader.build_dataset \
 cd GENESIS
 
 # DiT + Flow Matching (기본 권장)
-python train.py --config configs/experiments/dit_flow.yaml
+python train.py --config configs/experiments/flow/dit/dit_flow.yaml
 
 # DiT + Diffusion
-python train.py --config configs/experiments/dit_diffusion.yaml
+python train.py --config configs/experiments/diffusion/dit/dit_diffusion.yaml
 
 # UNet + Flow Matching
-python train.py --config configs/experiments/unet_flow.yaml
+python train.py --config configs/experiments/flow/unet/unet_flow.yaml
 
 # UNet + Diffusion (기본)
-python train.py --config configs/experiments/unet_diffusion.yaml
+python train.py --config configs/experiments/diffusion/unet/unet_diffusion.yaml
 
 # UNet + Diffusion + Channel SE
-python train.py --config configs/experiments/unet_diffusion_se.yaml
+python train.py --config configs/experiments/diffusion/unet/unet_diffusion_se.yaml
 
 # UNet + Diffusion v2 (SE + cross-attn cond + sigmoid schedule)
-python train.py --config configs/experiments/unet_diffusion_v2.yaml
+python train.py --config configs/experiments/diffusion/unet/unet_diffusion_v2.yaml
 
 # UNet + EDM (Karras et al. 2022)
-python train.py --config configs/experiments/unet_edm.yaml
+python train.py --config configs/experiments/edm/unet/unet_edm.yaml
 
 # Swin Transformer + Flow Matching
-python train.py --config configs/experiments/swin_flow.yaml
+python train.py --config configs/experiments/flow/swin/swin_flow.yaml
 
 # Swin Transformer + Diffusion
-python train.py --config configs/experiments/swin_diffusion.yaml
+python train.py --config configs/experiments/diffusion/swin/swin_diffusion.yaml
 ```
 
 ### 체크포인트에서 재개
 
 ```bash
-python train.py --config configs/experiments/dit_flow.yaml --resume
+python train.py --config configs/experiments/flow/dit/dit_flow.yaml --resume
 ```
 
 ### 디바이스 지정
 
 ```bash
-python train.py --config configs/experiments/dit_flow.yaml --device cuda:1
+python train.py --config configs/experiments/flow/dit/dit_flow.yaml --device cuda:1
 ```
 
 ### 학습 로그 형식
@@ -210,7 +221,7 @@ python train.py --config configs/experiments/dit_flow.yaml --device cuda:1
 ```
 [CAMELSDataset] split=train  N=12000
 [CAMELSDataset] split=val    N=1500
-[train] device=cuda  config=configs/experiments/dit_flow.yaml
+[train] device=cuda  config=configs/experiments/flow/dit/dit_flow.yaml
 [train] model=DIT-B  params=131.2M
 [train] framework=flow_matching
 [0001/200] train=1.23456  val=1.34567  lr=2.00e-05
@@ -513,7 +524,7 @@ CFG는 학습/추론 모두 구현되어 있다.
 | Mgas | affine | 10.344 | 0.627 | log10 공간 median/IQR (robust) |
 | T | affine | 4.2234 | 0.8163 | log10 공간 mean/std (zscore) |
 
-클리핑 없음. softclip 실험은 `configs/experiments/softclip_Mcdm_flow.yaml` 참조.
+클리핑 없음. softclip 실험은 `configs/experiments/normalization/softclip_Mcdm_flow.yaml` 참조.
 
 **정규화 결과 통계 (전체 15,000 맵 기준):**
 
@@ -564,7 +575,7 @@ checkpoints/
 재개:
 
 ```bash
-python train.py --config configs/experiments/dit_flow.yaml --resume
+python train.py --config configs/experiments/flow/dit/dit_flow.yaml --resume
 ```
 
 ---
@@ -577,7 +588,7 @@ python train.py --config configs/experiments/dit_flow.yaml --resume
 cd GENESIS
 python evaluate.py \
     --checkpoint checkpoints/unet_diffusion_v2/best.pt \
-    --config    configs/experiments/unet_diffusion_v2.yaml \
+    --config    configs/experiments/diffusion/unet/unet_diffusion_v2.yaml \
     --data-dir  GENESIS-data/affine_default \
     --output-dir evaluation_results/ \
     --n-samples 100 \
@@ -644,7 +655,7 @@ from dataloader.normalization import Normalizer
 import yaml
 
 # 1. Config 및 체크포인트 로드
-with open("configs/experiments/dit_flow.yaml") as f:
+with open("configs/experiments/flow/dit/dit_flow.yaml") as f:
     cfg = yaml.safe_load(f)
 
 model = build_dit(preset="B")
@@ -726,7 +737,7 @@ train_loader, val_loader, test_loader = build_dataloaders(
 
 # 커스텀 정규화
 from dataloader.normalization import Normalizer
-norm = Normalizer.from_yaml("configs/experiments/softclip_Mcdm_flow.yaml")
+norm = Normalizer.from_yaml("configs/experiments/normalization/softclip_Mcdm_flow.yaml")
 train_loader, val_loader, _ = build_dataloaders(normalizer=norm)
 
 # 파라미터 역정규화 (예측값 → 물리 단위)

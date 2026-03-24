@@ -72,6 +72,8 @@ class Normalizer:
         )
         self._methods = [cfg[c]["method"]            for c in CHANNELS]
         self._clip_cs = [cfg[c].get("clip_c", None) for c in CHANNELS]
+        self._min_zs  = [cfg[c].get("min_z", None)  for c in CHANNELS]
+        self._max_zs  = [cfg[c].get("max_z", None)  for c in CHANNELS]
 
     @classmethod
     def from_yaml(cls, path: str, key: str = "normalization") -> "Normalizer":
@@ -101,6 +103,16 @@ class Normalizer:
             z[ch_idx] = c * torch.atanh((z[ch_idx] / c).clamp(-1 + 1e-6, 1 - 1e-6))
         return z
 
+    def _apply_minmax(self, z: torch.Tensor, ch_idx: int) -> torch.Tensor:
+        min_z = torch.tensor(self._min_zs[ch_idx], dtype=z.dtype, device=z.device)
+        max_z = torch.tensor(self._max_zs[ch_idx], dtype=z.dtype, device=z.device)
+        return (z - min_z) / (max_z - min_z)
+
+    def _invert_minmax(self, z: torch.Tensor, ch_idx: int) -> torch.Tensor:
+        min_z = torch.tensor(self._min_zs[ch_idx], dtype=z.dtype, device=z.device)
+        max_z = torch.tensor(self._max_zs[ch_idx], dtype=z.dtype, device=z.device)
+        return z * (max_z - min_z) + min_z
+
     # ── public: torch ─────────────────────────────────────────────────────────
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
@@ -110,6 +122,8 @@ class Normalizer:
         for i, method in enumerate(self._methods):
             if method == "softclip":
                 z = self._apply_softclip(z, i)
+            elif method == "minmax":
+                z = self._apply_minmax(z, i)
         return z
 
     def denormalize(self, z: torch.Tensor) -> torch.Tensor:
@@ -117,6 +131,8 @@ class Normalizer:
         for i, method in enumerate(self._methods):
             if method == "softclip":
                 z = self._invert_softclip(z, i)
+            elif method == "minmax":
+                z = self._invert_minmax(z, i)
         centers = self._bcast(self._centers.to(z.device), z.dim())
         scales  = self._bcast(self._scales.to(z.device),  z.dim())
         return 10 ** (z * scales + centers)
@@ -141,12 +157,46 @@ class Normalizer:
 
         z = (np.log10(x) - centers) / scales
 
-        for i, (method, clip_c) in enumerate(zip(self._methods, self._clip_cs)):
+        for i, method in enumerate(self._methods):
+            sl = (slice(None), i) if x.ndim == 4 else (i,)
             if method == "softclip":
-                sl = (slice(None), i) if x.ndim == 4 else (i,)
-                clip_c = np.float32(clip_c)  # avoid float64 upcasting
+                clip_c = np.float32(self._clip_cs[i])  # avoid float64 upcasting
                 z[sl] = clip_c * np.tanh(z[sl] / clip_c)
+            elif method == "minmax":
+                min_z = np.float32(self._min_zs[i])
+                max_z = np.float32(self._max_zs[i])
+                z[sl] = (z[sl] - min_z) / (max_z - min_z)
         return z.astype(np.float32, copy=False)
+
+    def denormalize_numpy(self, z: np.ndarray) -> np.ndarray:
+        """z: [N, 3, 256, 256] or [3, 256, 256]  normalized → raw"""
+        z = z.astype(np.float32, copy=True)
+        
+        # 역변환: 메서드 역순 적용
+        for i, method in enumerate(self._methods):
+            sl = (slice(None), i) if z.ndim == 4 else (i,)
+            if method == "softclip":
+                clip_c = np.float32(self._clip_cs[i])
+                z[sl] = clip_c * np.arctanh(np.clip(z[sl] / clip_c, -1 + 1e-6, 1 - 1e-6))
+            elif method == "minmax":
+                min_z = np.float32(self._min_zs[i])
+                max_z = np.float32(self._max_zs[i])
+                z[sl] = z[sl] * (max_z - min_z) + min_z
+        
+        # affine 역변환
+        centers = np.array([self.config[c]["center"] for c in CHANNELS], dtype=np.float32)
+        scales  = np.array(
+            [self.config[c]["scale"] * self.config[c].get("scale_mult", 1.0) for c in CHANNELS],
+            dtype=np.float32,
+        )
+        if z.ndim == 4:
+            centers = centers[None, :, None, None]
+            scales  = scales[None,  :, None, None]
+        else:
+            centers = centers[:, None, None]
+            scales  = scales[:,  None, None]
+        
+        return 10 ** (z * scales + centers).astype(np.float32)
 
 
 # ── module-level default (기존 코드 호환) ────────────────────────────────────
@@ -155,3 +205,4 @@ _default    = Normalizer(DEFAULT_CONFIG)
 normalize        = _default.normalize
 denormalize      = _default.denormalize
 normalize_numpy  = _default.normalize_numpy
+denormalize_numpy = _default.denormalize_numpy

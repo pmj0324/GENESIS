@@ -1,0 +1,20 @@
+# Option 2: Hybrid Affine
+# Mcdm: Softclip으로 극단값 압축 (c=4.5)
+# Mgas, T: Affine 그대로 유지
+#
+# Flow Matching 용 정규화 설정
+
+normalization:
+  Mcdm:
+    method: softclip
+    center: 10.876
+    scale: 0.590
+    clip_c: 4.5
+  Mgas:
+    method: affine
+    center: 10.344
+    scale: 0.627
+  T:
+    method: affine
+    center: 4.2234
+    scale: 0.8163

@@ -1,0 +1,47 @@
+created: '2026-03-25 02:29:54'
+normalization:
+  Mcdm:
+    center: 10.8853
+    method: robust
+    scale: 0.5874
+    stats:
+      gt3: 0.96%
+      mean_z: 0.146
+      median: 10.8853
+      q1: 10.6268
+      q3: 11.2142
+      std_z: 0.862
+  Mgas:
+    center: 10.3445
+    method: robust
+    scale: 0.6253
+    stats:
+      gt3: 0.32%
+      mean_z: 0.099
+      median: 10.3445
+      q1: 10.0593
+      q3: 10.6846
+      std_z: 0.791
+  T:
+    center: 3.9027
+    method: robust
+    scale: 1.2693
+    stats:
+      gt3: 0.00%
+      mean_z: 0.238
+      median: 3.9027
+      q1: 3.518
+      q3: 4.7873
+      std_z: 0.642
+sizes:
+  test: 1500
+  train: 12000
+  val: 1500
+source_maps: /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy
+source_params: /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt
+split:
+  maps_per_sim: 15
+  n_sims: 1000
+  seed: 42
+  train_ratio: 0.8
+  val_ratio: 0.1
