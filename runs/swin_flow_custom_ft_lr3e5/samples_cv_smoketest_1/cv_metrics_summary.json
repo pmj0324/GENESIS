@@ -1,0 +1,81 @@
+{
+  "n_samples": 1,
+  "auto_power": {
+    "Mcdm": {
+      "mean_error": 0.22120102161714414,
+      "max_error": 3.162555664081689,
+      "rms_error": 0.6011705919168282,
+      "passed": false
+    },
+    "Mgas": {
+      "mean_error": 0.2907910246167589,
+      "max_error": 1.9836018922107739,
+      "rms_error": 0.46609450915928363,
+      "passed": false
+    },
+    "T": {
+      "mean_error": 0.25222259420538906,
+      "max_error": 0.785594611289328,
+      "rms_error": 0.3307517721024705,
+      "passed": false
+    }
+  },
+  "cross_power": {
+    "Mcdm-Mgas": {
+      "mean_error": 0.2995206256821343,
+      "max_error": 3.314651581204809,
+      "rms_error": 0.6489488920628906,
+      "threshold": 0.3,
+      "passed": true
+    },
+    "Mcdm-T": {
+      "mean_error": 0.47933691834943043,
+      "max_error": 5.87703797282387,
+      "rms_error": 1.1648832055861456,
+      "threshold": 0.6,
+      "passed": true
+    },
+    "Mgas-T": {
+      "mean_error": 0.30463815271329836,
+      "max_error": 1.030842898878886,
+      "rms_error": 0.40734029190284166,
+      "threshold": 0.6,
+      "passed": true
+    }
+  },
+  "correlation": {
+    "Mcdm-Mgas": {
+      "max_delta_r": 0.1822512010104379,
+      "passed": false
+    },
+    "Mcdm-T": {
+      "max_delta_r": 0.28505021283056764,
+      "passed": true
+    },
+    "Mgas-T": {
+      "max_delta_r": 0.2153454741644224,
+      "passed": true
+    }
+  },
+  "pdf": {
+    "Mcdm": {
+      "ks_statistic": 0.03544999999999998,
+      "mean_rel_error": 0.0017736507872650657,
+      "std_rel_error": 0.003378467345285418,
+      "passed": true
+    },
+    "Mgas": {
+      "ks_statistic": 0.0464,
+      "mean_rel_error": 0.002992866552394609,
+      "std_rel_error": 0.004467863810882014,
+      "passed": true
+    },
+    "T": {
+      "ks_statistic": 0.19835,
+      "mean_rel_error": 0.012422400409880843,
+      "std_rel_error": 0.09622406782488428,
+      "passed": false
+    }
+  },
+  "passed_overall": false
+}

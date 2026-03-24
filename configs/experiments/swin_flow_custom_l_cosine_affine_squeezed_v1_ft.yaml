@@ -1,0 +1,72 @@
+##############################################################################
+# swin_flow_custom_l_cosine_affine_squeezed_v1_ft.yaml
+# Fine-tuning from runs/swin_flow_custom_l_cosine/best.pt on affine_squeezed_v1
+#
+# Usage:
+#   python train.py \
+#     --config configs/experiments/swin_flow_custom_l_cosine_affine_squeezed_v1_ft.yaml \
+#     --finetune runs/swin_flow_custom_l_cosine/best.pt
+#
+# 목적:
+#   - 기존 Swin L + OT Flow Matching 가중치를 유지
+#   - affine_squeezed_v1 데이터로 정규화 변화에 적응
+#   - 낮은 LR + plateau 스케줄로 안정적으로 이어가기
+##############################################################################
+
+data:
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_squeezed_v1
+  data_fraction: 1.0
+  augment: true
+
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.05
+
+  swin:
+    preset: L
+    patch_size: 4
+    window_size: 8
+
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.15
+    sigma_min: 1.0e-4
+
+  sampler:
+    method: heun
+    steps: 50
+    cfg_scale: 1.5
+    viz:
+      sampler_a: euler
+      sampler_b: heun
+
+
+training:
+  batch_size: 8
+  num_workers: 4
+  max_epochs: 40
+
+  lr: 3.0e-5
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  optimizer: adamw
+  grad_clip: 1.0
+
+  schedule: plateau
+  plateau_patience: 4
+  plateau_factor: 0.6
+  eta_min: 1.0e-7
+
+  warmup_epochs: 0
+  early_stop_patience: 20
+
+
+checkpoint:
+  ckpt_dir: runs/swin_flow_custom_l_cosine_affine_squeezed_v1_ft/
+  ckpt_name: best.pt

@@ -1,0 +1,27 @@
+created: '2026-03-24 02:44:47'
+normalization:
+  Mcdm:
+    center: 10.876
+    method: affine
+    scale: 0.59
+    scale_mult: 1.12
+  Mgas:
+    center: 10.344
+    method: affine
+    scale: 0.627
+  T:
+    center: 4.2234
+    method: affine
+    scale: 0.8163
+sizes:
+  test: 1500
+  train: 12000
+  val: 1500
+source_maps: /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy
+source_params: /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt
+split:
+  maps_per_sim: 15
+  n_sims: 1000
+  seed: 42
+  train_ratio: 0.8
+  val_ratio: 0.1

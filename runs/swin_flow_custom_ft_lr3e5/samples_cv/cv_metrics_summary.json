@@ -1,0 +1,81 @@
+{
+  "n_samples": 32,
+  "auto_power": {
+    "Mcdm": {
+      "mean_error": 0.05969795278062353,
+      "max_error": 0.2732568871618873,
+      "rms_error": 0.08229612560155818,
+      "passed": true
+    },
+    "Mgas": {
+      "mean_error": 0.05354048991208268,
+      "max_error": 0.26267744958069983,
+      "rms_error": 0.07711395360499883,
+      "passed": true
+    },
+    "T": {
+      "mean_error": 0.10438730609667818,
+      "max_error": 0.6649968739392503,
+      "rms_error": 0.18684375100358205,
+      "passed": true
+    }
+  },
+  "cross_power": {
+    "Mcdm-Mgas": {
+      "mean_error": 0.05204602945181992,
+      "max_error": 0.2709733032255082,
+      "rms_error": 0.076612311181526,
+      "threshold": 0.3,
+      "passed": true
+    },
+    "Mcdm-T": {
+      "mean_error": 0.11631809362557984,
+      "max_error": 0.6653819019764482,
+      "rms_error": 0.17540626755285907,
+      "threshold": 0.6,
+      "passed": true
+    },
+    "Mgas-T": {
+      "mean_error": 0.16462444908225982,
+      "max_error": 1.7801029062125138,
+      "rms_error": 0.3518890471069445,
+      "threshold": 0.6,
+      "passed": true
+    }
+  },
+  "correlation": {
+    "Mcdm-Mgas": {
+      "max_delta_r": 0.026717574400778044,
+      "passed": true
+    },
+    "Mcdm-T": {
+      "max_delta_r": 0.10430655569139335,
+      "passed": true
+    },
+    "Mgas-T": {
+      "max_delta_r": 0.20160957224956477,
+      "passed": true
+    }
+  },
+  "pdf": {
+    "Mcdm": {
+      "ks_statistic": 0.044950000000000045,
+      "mean_rel_error": 0.004171889590984133,
+      "std_rel_error": 0.04223176182483628,
+      "passed": true
+    },
+    "Mgas": {
+      "ks_statistic": 0.02400000000000002,
+      "mean_rel_error": 0.003209010994055888,
+      "std_rel_error": 0.04725442699136523,
+      "passed": true
+    },
+    "T": {
+      "ks_statistic": 0.04805000000000004,
+      "mean_rel_error": 0.01463030021774304,
+      "std_rel_error": 0.043457994347516016,
+      "passed": true
+    }
+  },
+  "passed_overall": true
+}
