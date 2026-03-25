@@ -1,0 +1,24 @@
+# Affine with scale_mult=1.50, centered by empirical mode of log10(x).
+# z = (log10(x) - center_mode) / (scale * scale_mult)
+#
+# NOTE:
+# - This keeps method="affine".
+# - Only the subtraction center changes from the default center to mode-based center.
+# - Mode estimates below were measured from the first 500 LH maps (for quick comparison).
+
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.7862
+    scale: 0.590
+    scale_mult: 1.50
+  Mgas:
+    method: affine
+    center: 10.2622
+    scale: 0.627
+    scale_mult: 1.50
+  T:
+    method: affine
+    center: 3.3856
+    scale: 0.8163
+    scale_mult: 1.50

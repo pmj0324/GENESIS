@@ -44,6 +44,7 @@ from analysis.pixel_distribution import compare_pixel_distributions
 from analysis.power_spectrum import compute_power_spectrum_2d
 from dataloader.normalization import CHANNELS, PARAM_NAMES, Normalizer, denormalize_params
 from evaluate import build_model, build_sampler_fn
+from utils.eval_helpers import channel_ranges, format_normalized_condition, to_log10_phys
 
 CHANNEL_LABELS = ["log10(Mcdm)", "log10(Mgas)", "log10(T)"]
 CMAPS = ["viridis", "plasma", "inferno"]
@@ -116,6 +117,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also save normalized generated and matched real maps",
     )
+    parser.add_argument(
+        "--power-spectrum-estimator",
+        type=str,
+        default=None,
+        choices=["genesis", "diffusion_hmc"],
+        help=(
+            "Power spectrum estimator for CV plot. "
+            "If omitted, uses config generative.sampler.viz.power.estimator (default: genesis)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -186,30 +197,36 @@ def _load_checkpoint(path: Path) -> dict:
             return torch.load(path, map_location="cpu")
 
 
-def _cond_str(cond_norm: np.ndarray) -> str:
-    cond_raw = denormalize_params(torch.from_numpy(cond_norm)).numpy().astype(np.float32, copy=False)
-    return "  ".join(f"{name}={value:.4f}" for name, value in zip(PARAM_NAMES, cond_raw))
+def _normalize_power_estimator(value: str | None) -> str:
+    if value is None:
+        return "genesis"
+    v = str(value).strip().lower()
+    aliases = {
+        "default": "genesis",
+        "diffusion-hmc": "diffusion_hmc",
+        "dhmc": "diffusion_hmc",
+        "compat": "diffusion_hmc",
+        "compatibility": "diffusion_hmc",
+    }
+    v = aliases.get(v, v)
+    if v not in {"genesis", "diffusion_hmc"}:
+        raise ValueError(
+            f"Unknown power-spectrum estimator: {value!r}. "
+            "Options: genesis / diffusion_hmc"
+        )
+    return v
 
 
-def _to_log10_phys(x: np.ndarray) -> np.ndarray:
-    return np.log10(np.clip(x, 1e-30, None))
-
-
-def _channel_ranges(real_phys: np.ndarray) -> list[tuple[float, float]]:
-    real_log = _to_log10_phys(real_phys)
-    ranges = []
-    for ci in range(len(CHANNELS)):
-        data = real_log[:, ci]
-        data = data[np.isfinite(data)]
-        if data.size == 0:
-            ranges.append((-1.0, 1.0))
-            continue
-        vmin = float(np.percentile(data, 1.0))
-        vmax = float(np.percentile(data, 99.0))
-        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
-            vmin, vmax = -1.0, 1.0
-        ranges.append((vmin, vmax))
-    return ranges
+def _compute_pk(field: np.ndarray, field_space: str, estimator: str) -> tuple[np.ndarray, np.ndarray]:
+    if estimator == "genesis":
+        return compute_power_spectrum_2d(field)
+    use_norm = field_space == "linear"
+    return compute_power_spectrum_2d(
+        field,
+        mode="diffusion_hmc",
+        diffusion_hmc_normalize=use_norm,
+        diffusion_hmc_smoothed=0.25,
+    )
 
 
 def _save_preview(
@@ -226,7 +243,7 @@ def _save_preview(
 
     samples_show = samples_phys[:n_show]
     real_show = real_phys[:n_show]
-    ch_ranges = _channel_ranges(real_show)
+    ch_ranges = channel_ranges(real_show)
 
     n_image_cols = 2 * n_show
     fig = plt.figure(figsize=(2.2 * n_image_cols + 1.2, 7.8))
@@ -250,7 +267,7 @@ def _save_preview(
 
     fig.suptitle(
         "CV Sampling Preview - training-style scaling\n"
-        f"{_cond_str(cond_norm)}",
+        f"{format_normalized_condition(cond_norm, PARAM_NAMES, denormalize_params)}",
         fontsize=10,
     )
 
@@ -258,8 +275,8 @@ def _save_preview(
         vmin, vmax = ch_ranges[ci]
         last_im = None
         for pair_idx in range(n_show):
-            real_log = _to_log10_phys(real_show[pair_idx, ci])
-            gen_log = _to_log10_phys(samples_show[pair_idx, ci])
+            real_log = to_log10_phys(real_show[pair_idx, ci])
+            gen_log = to_log10_phys(samples_show[pair_idx, ci])
 
             real_col = 2 * pair_idx
             gen_col = real_col + 1
@@ -290,11 +307,16 @@ def _save_power_spectrum_plot(
     real_phys: np.ndarray,
     cond_norm: np.ndarray,
     out_path: Path,
+    field_space: str = "log",
+    estimator: str = "genesis",
 ) -> None:
     fig, axes = plt.subplots(1, len(CHANNELS), figsize=(15, 4.2))
+    field_label = "log10 field" if str(field_space).lower() == "log" else "linear field"
+    est_label = "GENESIS" if estimator == "genesis" else "diffusion-hmc compatible"
     fig.suptitle(
         "CV Power Spectrum Comparison\n"
-        f"{_cond_str(cond_norm)}",
+        f"{format_normalized_condition(cond_norm, PARAM_NAMES, denormalize_params)}"
+        f"  [{field_label} | {est_label}]",
         fontsize=10,
     )
 
@@ -304,10 +326,12 @@ def _save_power_spectrum_plot(
         k_vals = None
 
         for img in real_phys[:, ci]:
-            k_vals, pk = compute_power_spectrum_2d(img)
+            field = to_log10_phys(img) if str(field_space).lower() == "log" else img
+            k_vals, pk = _compute_pk(field, str(field_space).lower(), estimator)
             real_curves.append(pk)
         for img in samples_phys[:, ci]:
-            k_vals, pk = compute_power_spectrum_2d(img)
+            field = to_log10_phys(img) if str(field_space).lower() == "log" else img
+            k_vals, pk = _compute_pk(field, str(field_space).lower(), estimator)
             gen_curves.append(pk)
 
         real_curves = np.asarray(real_curves, dtype=np.float64)
@@ -337,7 +361,7 @@ def _save_power_spectrum_plot(
             linewidth=0,
         )
         ax.set_title(ch_name, fontsize=11)
-        ax.set_xlabel("k [pixel freq]")
+        ax.set_xlabel("k [h/Mpc]")
         ax.set_ylabel("P(k)")
         ax.grid(True, alpha=0.3, which="both")
         ax.legend(fontsize=8)
@@ -348,8 +372,8 @@ def _save_power_spectrum_plot(
 
 
 def _compute_training_metrics(real_phys: np.ndarray, samples_phys: np.ndarray) -> dict:
-    real_log = _to_log10_phys(real_phys)
-    sample_log = _to_log10_phys(samples_phys)
+    real_log = to_log10_phys(real_phys)
+    sample_log = to_log10_phys(samples_phys)
 
     auto_cross = compute_spectrum_errors(real_log, sample_log)
     corr = compute_correlation_errors(real_log, sample_log)
@@ -412,7 +436,21 @@ def _compute_training_metrics(real_phys: np.ndarray, samples_phys: np.ndarray) -
 
 
 def _load_metrics_history(checkpoint_path: Path) -> list[dict]:
-    metrics_path = checkpoint_path.resolve().parent / "metrics_history.json"
+    ckpt_dir = checkpoint_path.resolve().parent
+
+    # New preferred path: best-only dict.
+    best_path = ckpt_dir / "metrics_best.json"
+    if best_path.exists():
+        try:
+            with open(best_path) as f:
+                best = json.load(f)
+            if isinstance(best, dict):
+                return [best]
+        except Exception:
+            pass
+
+    # Backward compatibility: list history or dict at metrics_history.json.
+    metrics_path = ckpt_dir / "metrics_history.json"
     if not metrics_path.exists():
         return []
     try:
@@ -420,7 +458,24 @@ def _load_metrics_history(checkpoint_path: Path) -> list[dict]:
             history = json.load(f)
     except Exception:
         return []
-    return history if isinstance(history, list) else []
+    if isinstance(history, list):
+        return [x for x in history if isinstance(x, dict)]
+    if isinstance(history, dict):
+        return [history]
+    return []
+
+
+def _extract_checkpoint_best(ckpt: dict) -> dict:
+    best_epoch = ckpt.get("best_epoch")
+    if best_epoch is None and ckpt.get("epoch") is not None:
+        best_epoch = int(ckpt["epoch"]) + 1
+    best_val = ckpt.get("best_val", ckpt.get("val_loss"))
+    out = {}
+    if best_epoch is not None:
+        out["best_epoch"] = int(best_epoch)
+    if best_val is not None:
+        out["best_val_loss"] = float(best_val)
+    return out
 
 
 def _plot_metric_series(ax, history: list[dict], current_metrics: dict, group: str, key: str, title: str) -> None:
@@ -521,7 +576,7 @@ def _save_metrics_dashboard(
     summary_lines = [
         "CV metric summary",
         "",
-        _cond_str(cond_norm),
+        format_normalized_condition(cond_norm, PARAM_NAMES, denormalize_params),
         "",
         f"overall: {'PASS' if current_metrics['passed_overall'] else 'FAIL'}",
         f"n_samples: {current_metrics['n_samples']}",
@@ -570,6 +625,19 @@ def main() -> None:
     output_dir = _resolve_output_dir(checkpoint_path, args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Power spectrum estimator:
+    # CLI override > config (generative.sampler.viz.power.estimator) > genesis(default)
+    cfg_estimator = (
+        cfg.get("generative", {})
+        .get("sampler", {})
+        .get("viz", {})
+        .get("power", {})
+        .get("estimator")
+    )
+    power_estimator = _normalize_power_estimator(
+        args.power_spectrum_estimator if args.power_spectrum_estimator is not None else cfg_estimator
+    )
+
     normalizer = _load_normalizer(data_dir)
     cond_np = _load_cv_condition(data_dir)
     cond = torch.from_numpy(cond_np[None, :]).to(device)
@@ -596,6 +664,7 @@ def main() -> None:
     print(f"[sample_cv] data_dir={data_dir}")
     print(f"[sample_cv] output_dir={output_dir}")
     print(f"[sample_cv] n_samples={n_samples} batch_size={batch_size} batches={n_batches}")
+    print(f"[sample_cv] power_spectrum_estimator={power_estimator}")
 
     with torch.no_grad():
         for batch_idx in range(n_batches):
@@ -638,6 +707,7 @@ def main() -> None:
         real_phys=real_phys,
         cond_norm=cond_np,
         out_path=output_dir / "cv_power_spectrum.png",
+        estimator=power_estimator,
     )
     _save_metrics_dashboard(
         current_metrics=current_metrics,
@@ -646,8 +716,14 @@ def main() -> None:
         out_path=output_dir / "cv_metrics.png",
     )
 
+    best_ckpt = _extract_checkpoint_best(ckpt)
+    best_training_metrics = metrics_history[0] if len(metrics_history) > 0 else None
+    metrics_summary = dict(current_metrics)
+    metrics_summary["power_spectrum_estimator"] = power_estimator
+    metrics_summary["training_best_checkpoint"] = best_ckpt
+    metrics_summary["training_best_metrics"] = best_training_metrics
     with open(output_dir / "cv_metrics_summary.json", "w") as f:
-        json.dump(current_metrics, f, indent=2, allow_nan=True)
+        json.dump(metrics_summary, f, indent=2, allow_nan=True)
 
     with open(output_dir / "sampling_info.yaml", "w") as f:
         yaml.safe_dump(
@@ -660,13 +736,18 @@ def main() -> None:
                 "device": device,
                 "seed": int(args.seed),
                 "cfg_scale": cfg.get("generative", {}).get("sampler", {}).get("cfg_scale"),
+                "power_spectrum_estimator": power_estimator,
                 "saved_normalized": bool(args.save_norm),
                 "matched_real_selection": {
                     "source": "cv_maps.npy",
                     "strategy": "seeded_without_replacement_with_wrap",
                     "indices_file": "cv_real_indices.npy",
                 },
-                "metrics_history_source": str((checkpoint_path.resolve().parent / "metrics_history.json")),
+                "metrics_history_source": str(
+                    (checkpoint_path.resolve().parent / "metrics_best.json")
+                    if (checkpoint_path.resolve().parent / "metrics_best.json").exists()
+                    else (checkpoint_path.resolve().parent / "metrics_history.json")
+                ),
                 "output_files": [
                     "cv_samples_phys.npy",
                     "cv_real_matches_phys.npy",

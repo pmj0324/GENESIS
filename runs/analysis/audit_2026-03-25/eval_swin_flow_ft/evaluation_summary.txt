@@ -1,0 +1,45 @@
+═══ GENESIS Evaluation Summary ═══
+
+Protocol: LH
+
+Auto-Power Spectrum (field+scale-dependent thresholds):
+  Mcdm    : mean=  9.1%  max= 43.0%  rms= 12.8%  → PASS
+     low_k: mean= 11.6% (thr=15%)  rms= 17.9% (thr=22%)  → PASS
+     mid_k: mean=  7.5% (thr=15%)  rms=  8.7% (thr=22%)  → PASS
+    high_k: mean=  8.6% (thr=25%)  rms= 11.4% (thr=38%)  → PASS
+  Mgas    : mean=  6.4%  max= 41.5%  rms= 10.0%  → PASS
+     low_k: mean= 11.0% (thr=18%)  rms= 17.2% (thr=27%)  → PASS
+     mid_k: mean=  4.2% (thr=18%)  rms=  5.0% (thr=27%)  → PASS
+    high_k: mean=  5.2% (thr=30%)  rms=  5.8% (thr=45%)  → PASS
+  T       : mean=  8.2%  max= 39.6%  rms= 12.2%  → PASS
+     low_k: mean=  7.2% (thr=20%)  rms= 12.7% (thr=30%)  → PASS
+     mid_k: mean=  7.0% (thr=20%)  rms=  7.2% (thr=30%)  → PASS
+    high_k: mean=  9.7% (thr=35%)  rms= 14.3% (thr=52%)  → PASS
+
+Cross-Power Spectrum (pair-dependent thresholds):
+  Mcdm-Mgas   : mean=  7.8%  (thr=30%)  → PASS
+  Mcdm-T      : mean= 14.1%  (thr=60%)  → PASS
+  Mgas-T      : mean= 17.6%  (thr=60%)  → PASS
+
+Correlation Coefficient (scale-dependent thresholds):
+  Mcdm-Mgas   : max_Δr=0.029  → PASS
+     all_k: max_Δr=0.029  (thr=0.10)  → PASS
+  Mcdm-T      : max_Δr=0.104  → PASS
+     all_k: max_Δr=0.104  (thr=0.30)  → PASS
+  Mgas-T      : max_Δr=0.284  → PASS
+     all_k: max_Δr=0.284  (thr=0.30)  → PASS
+
+Pixel Distribution (KS D<0.05, μ_err<5%, σ_err<10%):
+  Mcdm    : D=0.034  p=2.00e-25  μ_err=0.1%  σ_err=6.4%  → PASS
+  Mgas    : D=0.043  p=7.89e-41  μ_err=0.1%  σ_err=9.0%  → PASS
+  T       : D=0.050  p=3.42e-55  μ_err=0.3%  σ_err=5.6%  [unimodal]  → FAIL
+
+Overall: FAIL
+
+Protocol: CV
+
+CV Variance Ratio (§4.5: 0.7-1.3 band):
+  Mcdm    : 63% in [0.7,1.3]  → FAIL
+  Mgas    : 53% in [0.7,1.3]  → FAIL
+  T       : 67% in [0.7,1.3]  → FAIL
+

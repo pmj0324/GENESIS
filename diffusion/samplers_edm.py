@@ -16,6 +16,7 @@ from tqdm import tqdm
 from typing import Optional, Tuple
 
 from .edm import EDMPrecond
+from utils.sampling import validate_sampling_steps
 
 
 # ── σ schedule ────────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ def make_sigma_schedule(
     i=steps-1 → σ_min
     i=steps   → 0 (final clean)
     """
+    steps = validate_sampling_steps(steps, name="edm steps")
     i      = torch.arange(steps, device=device, dtype=torch.float64)
     t      = i / (steps - 1)
     inv_rho = 1.0 / rho
@@ -71,8 +73,8 @@ def heun_sample(
     rho:       float = 7.0,
     cfg_scale: float = 1.0,
     # Stochastic parameters (Algorithm 2)
-    eta:       float = 0.0,    # 0 = deterministic ODE, 1 = fully stochastic
-    S_churn:   float = 0.0,    # stochastic churn amount
+    eta:       float = 0.0,    # compatibility alias: if S_churn unset, S_churn=eta*steps
+    S_churn:   float = 0.0,    # primary stochastic control (EDM Algorithm 2)
     S_tmin:    float = 0.05,
     S_tmax:    float = 50.0,
     S_noise:   float = 1.003,
@@ -86,6 +88,15 @@ def heun_sample(
     """
     device = next(precond.parameters()).device
     B      = shape[0]
+
+    if eta < 0:
+        raise ValueError(f"edm eta must be >= 0, got {eta}")
+    if S_churn < 0:
+        raise ValueError(f"edm S_churn must be >= 0, got {S_churn}")
+    # Backward compatibility: legacy `eta` behaves as stochastic strength.
+    # EDM's native knob is S_churn, so we map eta -> S_churn when churn is not set.
+    if S_churn == 0.0 and eta > 0:
+        S_churn = eta * steps
 
     sigmas = make_sigma_schedule(steps, sigma_min, sigma_max, rho, device)
 
@@ -103,7 +114,8 @@ def heun_sample(
         sig_vec = sig_cur.expand(B)
 
         # ── Stochastic noise injection (Algorithm 2) ────────────────────────
-        if S_churn > 0 and S_tmin <= sig_cur <= S_tmax:
+        sig_cur_f = float(sig_cur.item())
+        if S_churn > 0 and S_tmin <= sig_cur_f <= S_tmax:
             gamma   = min(S_churn / steps, 2**0.5 - 1)
             sig_hat = sig_cur * (1 + gamma)
             x       = x + (sig_hat**2 - sig_cur**2).sqrt() * S_noise * torch.randn_like(x)

@@ -12,13 +12,18 @@ logs/
 outputs/
 
 # 실험 결과 (runs/)
-# runs/ 아래는 재현용 메타 파일(yaml/yml/txt)만 Git에 남기고,
-# 나머지 산출물은 모두 ignore 한다.
+# runs/ 아래는 기본적으로 모두 ignore 하고,
+# 재현에 필요한 일부 메타 파일만 Git에 남긴다.
 runs/**
 !runs/**/
-!runs/**/*.yaml
-!runs/**/*.yml
-!runs/**/*.txt
+!runs/**/config.yaml
+!runs/**/config_resume.yaml
+!runs/**/sampling_info.yaml
+!runs/**/evaluation_summary.txt
+
+# scripts/ 아래 생성 결과물은 더 이상 두지 않는다.
+scripts/results*/
+scripts/**/results*/
 scripts/**/*.png
 
 # Python

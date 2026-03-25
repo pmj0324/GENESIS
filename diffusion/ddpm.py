@@ -27,6 +27,7 @@ from tqdm import tqdm
 from typing import Literal, Optional, Tuple
 
 from .schedules import BaseSchedule
+from utils.sampling import validate_sampling_steps
 
 
 class GaussianDiffusion:
@@ -200,6 +201,8 @@ class GaussianDiffusion:
         device = next(model.parameters()).device
         if self.schedule.sqrt_alphas_bar.device != device:
             self.schedule = self.schedule.to(device)
+
+        steps = validate_sampling_steps(steps, name="ddim steps", max_steps=self.T)
 
         B   = shape[0]
         sch = self.schedule

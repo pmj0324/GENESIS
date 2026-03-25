@@ -26,14 +26,15 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dataloader.normalization import CHANNELS, PARAM_NAMES, Normalizer, denormalize_params
-from flow_matching.flows import build_flow
 from flow_matching.samplers import build_sampler
 from diffusion.ddpm import GaussianDiffusion
 from diffusion.schedules import build_schedule
-from diffusion.edm import EDMPrecond, EDMDiffusion
+from diffusion.edm import EDMPrecond
 from diffusion.samplers_edm import heun_sample, euler_sample
 from analysis.camels_evaluator import CAMELSEvaluator
 from train import build_model as build_train_model
+from utils.eval_helpers import channel_ranges, format_normalized_condition, to_log10_phys
+from utils.sampler_config import resolve_sampler_config
 from analysis.report import (
     plot_auto_power_comparison,
     plot_cross_power_grid,
@@ -52,32 +53,6 @@ CHANNEL_LABELS = ["log10(Mcdm)", "log10(Mgas)", "log10(T)"]
 CMAPS = ["viridis", "plasma", "inferno"]
 
 
-def _to_log10_phys(x: np.ndarray) -> np.ndarray:
-    return np.log10(np.clip(x, 1e-30, None))
-
-
-def _channel_ranges(real_phys: np.ndarray) -> list[tuple[float, float]]:
-    real_log = _to_log10_phys(real_phys)
-    ranges = []
-    for ci in range(len(CHANNELS)):
-        data = real_log[:, ci]
-        data = data[np.isfinite(data)]
-        if data.size == 0:
-            ranges.append((-1.0, 1.0))
-            continue
-        vmin = float(np.percentile(data, 1.0))
-        vmax = float(np.percentile(data, 99.0))
-        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
-            vmin, vmax = -1.0, 1.0
-        ranges.append((vmin, vmax))
-    return ranges
-
-
-def _cond_str(cond_norm: np.ndarray) -> str:
-    cond_raw = denormalize_params(torch.from_numpy(cond_norm)).numpy().astype(np.float32, copy=False)
-    return "  ".join(f"{name}={value:.4f}" for name, value in zip(PARAM_NAMES, cond_raw))
-
-
 def _save_condition_preview(
     samples_phys: np.ndarray,
     real_phys: np.ndarray,
@@ -92,7 +67,7 @@ def _save_condition_preview(
 
     real_phys = np.asarray(real_phys, dtype=np.float32)
     samples_phys = np.asarray(samples_phys, dtype=np.float32)
-    ch_ranges = _channel_ranges(np.concatenate([real_phys[None, ...], samples_phys], axis=0))
+    ch_ranges = channel_ranges(real_phys, samples_phys)
     n_image_cols = 1 + n_gen
     fig = plt.figure(figsize=(2.2 * n_image_cols + 1.2, 7.8))
     width_ratios = [1.0] * n_image_cols + [0.07]
@@ -120,7 +95,7 @@ def _save_condition_preview(
 
     for ci, (ch_label, cmap) in enumerate(zip(CHANNEL_LABELS, CMAPS)):
         vmin, vmax = ch_ranges[ci]
-        real_log = _to_log10_phys(real_phys[ci])
+        real_log = to_log10_phys(real_phys[ci])
         ax_real = axes[ci][0]
         im_real = ax_real.imshow(real_log, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
         ax_real.set_title("True", fontsize=8)
@@ -128,7 +103,7 @@ def _save_condition_preview(
 
         last_im = im_real
         for gen_idx in range(n_gen):
-            gen_log = _to_log10_phys(samples_phys[gen_idx, ci])
+            gen_log = to_log10_phys(samples_phys[gen_idx, ci])
             ax_gen = axes[ci][gen_idx + 1]
             im_gen = ax_gen.imshow(gen_log, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
             ax_gen.set_title(f"Gen #{gen_idx + 1}", fontsize=8)
@@ -139,7 +114,7 @@ def _save_condition_preview(
         cbar = fig.colorbar(last_im, cax=cbar_axes[ci], orientation="vertical")
         cbar.set_label(ch_label, rotation=90, labelpad=10)
 
-    footer = _cond_str(cond_norm)
+    footer = format_normalized_condition(cond_norm, PARAM_NAMES, denormalize_params)
     fig.text(0.01, 0.01, footer, fontsize=8, family="monospace", va="bottom")
     fig.subplots_adjust(top=0.90, left=0.04, right=0.98, bottom=0.10)
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
@@ -178,18 +153,12 @@ def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
     """
     gcfg = cfg["generative"]
     framework = gcfg["framework"]
-    gcfg_s = gcfg.get("sampler", {})
-    cfg_scale = gcfg_s.get("cfg_scale", 1.0)
-    steps = gcfg_s.get("steps", 50)
+    sampler_cfg = resolve_sampler_config(cfg, framework)
+    cfg_scale = sampler_cfg["cfg_scale"]
+    steps = sampler_cfg["steps"]
 
     if framework == "flow_matching":
-        fcfg = gcfg["flow_matching"]
-        flow = build_flow(
-            fcfg.get("method", "ot"),
-            cfg_prob=fcfg.get("cfg_prob", 0.1),
-            sigma_min=fcfg.get("sigma_min", 1e-4),
-        )
-        sampler_name = gcfg_s.get("method", gcfg_s.get("sampler_a", "euler")).lower()
+        sampler_name = sampler_cfg["method"]
         sampler = build_sampler(sampler_name)
 
         def sampler_fn(m, shape, cond):
@@ -220,8 +189,8 @@ def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
             p2_k=dcfg.get("p2_k", 1.0),
             input_scale=dcfg.get("input_scale", 1.0),
         )
-        eta = gcfg_s.get("eta", 0.0)
-        sampler_name = gcfg_s.get("method", gcfg_s.get("sampler_a", "ddim")).lower()
+        eta = sampler_cfg["eta"]
+        sampler_name = sampler_cfg["method"]
 
         if sampler_name == "ddim":
             def sampler_fn(m, shape, cond):
@@ -245,16 +214,32 @@ def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
             sigma_min=ecfg.get("sigma_min", 0.002),
             sigma_max=ecfg.get("sigma_max", 80.0),
         )
-        _edm_kw = dict(
+        sampler_name = sampler_cfg["method"]
+
+        edm_common = dict(
             steps=steps,
             cfg_scale=cfg_scale,
             progress=False,
-            sigma_min=ecfg.get("sigma_min", 0.002),
-            sigma_max=ecfg.get("sigma_max", 80.0),
+            sigma_min=sampler_cfg.get("sigma_min", ecfg.get("sigma_min", 0.002)),
+            sigma_max=sampler_cfg.get("sigma_max", ecfg.get("sigma_max", 80.0)),
+            rho=sampler_cfg.get("rho", ecfg.get("rho", 7.0)),
         )
 
-        def sampler_fn(m, shape, cond):
-            return heun_sample(m, shape, cond, **_edm_kw)
+        if sampler_name == "euler":
+            def sampler_fn(m, shape, cond):
+                return euler_sample(m, shape, cond, **edm_common)
+        elif sampler_name == "heun":
+            def sampler_fn(m, shape, cond):
+                return heun_sample(
+                    m,
+                    shape,
+                    cond,
+                    eta=sampler_cfg["eta"],
+                    S_churn=sampler_cfg["S_churn"],
+                    **edm_common,
+                )
+        else:
+            raise ValueError(f"Unknown edm sampler: {sampler_name!r}. Options: heun / euler")
 
         return sampler_fn, precond
 
@@ -365,7 +350,16 @@ def main():
     model = model.to(device)
     model.eval()
     n_params = sum(p.numel() for p in model.parameters()) / 1e6
-    print(f"[evaluate] model loaded: {args.checkpoint}  ({n_params:.1f}M params)")
+    ckpt_best_epoch = ckpt.get("best_epoch")
+    if ckpt_best_epoch is None and ckpt.get("epoch") is not None:
+        ckpt_best_epoch = int(ckpt["epoch"]) + 1
+    ckpt_best_val = ckpt.get("best_val", ckpt.get("val_loss"))
+    best_str = ""
+    if ckpt_best_val is not None:
+        best_str = f"  best_val={float(ckpt_best_val):.5f}"
+        if ckpt_best_epoch is not None:
+            best_str += f"@ep{int(ckpt_best_epoch)}"
+    print(f"[evaluate] model loaded: {args.checkpoint}  ({n_params:.1f}M params){best_str}")
 
     # Sampler function
     sampler_fn, model = build_sampler_fn(cfg, model, device)
@@ -427,9 +421,9 @@ def main():
         if ex_maps_path.exists() and ex_params_path.exists():
             ex_maps = np.load(ex_maps_path)
             ex_params = np.load(ex_params_path)
-            print(f"[evaluate] loaded EX data: {ex_maps.shape}")
+            print(f"[evaluate] loaded EX data: maps={ex_maps.shape} params={ex_params.shape}")
         else:
-            print(f"[evaluate] WARNING: ex_maps.npy not found, skipping EX.")
+            print("[evaluate] WARNING: ex_maps.npy not found, skipping EX.")
             args.protocols = [p for p in args.protocols if p != "ex"]
 
     # Build evaluator
@@ -522,14 +516,21 @@ def main():
         plot_cv_variance_ratio(all_results, output_dir, title=title)
         print("  cv_variance_ratio.png")
 
+    report_payload = dict(all_results)
+    report_payload["_checkpoint"] = {
+        "path": str(Path(args.checkpoint).resolve()),
+        "best_epoch": int(ckpt_best_epoch) if ckpt_best_epoch is not None else None,
+        "best_val_loss": float(ckpt_best_val) if ckpt_best_val is not None else None,
+    }
+
     # Save JSON report
     json_path = output_dir / "evaluation_report.json"
-    save_json_report(all_results, json_path)
+    save_json_report(report_payload, json_path)
     print(f"  {json_path.name}")
 
     # Save text summary
     txt_path = output_dir / "evaluation_summary.txt"
-    save_text_summary(all_results, txt_path)
+    save_text_summary(report_payload, txt_path)
     print(f"  {txt_path.name}")
 
     # Print pass summary to console

@@ -1,0 +1,62 @@
+##############################################################################
+# swin_flow_softclip_all.yaml
+# Swin Transformer + OT Flow Matching with softclip_all dataset
+#
+# 기준:
+#   - /home/work/cosmology/GENESIS/runs/flow/swin/swin_flow_robust_iqr/config.yaml
+#   - 모델/샘플러/학습 하이퍼파라미터는 그대로 유지
+#   - 데이터셋만 softclip_all 로 교체
+#
+# 사용법:
+#   python train.py --config configs/experiments/flow/swin/swin_flow_softclip_all.yaml
+#
+##############################################################################
+
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/softclip_all
+  norm_config: configs/normalization/softclip_all.yaml
+  augment: true
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.1
+  swin:
+    preset: B
+    window_size: 8
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.1
+    sigma_min: 1.0e-4
+  sampler:
+    method: heun
+    steps: 25
+    cfg_scale: 1.15
+    viz:
+      sampler_a: euler
+      sampler_b: heun
+
+training:
+  batch_size: 64
+  num_workers: 4
+  max_epochs: 300
+  lr: 2.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine_restarts
+  T_0: 10
+  T_mult: 1
+  eta_min: 1.0e-6
+  early_stop_patience: 30
+
+checkpoint:
+  ckpt_dir: runs/flow/swin/swin_flow_softclip_all/
+  ckpt_name: best.pt

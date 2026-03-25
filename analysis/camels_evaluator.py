@@ -98,12 +98,12 @@ class CAMELSEvaluator:
         return log10_maps[0] if squeezed else log10_maps
 
     @torch.no_grad()
-    def _generate_log10(self, cond_norm, n_samples: int = 1) -> np.ndarray:
+    def _generate_log10(self, cond_norm, n_samples: Optional[int] = None) -> np.ndarray:
         """Generate samples in log10 space given a conditioning vector.
 
         Args:
-            cond_norm: [6] or [1, 6] normalized cosmological parameter tensor.
-            n_samples: Number of samples to generate.
+            cond_norm: [6], [1, 6], or [N, 6] normalized parameter tensor/array.
+            n_samples: Number of samples to generate. If None, inferred from cond rows.
 
         Returns:
             np.ndarray of shape (n_samples, 3, H, W) in log10 space.
@@ -113,18 +113,62 @@ class CAMELSEvaluator:
         else:
             cond = torch.from_numpy(np.asarray(cond_norm, dtype=np.float32)).to(self.device)
 
-        cond = cond.view(1, -1)  # (1, 6)
+        if cond.ndim == 1:
+            cond = cond.view(1, -1)
+        elif cond.ndim != 2:
+            raise ValueError(f"cond_norm must be 1D or 2D, got shape={tuple(cond.shape)}")
 
-        # Sample n_samples times (batch with repeated cond)
-        if n_samples == 1:
-            shape = (1, 3, 256, 256)
-            sample_norm = self.sampler_fn(self.model, shape, cond)  # (1, 3, H, W)
+        if n_samples is None:
+            n_samples = int(cond.shape[0])
+
+        if cond.shape[0] == 1 and n_samples > 1:
+            cond_batch = cond.expand(n_samples, -1)
+        elif cond.shape[0] == n_samples:
+            cond_batch = cond
         else:
-            cond_batch = cond.expand(n_samples, -1)  # (n_samples, 6)
-            shape = (n_samples, 3, 256, 256)
-            sample_norm = self.sampler_fn(self.model, shape, cond_batch)  # (n_samples, 3, H, W)
+            raise ValueError(
+                f"cond batch mismatch: cond_rows={cond.shape[0]} n_samples={n_samples}"
+            )
+
+        shape = (n_samples, 3, 256, 256)
+        sample_norm = self.sampler_fn(self.model, shape, cond_batch)  # (n_samples, 3, H, W)
+        if isinstance(sample_norm, tuple):
+            sample_norm = sample_norm[0]
 
         return self._to_log10(sample_norm)
+
+    @torch.no_grad()
+    def _generate_log10_in_chunks(
+        self,
+        conds_norm,
+        *,
+        batch_size: int = 8,
+        desc: Optional[str] = None,
+        enabled: bool = True,
+    ) -> np.ndarray:
+        """Generate log10 maps for varying conditions using chunked batches."""
+        conds_np = _to_numpy(conds_norm).astype(np.float32, copy=False)
+        if conds_np.ndim == 1:
+            conds_np = conds_np[None, :]
+        if conds_np.ndim != 2 or conds_np.shape[1] != 6:
+            raise ValueError(f"expected conds shape [N,6], got {conds_np.shape}")
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+
+        outputs = []
+        starts = range(0, len(conds_np), batch_size)
+        if desc is not None:
+            starts = self._progress(
+                starts,
+                total=(len(conds_np) + batch_size - 1) // batch_size,
+                desc=desc,
+                enabled=enabled,
+            )
+        for start in starts:
+            end = min(start + batch_size, len(conds_np))
+            batch = conds_np[start:end]
+            outputs.append(self._generate_log10(batch, n_samples=len(batch)))
+        return np.concatenate(outputs, axis=0) if outputs else np.empty((0, 3, 256, 256), dtype=np.float32)
 
     def evaluate_lh(
         self,
@@ -154,20 +198,17 @@ class CAMELSEvaluator:
 
         N = min(len(val_maps_np), max_samples)
 
-        true_log10_list = []
-        gen_log10_list = []
-
-        for i in self._progress(range(N), total=N, desc="LH samples", enabled=verbose):
-            true_l10 = self._to_log10(val_maps_np[i])  # (3, H, W)
-            true_log10_list.append(true_l10)
-
-            cond = val_params_np[i]  # (6,)
-            gen_l10 = self._generate_log10(cond, n_samples=1)  # (1, 3, H, W)
-            gen_log10_list.append(gen_l10[0])
-
-        # Stack to (N, 3, H, W)
+        true_log10_list = [
+            self._to_log10(val_maps_np[i])
+            for i in self._progress(range(N), total=N, desc="LH samples", enabled=verbose)
+        ]
         true_batch = np.stack(true_log10_list, axis=0)
-        gen_batch = np.stack(gen_log10_list, axis=0)
+        gen_batch = self._generate_log10_in_chunks(
+            val_params_np[:N],
+            batch_size=8,
+            desc="LH generate",
+            enabled=verbose,
+        )
 
         if verbose:
             print("  [evaluate_lh] computing spectrum errors ...", flush=True)
@@ -379,6 +420,12 @@ class CAMELSEvaluator:
             maps_np = _to_numpy(onep_maps_norm[pname])
             params_np = _to_numpy(onep_params_norm[pname])
             N_vals = len(maps_np)
+            gen_batch = self._generate_log10_in_chunks(
+                params_np,
+                batch_size=8,
+                desc=f"1P generate {pname}",
+                enabled=True,
+            )
 
             param_results = {}
             for ci, ch in enumerate(
@@ -406,7 +453,7 @@ class CAMELSEvaluator:
                     ratio_true_list.append(ratio_true)
 
                     # Generated P(k) ratio
-                    gen_l10 = self._generate_log10(params_np[i], n_samples=1)[0]
+                    gen_l10 = gen_batch[i]
                     _, pk_gen = compute_cross_power_spectrum_2d(
                         gen_l10[ci], gen_l10[ci], box_size=box_size
                     )
@@ -452,7 +499,8 @@ class CAMELSEvaluator:
 
         Args:
             ex_maps_norm: (N_ex, 3, H, W) normalized extreme-parameter maps.
-            ex_params_norm: (N_ex, 6) normalized extreme parameters.
+            ex_params_norm: (N_ex, 6) or (N_cond, 6) normalized extreme parameters.
+                If N_cond != N_ex, params are expanded to match maps.
             box_size: Override box size.
 
         Returns:
@@ -469,28 +517,34 @@ class CAMELSEvaluator:
         ex_maps_np = _to_numpy(ex_maps_norm)
         ex_params_np = _to_numpy(ex_params_norm)
         N_ex = len(ex_maps_np)
+        N_cond = len(ex_params_np)
+        if N_cond <= 0:
+            raise ValueError("EX params are empty.")
 
-        true_log10_list = []
-        gen_log10_list = []
+        # EX files may store one condition per extreme simulation (e.g., 4 rows),
+        # while maps include multiple projections per simulation (e.g., 60 rows).
+        if N_cond == N_ex:
+            ex_cond_batch = ex_params_np
+        elif N_ex % N_cond == 0:
+            ex_cond_batch = np.repeat(ex_params_np, N_ex // N_cond, axis=0)
+        else:
+            reps = (N_ex + N_cond - 1) // N_cond
+            ex_cond_batch = np.tile(ex_params_np, (reps, 1))[:N_ex]
 
-        has_nan = False
-        has_divergence = False
-
-        for i in self._progress(range(N_ex), total=N_ex, desc="EX samples", enabled=True):
-            true_l10 = self._to_log10(ex_maps_np[i])
-            true_log10_list.append(true_l10)
-
-            gen_l10 = self._generate_log10(ex_params_np[i], n_samples=1)[0]
-            gen_log10_list.append(gen_l10)
-
-            # Check for catastrophic failures
-            if np.any(np.isnan(gen_l10)):
-                has_nan = True
-            if np.any(np.abs(gen_l10) > 1e10):
-                has_divergence = True
-
+        true_log10_list = [
+            self._to_log10(ex_maps_np[i])
+            for i in self._progress(range(N_ex), total=N_ex, desc="EX samples", enabled=True)
+        ]
         true_batch = np.stack(true_log10_list, axis=0)
-        gen_batch = np.stack(gen_log10_list, axis=0)
+        gen_batch = self._generate_log10_in_chunks(
+            ex_cond_batch,
+            batch_size=8,
+            desc="EX generate",
+            enabled=True,
+        )
+
+        has_nan = bool(np.isnan(gen_batch).any())
+        has_divergence = bool((np.abs(gen_batch) > 1e10).any())
 
         spectrum_errors = compute_spectrum_errors(true_batch, gen_batch, box_size=box_size)
 

@@ -40,5 +40,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: runs/dit_flow/
+  ckpt_dir: runs/flow/vit/dit_flow/
   ckpt_name: best.pt

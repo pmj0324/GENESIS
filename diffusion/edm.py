@@ -25,7 +25,7 @@ Sampling: → diffusion/samplers_edm.py 참조
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple
+from typing import Optional
 
 
 class EDMPrecond(nn.Module):

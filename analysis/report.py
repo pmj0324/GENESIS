@@ -16,7 +16,6 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 
 from .cross_spectrum import AUTO_POWER_THRESHOLDS, CROSS_POWER_THRESHOLDS

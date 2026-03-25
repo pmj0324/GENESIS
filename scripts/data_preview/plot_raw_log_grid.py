@@ -26,6 +26,7 @@ from utils.project_paths import resolve_map_path
 
 MAP_NAME = "Maps_3ch_IllustrisTNG_LH_z=0.00.npy"
 CMAPS = ["viridis", "plasma", "inferno"]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="scripts/data_preview/results",
+        default=str(ROOT / "runs" / "analysis" / "data_preview" / "plot_raw_log_grid"),
         help="Directory to save the rendered PNG",
     )
     return parser.parse_args()

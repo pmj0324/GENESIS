@@ -1,0 +1,29 @@
+# Affine + uniform scale expansion on all channels
+# log10(x) -> (log10(x) - center) / (scale * scale_mult)
+#
+# 목적:
+#   메서드는 affine 그대로 두고, tail만 약하게 줄여보는 비교용 설정
+#
+# 사용법:
+#   python -m dataloader.build_dataset splits \
+#       --maps-path   /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+#       --params-path /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt \
+#       --out-dir     GENESIS-data/affine_scaled_all_v1/ \
+#       --norm-config configs/normalization/affine_scaled_all_v1.yaml
+
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.876
+    scale: 0.590
+    scale_mult: 1.12
+  Mgas:
+    method: affine
+    center: 10.344
+    scale: 0.627
+    scale_mult: 1.12
+  T:
+    method: affine
+    center: 4.2234
+    scale: 0.8163
+    scale_mult: 1.12

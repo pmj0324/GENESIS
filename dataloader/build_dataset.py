@@ -17,7 +17,10 @@ GENESIS - Dataset Builder
       --maps-path  /path/to/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \\
       --params-path /path/to/params_LH_IllustrisTNG.txt \\
       --out-dir    GENESIS-data/ \\
-      --norm-config configs/base.yaml
+      --norm-config configs/base.yaml \\
+      --split-strategy stratified_1d \\
+      --stratify-param Omega_m \\
+      --stratify-bins 10
 
   # Step 3: train split 물리적 증설 (D4, 최대 8배가 가장 자연스러움)
   python -m dataloader.build_dataset augment \\
@@ -32,6 +35,12 @@ GENESIS - Dataset Builder
   val_params.npy    [1500,  6]
   test_maps.npy     [1500,  3, 256, 256]
   test_params.npy   [1500,  6]
+  split_train.npy   [800]               int64  (canonical)
+  split_val.npy     [100]               int64  (canonical)
+  split_test.npy    [100]               int64  (canonical)
+  train_sim_ids.npy [800]               int64  (legacy alias)
+  val_sim_ids.npy   [100]               int64  (legacy alias)
+  test_sim_ids.npy  [100]               int64  (legacy alias)
   metadata.yaml     ← 정규화 설정, split 정보 기록
 """
 
@@ -49,6 +58,7 @@ from dataloader.normalization import Normalizer, normalize_params_numpy
 SUITE        = "IllustrisTNG"
 REDSHIFT     = "z=0.00"
 FIELDS       = ["Mcdm", "Mgas", "T"]
+PARAM_NAMES  = ["Omega_m", "sigma_8", "A_SN1", "A_SN2", "A_AGN1", "A_AGN2"]
 MAPS_PER_SIM = 15
 OUT_NAME     = f"Maps_3ch_{SUITE}_LH_{REDSHIFT}.npy"
 
@@ -90,6 +100,154 @@ def build(maps_dir: Path, out_dir: Path | None = None):
 
 # ── Step 2: 정규화 + split 저장 ────────────────────────────────────────────────
 
+def _resolve_param_index(param: str | int) -> int:
+    if isinstance(param, int):
+        idx = int(param)
+    else:
+        text = str(param).strip()
+        if text.lstrip("-").isdigit():
+            idx = int(text)
+        else:
+            aliases = {name.lower(): i for i, name in enumerate(PARAM_NAMES)}
+            aliases.update(
+                {
+                    "omegam": 0,
+                    "omega_m": 0,
+                    "sigma8": 1,
+                    "sigma_8": 1,
+                }
+            )
+            key = text.lower()
+            if key not in aliases:
+                raise ValueError(
+                    f"Unknown stratify param: {param!r}. "
+                    f"Use one of {PARAM_NAMES} or index 0..{len(PARAM_NAMES)-1}."
+                )
+            idx = aliases[key]
+
+    if idx < 0 or idx >= len(PARAM_NAMES):
+        raise ValueError(
+            f"stratify param index out of range: {idx}. "
+            f"Valid range is 0..{len(PARAM_NAMES)-1}."
+        )
+    return idx
+
+
+def _make_stratify_labels(params: np.ndarray, param_idx: int, n_bins: int):
+    values = params[:, param_idx].astype(np.float64)
+    if n_bins <= 1:
+        labels = np.zeros(len(values), dtype=np.int64)
+        edges = np.array([values.min(), values.max()], dtype=np.float64)
+        return labels, edges
+
+    vmin, vmax = float(np.min(values)), float(np.max(values))
+    if not np.isfinite(vmin) or not np.isfinite(vmax):
+        raise ValueError("Non-finite values found while building stratify labels.")
+
+    if vmax <= vmin:
+        labels = np.zeros(len(values), dtype=np.int64)
+        edges = np.array([vmin, vmax], dtype=np.float64)
+        return labels, edges
+
+    # Equal-width bins over the selected parameter range (pd.cut 스타일).
+    edges = np.linspace(vmin, vmax, int(n_bins) + 1, dtype=np.float64)
+    labels = np.digitize(values, edges[1:-1], right=False).astype(np.int64)
+    return labels, edges
+
+
+def _stratified_pick(
+    ids: np.ndarray,
+    labels: np.ndarray,
+    n_pick: int,
+    rng: np.random.Generator,
+):
+    n_total = len(ids)
+    if n_pick <= 0:
+        return np.empty(0, dtype=np.int64), ids.copy()
+    if n_pick >= n_total:
+        return ids.copy(), np.empty(0, dtype=np.int64)
+
+    unique, counts = np.unique(labels, return_counts=True)
+    target = counts.astype(np.float64) * (float(n_pick) / float(n_total))
+    picks = np.floor(target).astype(np.int64)
+
+    rem = int(n_pick - picks.sum())
+    if rem > 0:
+        frac = target - picks
+        order = np.argsort(-frac)
+        for i in order:
+            if rem == 0:
+                break
+            if picks[i] < counts[i]:
+                picks[i] += 1
+                rem -= 1
+
+    picked_chunks = []
+    other_chunks = []
+    for cls, n_cls_pick in zip(unique, picks):
+        cls_ids = ids[labels == cls].copy()
+        rng.shuffle(cls_ids)
+        n_cls_pick = int(n_cls_pick)
+        picked_chunks.append(cls_ids[:n_cls_pick])
+        other_chunks.append(cls_ids[n_cls_pick:])
+
+    picked = np.concatenate(picked_chunks).astype(np.int64, copy=False)
+    other = np.concatenate(other_chunks).astype(np.int64, copy=False)
+    rng.shuffle(picked)
+    rng.shuffle(other)
+    return picked, other
+
+
+def _split_sim_ids(
+    n_sims: int,
+    train_ratio: float,
+    val_ratio: float,
+    seed: int,
+    strategy: str,
+    strat_labels: np.ndarray | None = None,
+):
+    if train_ratio <= 0 or val_ratio < 0 or train_ratio + val_ratio >= 1.0:
+        raise ValueError(
+            f"Invalid ratios: train_ratio={train_ratio}, val_ratio={val_ratio}. "
+            "Require 0 < train_ratio, 0 <= val_ratio, train_ratio+val_ratio < 1."
+        )
+
+    n_train = int(n_sims * train_ratio)
+    n_val = int(n_sims * val_ratio)
+    n_test = n_sims - n_train - n_val
+    if n_train <= 0 or n_val <= 0 or n_test <= 0:
+        raise ValueError(
+            f"Invalid split sizes: train={n_train}, val={n_val}, test={n_test}. "
+            "Please adjust ratios."
+        )
+
+    sim_ids = np.arange(n_sims, dtype=np.int64)
+    rng = np.random.default_rng(seed)
+
+    if strategy == "random":
+        perm = rng.permutation(sim_ids)
+        return {
+            "train": perm[:n_train],
+            "val": perm[n_train : n_train + n_val],
+            "test": perm[n_train + n_val :],
+        }
+
+    if strategy == "stratified_1d":
+        if strat_labels is None or len(strat_labels) != n_sims:
+            raise ValueError("stratified_1d split requires strat_labels for all simulations.")
+        labels = np.asarray(strat_labels, dtype=np.int64)
+        train_ids, valtest_ids = _stratified_pick(sim_ids, labels, n_train, rng)
+        val_ids, test_ids = _stratified_pick(
+            valtest_ids, labels[valtest_ids], n_val, rng
+        )
+        return {"train": train_ids, "val": val_ids, "test": test_ids}
+
+    raise ValueError(
+        f"Unknown split strategy: {strategy!r}. "
+        "Options: random / stratified_1d"
+    )
+
+
 def build_splits(
     maps_path:   Path,
     params_path: Path,
@@ -98,6 +256,9 @@ def build_splits(
     train_ratio: float = 0.8,
     val_ratio:   float = 0.1,
     seed:        int   = 42,
+    split_strategy: str = "stratified_1d",
+    stratify_param: str | int = "Omega_m",
+    stratify_bins: int = 10,
 ):
     maps_path   = Path(maps_path)
     params_path = Path(params_path)
@@ -131,21 +292,56 @@ def build_splits(
     params_norm = normalize_params_numpy(params_exp)             # zscore
 
     # ── split ─────────────────────────────────────────────────────────────────
-    n_sims  = len(params_raw)
-    rng     = np.random.default_rng(seed)
-    sim_idx = rng.permutation(n_sims)
-    n_train = int(n_sims * train_ratio)
-    n_val   = int(n_sims * val_ratio)
+    n_sims = len(params_raw)
+    split_strategy = str(split_strategy).strip().lower()
+    stratify_cfg = None
+    strat_labels = None
+    if split_strategy == "stratified_1d":
+        stratify_idx = _resolve_param_index(stratify_param)
+        strat_labels, strat_edges = _make_stratify_labels(
+            params_raw, param_idx=stratify_idx, n_bins=int(stratify_bins)
+        )
+        uniq, cnt = np.unique(strat_labels, return_counts=True)
+        stratify_cfg = {
+            "param_index": int(stratify_idx),
+            "param_name": PARAM_NAMES[stratify_idx],
+            "n_bins": int(stratify_bins),
+            "bin_edges": strat_edges.tolist(),
+            "label_counts": {int(u): int(c) for u, c in zip(uniq, cnt)},
+        }
+        print(
+            "[build_splits] split strategy: stratified_1d "
+            f"(param={PARAM_NAMES[stratify_idx]}, bins={int(stratify_bins)})"
+        )
+    elif split_strategy == "random":
+        print("[build_splits] split strategy: random")
+    else:
+        raise ValueError(
+            f"Unknown split strategy: {split_strategy!r}. "
+            "Options: random / stratified_1d"
+        )
 
-    splits = {
-        "train": sim_idx[:n_train],
-        "val":   sim_idx[n_train : n_train + n_val],
-        "test":  sim_idx[n_train + n_val :],
-    }
+    splits = _split_sim_ids(
+        n_sims=n_sims,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        seed=seed,
+        strategy=split_strategy,
+        strat_labels=strat_labels,
+    )
+    print(
+        f"[build_splits] simulations: train={len(splits['train'])} "
+        f"val={len(splits['val'])} test={len(splits['test'])}"
+    )
 
     # ── 저장 ──────────────────────────────────────────────────────────────────
     sizes = {}
     for split_name, sims in splits.items():
+        sim_ids = np.asarray(sims, dtype=np.int64)
+        # Canonical split-id filenames.
+        np.save(out_dir / f"split_{split_name}.npy", sim_ids)
+        # Backward compatibility alias.
+        np.save(out_dir / f"{split_name}_sim_ids.npy", sim_ids)
         map_idx = np.concatenate([
             np.arange(s * MAPS_PER_SIM, (s + 1) * MAPS_PER_SIM) for s in sims
         ])
@@ -176,6 +372,18 @@ def build_splits(
             "seed":        seed,
             "n_sims":      n_sims,
             "maps_per_sim": MAPS_PER_SIM,
+            "strategy": split_strategy,
+            "stratify": stratify_cfg,
+            "id_files": {
+                "train": "split_train.npy",
+                "val": "split_val.npy",
+                "test": "split_test.npy",
+            },
+            "legacy_id_files": {
+                "train": "train_sim_ids.npy",
+                "val": "val_sim_ids.npy",
+                "test": "test_sim_ids.npy",
+            },
         },
         "sizes": sizes,
     }
@@ -317,6 +525,31 @@ if __name__ == "__main__":
     p_splits.add_argument("--train-ratio", type=float, default=0.8)
     p_splits.add_argument("--val-ratio",   type=float, default=0.1)
     p_splits.add_argument("--seed",        type=int,   default=42)
+    p_splits.add_argument(
+        "--split-strategy",
+        type=str,
+        choices=["stratified_1d", "random"],
+        default="stratified_1d",
+        help=(
+            "Simulation-level split strategy. "
+            "Default is stratified_1d (recommended)."
+        ),
+    )
+    p_splits.add_argument(
+        "--stratify-param",
+        type=str,
+        default="Omega_m",
+        help=(
+            "Parameter for stratified_1d split. "
+            "Use name (Omega_m, sigma_8, ...) or index (0..5)."
+        ),
+    )
+    p_splits.add_argument(
+        "--stratify-bins",
+        type=int,
+        default=10,
+        help="Number of equal-width bins for stratified_1d split.",
+    )
 
     # augment
     p_aug = sub.add_parser("augment", help="정규화된 train split을 D4 대칭으로 물리적 증설")
@@ -343,6 +576,9 @@ if __name__ == "__main__":
             train_ratio=args.train_ratio,
             val_ratio=args.val_ratio,
             seed=args.seed,
+            split_strategy=args.split_strategy,
+            stratify_param=args.stratify_param,
+            stratify_bins=args.stratify_bins,
         )
 
     elif args.cmd == "augment":

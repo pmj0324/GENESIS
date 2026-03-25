@@ -18,7 +18,6 @@ import numpy as np
 from .cross_spectrum import (
     _to_numpy,
     compute_cross_power_spectrum_2d,
-    compute_all_spectra,
     CHANNELS,
     CROSS_PAIRS,
 )

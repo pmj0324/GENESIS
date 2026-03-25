@@ -55,7 +55,7 @@ from analysis.power_spectrum import compute_power_spectrum_2d
 # 기본 경로 (우리 서버 기준)
 # ============================================================================
 DEFAULT_CAMELS_DIR = Path("/home/work/cosmology/CAMELS/IllustrisTNG")
-DEFAULT_OUT_DIR = SCRIPT_DIR / "results"
+DEFAULT_OUT_DIR = GENESIS_ROOT / "runs" / "calibration" / "measure_noise_floor"
 
 # ============================================================================
 # 상수 정의

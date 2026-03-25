@@ -24,8 +24,9 @@ from scipy import stats
 DATA_ROOT = Path("/home/work/cosmology/CAMELS/IllustrisTNG")
 SUITE     = "IllustrisTNG"
 REDSHIFT  = "z=0.00"
-OUTPUT    = Path("./results_compare_norm")
-OUTPUT.mkdir(exist_ok=True)
+ROOT      = Path(__file__).resolve().parents[1]
+OUTPUT    = ROOT / "runs" / "normalization" / "data_normalizing"
+OUTPUT.mkdir(parents=True, exist_ok=True)
 
 FIELDS = ["Mcdm", "Mgas", "T"]
 

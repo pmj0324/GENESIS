@@ -272,6 +272,10 @@ def compute_spectrum_errors(
     """
     x_true = _to_numpy(x_true)  # (B, 3, H, W)
     x_gen = _to_numpy(x_gen)
+    if x_true.shape[0] != x_gen.shape[0]:
+        raise ValueError(
+            f"x_true/x_gen batch mismatch: {x_true.shape[0]} vs {x_gen.shape[0]}"
+        )
 
     B = x_true.shape[0]
 

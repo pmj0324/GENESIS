@@ -25,7 +25,6 @@ DiT, UNet과 동일한 인터페이스: forward(x, t, cond) → output
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import List, Optional, Tuple
 
 from .embeddings import TimestepEmbedding, ConditionEmbedding

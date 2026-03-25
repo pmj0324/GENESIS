@@ -29,9 +29,10 @@ SUITE = "IllustrisTNG"
 REDSHIFT = "z=0.00"
 FIELDS = ["Mcdm", "Mgas", "T"]
 N_SAMPLE = 1000  # 1000개 샘플로 테스트
+ROOT = Path(__file__).resolve().parents[1]
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "results_softclip_reconstruction"
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = ROOT / "runs" / "normalization" / "test_softclip_reconstruction"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================
 # Load data

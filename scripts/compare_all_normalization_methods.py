@@ -21,9 +21,10 @@ SUITE = "IllustrisTNG"
 REDSHIFT = "z=0.00"
 FIELDS = ["Mcdm", "Mgas", "T"]
 N_SAMPLE = 500
+ROOT = Path(__file__).resolve().parents[1]
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "results_all_normalization"
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = ROOT / "runs" / "normalization" / "compare_all_normalization_methods"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 METHOD_DESCRIPTIONS = {
     "Affine Default": "z = (log10(x) - center) / scale | Linear transformation",

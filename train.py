@@ -26,6 +26,7 @@ from diffusion.edm import EDMPrecond, EDMDiffusion
 from diffusion.samplers_edm import heun_sample, euler_sample
 from training.trainer import Trainer
 from training.visualize import EpochVisualizer
+from utils.sampler_config import resolve_sampler_config
 
 
 # ── Config 로드 ───────────────────────────────────────────────────────────────
@@ -154,9 +155,7 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
     img_size = int(kwargs.get("img_size", 256))
     patch_size = int(kwargs.get("patch_size", 4))
     embed_dim = int(kwargs.get("embed_dim", 128))
-    depths = _require_int_sequence(
-        "model.swin.depths", kwargs.get("depths", [2, 2, 8, 2]), length=4
-    )
+    _require_int_sequence("model.swin.depths", kwargs.get("depths", [2, 2, 8, 2]), length=4)
     num_heads = _require_int_sequence(
         "model.swin.num_heads", kwargs.get("num_heads", [4, 8, 16, 32]), length=4
     )
@@ -474,17 +473,18 @@ def main():
     ref_maps    = torch.stack([val_dataset[i][0] for i in range(8)])  # [8, 3, 256, 256]
     ref_cond    = val_dataset[0][1]                                    # [6]
     eval_conds  = torch.stack([val_dataset[i][1] for i in range(8)])  # [8, 6] 메트릭용
-    gcfg_s      = cfg["generative"].get("sampler", {})
-    cfg_scale   = gcfg_s.get("cfg_scale", 1.0)
     framework   = cfg["generative"]["framework"]
+    sampler_cfg = resolve_sampler_config(cfg, framework)
+    cfg_scale   = sampler_cfg["cfg_scale"]
 
+    gcfg_s = cfg["generative"].get("sampler", {})
     viz_cfg = gcfg_s.get("viz", {})
 
     if framework == "diffusion":
         name_a = viz_cfg.get("sampler_a", "ddpm").lower()
         name_b = viz_cfg.get("sampler_b", "ddim").lower()
-        steps  = gcfg_s.get("steps", 50)
-        eta    = gcfg_s.get("eta", 0.0)
+        steps  = sampler_cfg["steps"]
+        eta    = sampler_cfg["eta"]
 
         def _diff_sampler(name):
             if name == "ddpm":
@@ -501,21 +501,30 @@ def main():
 
     elif framework == "edm":
         ecfg_s  = cfg["generative"]["edm"]
-        steps   = gcfg_s.get("steps", 40)
-        s_eta   = gcfg_s.get("eta",   0.0)
-        s_churn = gcfg_s.get("S_churn", 0.0)
-        _edm_kw = dict(
+        steps = sampler_cfg["steps"]
+        eta = sampler_cfg["eta"]
+        s_churn = sampler_cfg["S_churn"]
+        _edm_heun_kw = dict(
             steps=steps, cfg_scale=cfg_scale, progress=False,
             sigma_min=ecfg_s.get("sigma_min", 0.002),
             sigma_max=ecfg_s.get("sigma_max", 80.0),
+            rho=sampler_cfg.get("rho", ecfg_s.get("rho", 7.0)),
+            eta=eta,
+            S_churn=s_churn,
         )
-        sampler_a = ("EDM-Heun",  lambda m, sh, c: heun_sample(m,  sh, c, **_edm_kw))
-        sampler_b = ("EDM-Euler", lambda m, sh, c: euler_sample(m, sh, c, **_edm_kw))
+        _edm_euler_kw = dict(
+            steps=steps, cfg_scale=cfg_scale, progress=False,
+            sigma_min=ecfg_s.get("sigma_min", 0.002),
+            sigma_max=ecfg_s.get("sigma_max", 80.0),
+            rho=sampler_cfg.get("rho", ecfg_s.get("rho", 7.0)),
+        )
+        sampler_a = ("EDM-Heun",  lambda m, sh, c: heun_sample(m,  sh, c, **_edm_heun_kw))
+        sampler_b = ("EDM-Euler", lambda m, sh, c: euler_sample(m, sh, c, **_edm_euler_kw))
 
     else:  # flow_matching
         name_a = viz_cfg.get("sampler_a", "euler").lower()
         name_b = viz_cfg.get("sampler_b", "heun").lower()
-        steps  = gcfg_s.get("steps", 25)
+        steps  = sampler_cfg["steps"]
 
         def _flow_sampler(name):
             s = build_sampler(name)
@@ -584,7 +593,7 @@ def main():
         start_epoch = 0
 
     # Train
-    history = trainer.fit(train_loader, val_loader, start_epoch=start_epoch)
+    trainer.fit(train_loader, val_loader, start_epoch=start_epoch)
     print(f"[train] done. best_val={trainer._best_val:.5f}")
 
 

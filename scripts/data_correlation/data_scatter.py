@@ -29,8 +29,9 @@ from sklearn.preprocessing import StandardScaler
 DATA_ROOT = Path("/home/work/cosmology/CAMELS/IllustrisTNG")
 SUITE     = "IllustrisTNG"
 REDSHIFT  = "z=0.00"
-OUTPUT    = Path("./results_data_scatter")
-OUTPUT.mkdir(exist_ok=True)
+ROOT      = Path(__file__).resolve().parents[2]
+OUTPUT    = ROOT / "runs" / "analysis" / "data_correlation" / "data_scatter"
+OUTPUT.mkdir(parents=True, exist_ok=True)
 
 FIELDS   = ["Mcdm", "Mgas", "T"]
 L_BOX    = 25.0

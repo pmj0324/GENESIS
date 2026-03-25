@@ -20,9 +20,10 @@ SUITE = "IllustrisTNG"
 REDSHIFT = "z=0.00"
 FIELDS = ["Mcdm", "Mgas", "T"]
 N_SAMPLE = 500
+ROOT = Path(__file__).resolve().parents[1]
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "results_channel_optimization"
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = ROOT / "runs" / "normalization" / "channel_optimization_comparison"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================
 # Normalization Strategies

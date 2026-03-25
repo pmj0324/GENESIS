@@ -1,0 +1,16 @@
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.9770
+    scale: 0.590
+    scale_mult: 1.30
+  Mgas:
+    method: affine
+    center: 10.4128
+    scale: 0.627
+    scale_mult: 1.25
+  T:
+    method: affine
+    center: 4.2362
+    scale: 0.8163
+    scale_mult: 1.00

@@ -65,5 +65,5 @@ training:
   early_stop_patience: 30
 
 checkpoint:
-  ckpt_dir: runs/swin_flow_hybrid_softclip_affine/
+  ckpt_dir: runs/flow/swin/swin_flow_hybrid_softclip_affine/
   ckpt_name: best.pt

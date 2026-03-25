@@ -15,6 +15,8 @@ import torch.nn as nn
 from tqdm import tqdm
 from typing import Optional, Tuple
 
+from utils.sampling import validate_sampling_steps
+
 
 def _vf(
     model:     nn.Module,
@@ -51,6 +53,7 @@ class EulerSampler:
         cfg_scale: float = 1.0,
         progress:  bool  = True,
     ) -> torch.Tensor:
+        steps = validate_sampling_steps(steps, name="flow steps")
         device = next(model.parameters()).device
         B = shape[0]
         x = torch.randn(shape, device=device)
@@ -88,6 +91,7 @@ class HeunSampler:
         cfg_scale: float = 1.0,
         progress:  bool  = True,
     ) -> torch.Tensor:
+        steps = validate_sampling_steps(steps, name="flow steps")
         device = next(model.parameters()).device
         B = shape[0]
         x = torch.randn(shape, device=device)
@@ -127,6 +131,7 @@ class RK4Sampler:
         cfg_scale: float = 1.0,
         progress:  bool  = True,
     ) -> torch.Tensor:
+        steps = validate_sampling_steps(steps, name="flow steps")
         device = next(model.parameters()).device
         B = shape[0]
         x = torch.randn(shape, device=device)

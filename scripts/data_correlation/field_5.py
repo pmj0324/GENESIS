@@ -27,8 +27,9 @@ from scipy.stats import kurtosis as scipy_kurtosis
 DATA_ROOT  = Path("/home/work/cosmology/CAMELS/IllustrisTNG")
 SUITE      = "IllustrisTNG"
 REDSHIFT   = "z=0.00"
-OUTPUT     = Path("./results_5fields")
-OUTPUT.mkdir(exist_ok=True)
+ROOT       = Path(__file__).resolve().parents[2]
+OUTPUT     = ROOT / "runs" / "analysis" / "data_correlation" / "field_5"
+OUTPUT.mkdir(parents=True, exist_ok=True)
 
 CANDIDATES = ["Mcdm", "Mgas", "T", "HI", "Z"]
 L_BOX      = 25.0

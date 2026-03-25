@@ -24,7 +24,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Subset
 import numpy as np
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 
 class CAMELSDataset(Dataset):

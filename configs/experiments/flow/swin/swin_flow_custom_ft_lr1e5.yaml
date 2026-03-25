@@ -1,10 +1,10 @@
 ##############################################################################
 # swin_flow_custom_ft_lr1e5.yaml
-# Fine-tuning from runs/swin_flow_custom/best.pt with a very conservative LR.
+# Fine-tuning from runs/flow/swin/swin_flow_custom/best.pt with a very conservative LR.
 #
 # Usage:
 #   python train.py --config configs/experiments/flow/swin/swin_flow_custom_ft_lr1e5.yaml \
-#                   --finetune runs/swin_flow_custom/best.pt
+#                   --finetune runs/flow/swin/swin_flow_custom/best.pt
 #
 # 목적:
 #   - 현재 best checkpoint를 거의 보존한 채
@@ -65,5 +65,5 @@ training:
   early_stop_patience: 20
 
 checkpoint:
-  ckpt_dir: runs/swin_flow_custom_ft_lr1e5/
+  ckpt_dir: runs/flow/swin/swin_flow_custom_ft_lr1e5/
   ckpt_name: best.pt

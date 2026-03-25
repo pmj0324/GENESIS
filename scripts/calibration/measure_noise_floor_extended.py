@@ -42,6 +42,9 @@ import numpy as np
 
 matplotlib.use("Agg")
 
+GENESIS_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUT_DIR = GENESIS_ROOT / "runs" / "calibration" / "measure_noise_floor_extended"
+
 # GENESIS analysis module
 try:
     from analysis.power_spectrum import compute_power_spectrum_2d
@@ -772,7 +775,7 @@ def _plot_summary(recs, out_dir):
 def main():
     p = argparse.ArgumentParser(description="GENESIS Extended Noise Floor Measurement v2.0")
     p.add_argument("--camels-dir", type=Path, required=True, help="CAMELS/IllustrisTNG/ 디렉토리")
-    p.add_argument("--out-dir", type=Path, default=Path("results_noise_floor_v2"))
+    p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     p.add_argument("--lh-sample", type=int, default=50, help="LH set에서 샘플링할 sim 수 (default 50)")
     p.add_argument("--skip-1p", action="store_true", help="1P sensitivity skip (빠른 테스트용)")
     args = p.parse_args()

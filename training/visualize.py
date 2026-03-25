@@ -4,6 +4,7 @@ GENESIS - EpochVisualizer
 에폭 끝마다 호출:
   1. 샘플 맵         → plots/ep{N:04d}_samples.png       3×3 grid (Real / sampler_a / sampler_b)
   2. Power spectrum  → plots/ep{N:04d}_power_spectrum.png
+                       (2×3 grid: linear row + log10 row)
   3. Loss curve      → plots/loss.png                    (선형 + log-y loss; 매 에폭 덮어씀)
   4. Learning rate   → plots/lr.png                      (lr 히스토리 있을 때만; 매 에폭 덮어씀)
 
@@ -20,7 +21,12 @@ power spectrum:
   ref_map[0]: val set 첫 번째 실제 맵 (ref_cond와 동일 시뮬레이션)
   val avg   : val set 처음 8장 평균 P(k)
   sampler_a/b: ref_cond 조건으로 생성된 샘플의 P(k)
-  → viz.power.field_space 설정(log / linear)에 따라 계산
+  linear: denormalized physical field 그대로 P(k) 계산
+  log   : denormalized field를 log10(max(x, 1e-30))로 변환 후 P(k) 계산
+  매 에폭 linear/log를 2행으로 함께 표시
+  estimator:
+    - genesis (기본)
+    - diffusion_hmc (호환 모드; linear=normalize=True, log=normalize=False)
 """
 
 import json
@@ -87,18 +93,28 @@ class EpochVisualizer:
         self.samples_field_space = self._normalize_field_space(
             samples_cfg.get("field_space", "log")
         )
-        self.power_field_space = self._normalize_field_space(
-            power_cfg.get("field_space", "log")
-        )
-        extra_spaces = power_cfg.get("extra_field_spaces", ["linear"])
-        if isinstance(extra_spaces, str):
-            extra_spaces = [extra_spaces]
-        self.extra_power_field_spaces = []
-        for space in extra_spaces:
+        requested_power_spaces = power_cfg.get("field_spaces")
+        if requested_power_spaces is None:
+            requested_power_spaces = [
+                power_cfg.get("field_space", "log"),
+                *(power_cfg.get("extra_field_spaces", ["linear"]) or []),
+            ]
+        if isinstance(requested_power_spaces, str):
+            requested_power_spaces = [requested_power_spaces]
+
+        power_spaces: list[str] = []
+        for space in requested_power_spaces:
             norm_space = self._normalize_field_space(space)
-            if norm_space != self.power_field_space and norm_space not in self.extra_power_field_spaces:
-                self.extra_power_field_spaces.append(norm_space)
-        self.extra_power_every_n = max(1, int(power_cfg.get("extra_every_n_epochs", 10)))
+            if norm_space not in power_spaces:
+                power_spaces.append(norm_space)
+        # From now on, always render both spaces in the same figure.
+        for required in ("linear", "log"):
+            if required not in power_spaces:
+                power_spaces.append(required)
+        self.power_plot_spaces = power_spaces
+        self.power_spectrum_estimator = self._normalize_power_spectrum_estimator(
+            power_cfg.get("estimator", "genesis")
+        )
         self.metrics_field_space = self._normalize_field_space(
             metrics_cfg.get("field_space", "log")
         )
@@ -167,6 +183,52 @@ class EpochVisualizer:
     def _field_space_label(self, field_space: str) -> str:
         return "log10 field" if field_space == "log" else "linear field"
 
+    @staticmethod
+    def _normalize_power_spectrum_estimator(value: str) -> str:
+        """Normalize estimator alias for power spectrum plotting.
+
+        Supported:
+          - genesis
+          - diffusion_hmc (diffusion-hmc compatibility)
+        """
+        mode = str(value).strip().lower()
+        aliases = {
+            "default": "genesis",
+            "genesis_default": "genesis",
+            "diffusion-hmc": "diffusion_hmc",
+            "dhmc": "diffusion_hmc",
+            "compat": "diffusion_hmc",
+            "compatibility": "diffusion_hmc",
+        }
+        mode = aliases.get(mode, mode)
+        if mode not in {"genesis", "diffusion_hmc"}:
+            raise ValueError(
+                f"Unknown power estimator: {value!r}. "
+                "Options: genesis / diffusion_hmc"
+            )
+        return mode
+
+    def _power_estimator_label(self) -> str:
+        return "GENESIS" if self.power_spectrum_estimator == "genesis" else "diffusion-hmc compatible"
+
+    def _compute_power_spectrum(self, field: np.ndarray, field_space: str) -> tuple[np.ndarray, np.ndarray]:
+        """Compute P(k) with selected estimator.
+
+        diffusion-hmc 호환 모드에서는 원본 비교 코드 관례를 따른다:
+          - linear field  -> normalize=True
+          - log10 field   -> normalize=False
+        """
+        if self.power_spectrum_estimator == "genesis":
+            return compute_power_spectrum_2d(field)
+
+        use_norm = field_space == "linear"
+        return compute_power_spectrum_2d(
+            field,
+            mode="diffusion_hmc",
+            diffusion_hmc_normalize=use_norm,
+            diffusion_hmc_smoothed=0.25,
+        )
+
     def _plot_positive_loglog(self, ax, k: np.ndarray, pk: np.ndarray, *args, **kwargs) -> None:
         mask = np.isfinite(k) & np.isfinite(pk) & (k > 0) & (pk > 0)
         if mask.sum() == 0:
@@ -196,12 +258,9 @@ class EpochVisualizer:
             sample_b = self._denorm_maps(raw_b)
 
             self._plot_samples(epoch, sample_a, sample_b)
-            self._plot_power_spectrum(epoch, sample_a, sample_b, self.power_field_space, primary=True)
-            if self.extra_power_field_spaces and ((epoch + 1) % self.extra_power_every_n == 0):
-                for extra_space in self.extra_power_field_spaces:
-                    self._plot_power_spectrum(epoch, sample_a, sample_b, extra_space, primary=False)
+            self._plot_power_spectrum(epoch, sample_a, sample_b, self.power_plot_spaces)
             self._plot_loss(history)
-            self._print_metrics(epoch, model)
+            self._print_metrics(epoch, model, history)
 
             torch.cuda.empty_cache()
             print(f"  [viz] saved → {self.plot_dir}", flush=True)
@@ -265,59 +324,76 @@ class EpochVisualizer:
         epoch: int,
         sample_a: np.ndarray,
         sample_b: np.ndarray,
-        field_space: str,
-        primary: bool,
+        field_spaces: list[str],
     ):
         """
-        선택된 field space 기준 P(k) 비교
-          Real val[0]  : ref_cond와 동일 시뮬레이션의 실제 맵
-          Real val avg : val set 처음 8장 평균 P(k)
+        linear/log field space 기준 P(k) 비교 (2행)
+          True mean    : ref_cond와 동일 시뮬레이션의 실제 맵 8장 평균 P(k)
+          True 16-84%  : same-condition realization band
           sampler_a/b  : ref_cond 조건으로 생성된 샘플
         """
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        n_rows = len(field_spaces)
+        fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4 * n_rows), squeeze=False)
         fig.suptitle(
-            f"Epoch {epoch+1:04d}  –  Power Spectrum  [{self._field_space_label(field_space)}]\n"
+            f"Epoch {epoch+1:04d}  –  Power Spectrum  [linear + log10 | {self._power_estimator_label()}]\n"
             f"cond: {self._cond_str()}",
             fontsize=9,
         )
 
-        for c, (ch_name, ax) in enumerate(zip(CHANNEL_NAMES, axes)):
-            ref0 = self._to_field_space(self.ref_maps_linear[0][c], field_space)
-            ref_all = [self._to_field_space(m[c], field_space) for m in self.ref_maps_linear]
-            samp_a = self._to_field_space(sample_a[c], field_space)
-            samp_b = self._to_field_space(sample_b[c], field_space)
+        for row, field_space in enumerate(field_spaces):
+            for c, ch_name in enumerate(CHANNEL_NAMES):
+                ax = axes[row, c]
+                ref_all = [self._to_field_space(m[c], field_space) for m in self.ref_maps_linear]
+                samp_a = self._to_field_space(sample_a[c], field_space)
+                samp_b = self._to_field_space(sample_b[c], field_space)
 
-            k_r0, Pk_r0 = compute_power_spectrum_2d(ref0)
-            Pk_avg = np.mean(
-                [compute_power_spectrum_2d(m)[1] for m in ref_all], axis=0
-            )
-            k_a, Pk_a = compute_power_spectrum_2d(samp_a)
-            k_b, Pk_b = compute_power_spectrum_2d(samp_b)
+                true_curves = np.asarray(
+                    [self._compute_power_spectrum(m, field_space)[1] for m in ref_all],
+                    dtype=np.float64,
+                )
+                k_true, _ = self._compute_power_spectrum(ref_all[0], field_space)
+                pk_true_mean = true_curves.mean(axis=0)
+                pk_true_lo = np.percentile(true_curves, 16, axis=0)
+                pk_true_hi = np.percentile(true_curves, 84, axis=0)
+                k_a, Pk_a = self._compute_power_spectrum(samp_a, field_space)
+                k_b, Pk_b = self._compute_power_spectrum(samp_b, field_space)
 
-            self._plot_positive_loglog(ax, k_r0, Pk_r0, "k-", lw=2.0, label="Real val[0] (same cond)")
-            self._plot_positive_loglog(ax, k_r0, Pk_avg, "k--", lw=1.2, label="Real val avg (N=8)", alpha=0.6)
-            self._plot_positive_loglog(ax, k_a, Pk_a, "r-", lw=1.5, label=f"{self.name_a} (generated)")
-            self._plot_positive_loglog(ax, k_b, Pk_b, "b-", lw=1.5, label=f"{self.name_b} (generated)")
+                pos_band = (
+                    (k_true > 0)
+                    & np.isfinite(pk_true_lo)
+                    & np.isfinite(pk_true_hi)
+                    & (pk_true_hi > 0)
+                )
+                if np.any(pos_band):
+                    ax.fill_between(
+                        k_true[pos_band],
+                        np.clip(pk_true_lo[pos_band], 1e-30, None),
+                        np.clip(pk_true_hi[pos_band], 1e-30, None),
+                        color="black",
+                        alpha=0.16,
+                        linewidth=0,
+                        label="True 16-84% (N=8)",
+                    )
+                self._plot_positive_loglog(ax, k_true, pk_true_mean, "k-", lw=2.0, label="True mean (N=8)")
+                self._plot_positive_loglog(ax, k_a, Pk_a, "r-", lw=1.5, label=f"{self.name_a} (generated)")
+                self._plot_positive_loglog(ax, k_b, Pk_b, "b-", lw=1.5, label=f"{self.name_b} (generated)")
 
-            ax.set_title(ch_name, fontsize=11)
-            ax.set_xlabel("k  [h/Mpc]")
-            ax.set_ylabel("P(k)")
-            ax.legend(fontsize=7)
-            ax.grid(True, alpha=0.3, which="both")
+                ax.set_title(f"{ch_name} [{self._field_space_label(field_space)}]", fontsize=10)
+                ax.set_xlabel("k  [h/Mpc]")
+                ax.set_ylabel("P(k)")
+                ax.legend(fontsize=7)
+                ax.grid(True, alpha=0.3, which="both")
 
         fig.tight_layout()
-        path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum_{field_space}.png"
+        path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
-        latest_space_path = self.plot_dir / f"latest_power_spectrum_{field_space}.png"
-        shutil.copy(path, latest_space_path)
-        if primary:
-            shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
+        shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
         plt.close(fig)
 
     # ── 3. Per-epoch Metrics ───────────────────────────────────────────────────
 
     @torch.no_grad()
-    def _print_metrics(self, epoch: int, model):
+    def _print_metrics(self, epoch: int, model, history: dict):
         """
         eval_maps (N개) 각각에 대해 sampler_b로 생성 → log10 공간에서 메트릭 계산 후 출력.
         sampler_b (보통 DDIM)로 N개를 한 번에 배치 샘플링.
@@ -398,7 +474,7 @@ class EpochVisualizer:
             print(f"  {sep}\n")
 
             # ── JSON 저장 ────────────────────────────────────────────────────
-            self._save_metrics_json(epoch, N, spec_err, corr_err, pdf_res)
+            self._save_metrics_json(epoch, N, spec_err, corr_err, pdf_res, history)
 
         except Exception as e:
             print(f"  [metrics] WARNING: metric computation failed — {e}", flush=True)
@@ -410,12 +486,17 @@ class EpochVisualizer:
         spec_err: dict,
         corr_err: dict,
         pdf_res: dict,
+        history: dict,
     ) -> None:
-        """에폭 metrics를 JSON으로 저장 (누적 history 파일에 append).
+        """메트릭 JSON을 val_loss 최소(best) 기준으로 저장.
 
-        저장 위치: {plot_dir}/../metrics_history.json
-        각 에폭 항목 구조:
-            epoch, n_samples, auto_power, cross_power, correlation, pdf, passed_overall
+        저장 위치:
+          - {plot_dir}/../metrics_history.json  (best record 1개를 list 형태로 저장)
+          - {plot_dir}/../metrics_best.json     (best record 단일 dict)
+
+        이유:
+          기존에는 epoch별 누적 기록을 저장했지만, 현재 운영 기준은
+          "val_loss 최소 체크포인트(best.pt) 기준 메트릭 1개"를 단일 기준으로 쓰는 것이다.
         """
         # ── Auto-Power ────────────────────────────────────────────────────────
         auto = {}
@@ -487,9 +568,28 @@ class EpochVisualizer:
             and all(pdf[ch]["passed"] for ch in pdf)
         )
 
+        # 현재 epoch/최적 epoch 정보(학습 loss history 기준)
+        val_hist = history.get("val_loss", []) if isinstance(history, dict) else []
+        current_val_loss = float("nan")
+        best_epoch_by_val = epoch + 1
+        best_val_loss = float("nan")
+        if isinstance(val_hist, list) and len(val_hist) > 0:
+            arr = np.asarray(val_hist, dtype=np.float64)
+            if epoch < len(arr):
+                current_val_loss = float(arr[epoch])
+            finite = np.isfinite(arr)
+            if finite.any():
+                best_idx = int(np.nanargmin(arr))
+                best_epoch_by_val = best_idx + 1
+                best_val_loss = float(arr[best_idx])
+
         record = {
             "epoch":          epoch + 1,
+            "val_loss":       current_val_loss,
+            "best_epoch_by_val_loss": best_epoch_by_val,
+            "best_val_loss":  best_val_loss,
             "n_samples":      n_samples,
+            "power_spectrum_estimator": self.power_spectrum_estimator,
             "auto_power":     auto,
             "cross_power":    cross,
             "correlation":    corr,
@@ -497,22 +597,49 @@ class EpochVisualizer:
             "passed_overall": passed_overall,
         }
 
-        # ── 누적 history 파일에 append ────────────────────────────────────────
+        # ── 기존 기록 로드 (list/dict 모두 허용) ───────────────────────────────
         metrics_path = self.plot_dir.parent / "metrics_history.json"
-        history: list = []
+        records: list[dict] = []
         if metrics_path.exists():
             try:
                 with open(metrics_path) as f:
-                    history = json.load(f)
+                    loaded = json.load(f)
+                    if isinstance(loaded, list):
+                        records = [x for x in loaded if isinstance(x, dict)]
+                    elif isinstance(loaded, dict):
+                        records = [loaded]
             except Exception:
-                history = []
+                records = []
+
         # epoch 중복 방지: 같은 epoch 있으면 덮어씀
-        history = [r for r in history if r.get("epoch") != record["epoch"]]
-        history.append(record)
-        history.sort(key=lambda r: r["epoch"])
+        records = [r for r in records if int(r.get("epoch", -1)) != int(record["epoch"])]
+        records.append(record)
+        records.sort(key=lambda r: int(r.get("epoch", 0)))
+
+        # ── best(val_loss 최소) epoch 레코드 1개만 유지 ────────────────────────
+        best_record = None
+        for r in records:
+            if int(r.get("epoch", -1)) == int(best_epoch_by_val):
+                best_record = r
+                break
+        if best_record is None and len(records) > 0:
+            # 이론상 거의 안 오지만, epoch 누락 시 근접 epoch fallback
+            best_record = min(
+                records,
+                key=lambda r: abs(int(r.get("epoch", 0)) - int(best_epoch_by_val)),
+            )
+        if best_record is None:
+            best_record = record
+
+        best_list = [best_record]
         with open(metrics_path, "w") as f:
-            json.dump(history, f, indent=2, allow_nan=True)
-        print(f"  [metrics] saved → {metrics_path}", flush=True)
+            json.dump(best_list, f, indent=2, allow_nan=True)
+
+        best_path = self.plot_dir.parent / "metrics_best.json"
+        with open(best_path, "w") as f:
+            json.dump(best_record, f, indent=2, allow_nan=True)
+
+        print(f"  [metrics] saved(best-only) → {metrics_path}", flush=True)
 
     # ── 4. Loss curve ──────────────────────────────────────────────────────────
 

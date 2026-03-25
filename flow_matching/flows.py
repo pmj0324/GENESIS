@@ -16,7 +16,6 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional
 
 
 def _apply_cfg_mask(cond: torch.Tensor, cfg_prob: float) -> torch.Tensor:

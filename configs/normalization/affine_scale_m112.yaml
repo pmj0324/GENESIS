@@ -1,0 +1,21 @@
+# Affine with moderate scale expansion (scale_mult=1.12)
+# z = (log10(x) - center) / (scale * scale_mult)
+# NOTE:
+#   method remains "affine"; only scale is changed.
+
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.876
+    scale: 0.590
+    scale_mult: 1.12
+  Mgas:
+    method: affine
+    center: 10.344
+    scale: 0.627
+    scale_mult: 1.12
+  T:
+    method: affine
+    center: 4.2234
+    scale: 0.8163
+    scale_mult: 1.12
