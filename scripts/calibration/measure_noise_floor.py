@@ -50,6 +50,7 @@ GENESIS_ROOT = SCRIPT_DIR.parent.parent  # scripts/calibration/ → GENESIS/
 sys.path.insert(0, str(GENESIS_ROOT))
 
 from analysis.power_spectrum import compute_power_spectrum_2d
+from analysis.cross_spectrum import compute_cross_power_spectrum_2d
 
 # ============================================================================
 # 기본 경로 (우리 서버 기준)
@@ -170,57 +171,14 @@ def compute_pk_for_maps(maps: np.ndarray, log_transform: bool = True) -> tuple:
     return k, np.array(Pk_list)
 
 
-def compute_cross_power_2d(field_i: np.ndarray, field_j: np.ndarray,
-                           box_size: float = 25.0, n_bins: int = 30) -> tuple:
-    """
-    두 2D 필드의 cross-power spectrum.
-    P_ij(k) = Re[ FFT(δ_i)* × FFT(δ_j) ] 의 radial average.
-    auto-power는 i==j일 때의 특수 케이스.
-
-    이 함수는 analysis/power_spectrum.py의 compute_power_spectrum_2d()와
-    동일한 k-binning을 사용하되, cross 항을 계산.
-
-    Args:
-        field_i, field_j: (H, W) — 두 필드 (같은 해상도)
-
-    Returns:
-        k_centers, P_cross: cross-power spectrum
-    """
-    fi = np.asarray(field_i, dtype=np.float64)
-    fj = np.asarray(field_j, dtype=np.float64)
-
-    # DC 제거
-    fi = fi - fi.mean()
-    fj = fj - fj.mean()
-
-    H, W = fi.shape
-    fft_i = np.fft.fft2(fi)
-    fft_j = np.fft.fft2(fj)
-
-    # Cross-power: Re[FFT_i* × FFT_j] (conjugate of i, times j)
-    cross_2d = np.real(np.conj(fft_i) * fft_j) / (H * W) ** 2
-
-    # k-grid (동일 방식)
-    kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / (box_size / W)
-    ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / (box_size / H)
-    kx, ky = np.meshgrid(kx, ky)
-    k = np.sqrt(kx**2 + ky**2)
-
-    # Radial average
-    k_flat = k.flatten()
-    p_flat = cross_2d.flatten()
-    pos = k_flat > 1e-10
-    k_flat, p_flat = k_flat[pos], p_flat[pos]
-
-    edges = np.logspace(np.log10(k_flat.min()), np.log10(k_flat.max()), n_bins + 1)
-    k_centers = (edges[:-1] + edges[1:]) / 2
-    Pk = np.zeros(n_bins)
-    for i in range(n_bins):
-        m = (k_flat >= edges[i]) & (k_flat < edges[i + 1])
-        if m.sum() > 0:
-            Pk[i] = p_flat[m].mean()
-
-    return k_centers, Pk
+def compute_fractional_scatter(Pk_array: np.ndarray) -> tuple:
+    """P(k) 배열에서 빈 k-bin을 제외한 fractional scatter를 계산한다."""
+    mean_pk = Pk_array.mean(axis=0)
+    std_pk = Pk_array.std(axis=0)
+    valid_mask = np.abs(mean_pk) > 1e-30
+    zero_frac = 1.0 - valid_mask.mean()
+    frac = np.where(valid_mask, std_pk / np.abs(mean_pk), np.nan)
+    return frac, valid_mask, float(zero_frac)
 
 
 # ============================================================================
@@ -269,6 +227,7 @@ def experiment_cv_variance(camels_dir: Path, out_dir: Path):
 
         # 방법 A: 모든 맵 개별 (slice variance 포함)
         k, Pk_all = compute_pk_for_maps(maps, log_transform=True)
+        frac_all, _, zero_frac_all = compute_fractional_scatter(Pk_all)
 
         # 방법 B: sim 단위 평균 (순수 cosmic variance만)
         Pk_per_sim = []
@@ -280,30 +239,24 @@ def experiment_cv_variance(camels_dir: Path, out_dir: Path):
             Pk_per_sim.append(Pk_sim_maps.mean(axis=0))
 
         Pk_per_sim = np.array(Pk_per_sim)  # (27, n_bins)
-
-        # Fractional scatter 계산
-        # σ/μ: 각 k-bin에서 P(k)의 상대 표준편차
-        mean_all = Pk_all.mean(axis=0)
-        std_all = Pk_all.std(axis=0)
-        frac_all = std_all / np.abs(mean_all + 1e-30)  # all maps (CV + slice var)
-
-        mean_sim = Pk_per_sim.mean(axis=0)
-        std_sim = Pk_per_sim.std(axis=0)
-        frac_sim = std_sim / np.abs(mean_sim + 1e-30)  # sim-averaged (pure CV)
+        frac_sim, valid_sim, zero_frac_sim = compute_fractional_scatter(Pk_per_sim)
 
         results[f"{field}_auto_cv"] = {
             "k": k.tolist(),
             "frac_scatter_all_maps": frac_all.tolist(),    # CV + slice var
             "frac_scatter_sim_avg": frac_sim.tolist(),     # pure cosmic variance
+            "valid_mask": valid_sim.tolist(),
+            "zero_bin_fraction": zero_frac_sim,
             "n_sims": n_sims,
             "n_maps_total": n_maps,
-            "mean_frac_all": float(frac_all.mean()),
-            "mean_frac_sim": float(frac_sim.mean()),
+            "mean_frac_all": float(np.nanmean(frac_all)),
+            "mean_frac_sim": float(np.nanmean(frac_sim)),
         }
 
         print(f"  {field}: mean fractional scatter = "
-              f"{frac_all.mean():.1%} (all maps) / "
-              f"{frac_sim.mean():.1%} (sim-avg, pure CV)")
+              f"{np.nanmean(frac_all):.1%} (all maps) / "
+              f"{np.nanmean(frac_sim):.1%} (sim-avg, pure CV) "
+              f"[zero bins: {zero_frac_sim:.1%}, all-map zero bins: {zero_frac_all:.1%}]")
 
     # ── 1b. Cross-power cosmic variance ─────────────────────────────
     # CV set에서 두 필드 간 P_ij(k)의 sim-to-sim scatter
@@ -317,27 +270,38 @@ def experiment_cv_variance(camels_dir: Path, out_dir: Path):
         maps_j = load_maps(camels_dir, fj, "CV")
         n_sims = maps_i.shape[0] // MAPS_PER_SIM
 
-        # sim 단위로 cross-power 계산 (각 sim의 첫 번째 map만 사용, 속도를 위해)
         Pij_per_sim = []
         for s in range(n_sims):
-            idx = s * MAPS_PER_SIM  # 각 sim의 첫 map
-            mi = np.log10(np.clip(maps_i[idx], 1e-30, None))
-            mj = np.log10(np.clip(maps_j[idx], 1e-30, None))
-            k_cross, Pij = compute_cross_power_2d(mi, mj, box_size=BOX_SIZE, n_bins=N_BINS)
-            Pij_per_sim.append(Pij)
+            Pij_slices = []
+            for offset in range(MAPS_PER_SIM):
+                idx = s * MAPS_PER_SIM + offset
+                mi = np.log10(np.clip(maps_i[idx], 1e-30, None))
+                mj = np.log10(np.clip(maps_j[idx], 1e-30, None))
+                k_cross, Pij = compute_cross_power_spectrum_2d(
+                    mi, mj, box_size=BOX_SIZE, n_bins=N_BINS
+                )
+                Pij_slices.append(Pij)
+            Pij_per_sim.append(np.mean(Pij_slices, axis=0))
 
         Pij_arr = np.array(Pij_per_sim)  # (27, n_bins)
         mean_cross = Pij_arr.mean(axis=0)
         std_cross = Pij_arr.std(axis=0)
-        frac_cross = std_cross / (np.abs(mean_cross) + 1e-30)
+        valid_cross = np.abs(mean_cross) > 1e-30
+        zero_frac_cross = 1.0 - valid_cross.mean()
+        frac_cross = np.where(valid_cross, std_cross / (np.abs(mean_cross) + 1e-30), np.nan)
 
         results[f"{fi}-{fj}_cross_cv"] = {
             "k": k_cross.tolist(),
             "frac_scatter": frac_cross.tolist(),
-            "mean_frac": float(frac_cross.mean()),
+            "valid_mask": valid_cross.tolist(),
+            "zero_bin_fraction": float(zero_frac_cross),
+            "mean_frac": float(np.nanmean(frac_cross)),
+            "n_slices_per_sim": MAPS_PER_SIM,
         }
 
-        print(f"  {fi}-{fj}: mean cross-power fractional scatter = {frac_cross.mean():.1%}")
+        print(f"  {fi}-{fj}: mean cross-power fractional scatter = "
+              f"{np.nanmean(frac_cross):.1%} "
+              f"[zero bins: {zero_frac_cross:.1%}, slices/sim: {MAPS_PER_SIM}]")
 
     # ── 1c. Correlation coefficient r(k) variance ──────────────────
     # r_ij(k) = P_ij / sqrt(P_ii * P_jj)
@@ -352,31 +316,44 @@ def experiment_cv_variance(camels_dir: Path, out_dir: Path):
 
         r_per_sim = []
         for s in range(n_sims):
-            idx = s * MAPS_PER_SIM
-            mi = np.log10(np.clip(maps_i[idx], 1e-30, None))
-            mj = np.log10(np.clip(maps_j[idx], 1e-30, None))
+            Pii_slices, Pjj_slices, Pij_slices = [], [], []
+            for offset in range(MAPS_PER_SIM):
+                idx = s * MAPS_PER_SIM + offset
+                mi = np.log10(np.clip(maps_i[idx], 1e-30, None))
+                mj = np.log10(np.clip(maps_j[idx], 1e-30, None))
 
-            _, Pii = compute_power_spectrum_2d(mi, box_size=BOX_SIZE, n_bins=N_BINS)
-            _, Pjj = compute_power_spectrum_2d(mj, box_size=BOX_SIZE, n_bins=N_BINS)
-            k_r, Pij = compute_cross_power_2d(mi, mj, box_size=BOX_SIZE, n_bins=N_BINS)
+                _, Pii = compute_power_spectrum_2d(mi, box_size=BOX_SIZE, n_bins=N_BINS)
+                _, Pjj = compute_power_spectrum_2d(mj, box_size=BOX_SIZE, n_bins=N_BINS)
+                k_r, Pij = compute_cross_power_spectrum_2d(
+                    mi, mj, box_size=BOX_SIZE, n_bins=N_BINS
+                )
+                Pii_slices.append(Pii)
+                Pjj_slices.append(Pjj)
+                Pij_slices.append(Pij)
 
-            # r(k) = P_ij / sqrt(P_ii * P_jj), division-by-zero 방지
-            denom = np.sqrt(np.abs(Pii * Pjj)) + 1e-30
-            r_k = Pij / denom
+            Pii_mean = np.mean(Pii_slices, axis=0)
+            Pjj_mean = np.mean(Pjj_slices, axis=0)
+            Pij_mean = np.mean(Pij_slices, axis=0)
+            denom = np.sqrt(np.abs(Pii_mean * Pjj_mean))
+            valid_r = denom > 1e-30
+            r_k = np.where(valid_r, Pij_mean / denom, np.nan)
+            r_k = np.clip(r_k, -1.0, 1.0)
             r_per_sim.append(r_k)
 
         r_arr = np.array(r_per_sim)  # (27, n_bins)
-        r_mean = r_arr.mean(axis=0)
-        r_std = r_arr.std(axis=0)
+        r_mean = np.nanmean(r_arr, axis=0)
+        r_std = np.nanstd(r_arr, axis=0)
 
         results[f"{fi}-{fj}_r_cv"] = {
             "k": k_r.tolist(),
             "r_mean": r_mean.tolist(),
             "r_std": r_std.tolist(),       # ← 이게 Δr target의 하한!
-            "max_r_std": float(r_std.max()),
+            "max_r_std": float(np.nanmax(r_std)),
+            "n_slices_per_sim": MAPS_PER_SIM,
         }
 
-        print(f"  {fi}-{fj}: r(k) std range = [{r_std.min():.3f}, {r_std.max():.3f}]")
+        print(f"  {fi}-{fj}: r(k) std range = "
+              f"[{np.nanmin(r_std):.3f}, {np.nanmax(r_std):.3f}]")
 
     # ── 1d. 플롯 ───────────────────────────────────────────────────
     # 플롯 1: Auto-power fractional scatter vs k (3 fields)
@@ -508,7 +485,8 @@ def experiment_1p_sensitivity(camels_dir: Path, out_dir: Path):
 
             # 최대 변화량: 파라미터 범위 내에서 P(k)가 fiducial 대비 최대 몇 % 변했는가
             max_deviation = np.max(np.abs(ratios - 1.0), axis=0)  # (n_bins,)
-            mean_max_dev = float(max_deviation.mean())
+            valid = Pk_fid > 1e-30
+            mean_max_dev = float(max_deviation[valid].mean()) if valid.any() else 0.0
 
             field_results[param_name] = {
                 "k": k.tolist(),
@@ -516,10 +494,11 @@ def experiment_1p_sensitivity(camels_dir: Path, out_dir: Path):
                 "max_deviation_per_k": max_deviation.tolist(),
                 "mean_max_deviation": mean_max_dev,
                 "n_variations": len(ratios),
+                "n_valid_bins": int(valid.sum()),
             }
 
             print(f"  {field} / {param_name}: max |P/P_fid - 1| = {mean_max_dev:.1%} "
-                  f"(mean over k)")
+                  f"(유효 k-bins: {int(valid.sum())}/{len(k)})")
 
         results[field] = field_results
 
@@ -619,20 +598,21 @@ def experiment_lh_variance(camels_dir: Path, out_dir: Path, n_sample_sims: int =
             k, Pk_slices = compute_pk_for_maps(maps[start:end], log_transform=True)
             mean_pk = Pk_slices.mean(axis=0)
             std_pk = Pk_slices.std(axis=0)
-            frac = std_pk / (np.abs(mean_pk) + 1e-30)
+            valid = np.abs(mean_pk) > 1e-30
+            frac = np.where(valid, std_pk / (np.abs(mean_pk) + 1e-30), np.nan)
             slice_fracs.append(frac)
 
         slice_fracs = np.array(slice_fracs)  # (n_sample, n_bins)
-        mean_slice_frac = slice_fracs.mean(axis=0)  # k-bin별 평균 slice variance
+        mean_slice_frac = np.nanmean(slice_fracs, axis=0)  # k-bin별 평균 slice variance
 
         results[f"{field}_slice_var"] = {
             "k": k.tolist(),
             "mean_frac_per_k": mean_slice_frac.tolist(),
-            "mean_frac": float(mean_slice_frac.mean()),
+            "mean_frac": float(np.nanmean(mean_slice_frac)),
             "n_sims_sampled": len(sample_sims),
         }
 
-        print(f"  {field}: mean slice-to-slice scatter = {mean_slice_frac.mean():.1%}")
+        print(f"  {field}: mean slice-to-slice scatter = {np.nanmean(mean_slice_frac):.1%}")
 
     # ── 플롯: Slice variance vs k ──────────────────────────────────
     fig, ax = plt.subplots(1, 1, figsize=(8, 5))
@@ -682,8 +662,8 @@ def summarize_and_recommend(cv_results: dict, sensitivity_results: dict,
         slice_data = lh_results[f"{field}_slice_var"]
 
         k = np.array(cv_data["k"])
-        cv_floor = np.array(cv_data["frac_scatter_sim_avg"])   # pure cosmic variance
-        slice_floor = np.array(slice_data["mean_frac_per_k"])  # slice-to-slice
+        cv_floor = np.nan_to_num(np.array(cv_data["frac_scatter_sim_avg"]), nan=0.0)
+        slice_floor = np.nan_to_num(np.array(slice_data["mean_frac_per_k"]), nan=0.0)
 
         # 합산 floor = sqrt(CV² + slice²) — 독립이면 quadrature 합
         combined_floor = np.sqrt(cv_floor**2 + slice_floor**2)
@@ -692,16 +672,17 @@ def summarize_and_recommend(cv_results: dict, sensitivity_results: dict,
         recommended = combined_floor * 1.5
 
         # k-range별 평균
-        low_k = k < 1.0
-        mid_k = (k >= 1.0) & (k < 5.0)
-        high_k = k >= 5.0
+        valid = combined_floor > 0
+        low_k = valid & (k < 1.0)
+        mid_k = valid & (k >= 1.0) & (k < 5.0)
+        high_k = valid & (k >= 5.0)
 
         rec_low = float(recommended[low_k].mean()) if low_k.any() else 0
         rec_mid = float(recommended[mid_k].mean()) if mid_k.any() else 0
         rec_high = float(recommended[high_k].mean()) if high_k.any() else 0
 
         # 민감도 정보 추가
-        max_sensitivity = 0
+        max_sensitivity = 0.0
         for pn in ONESIM_PARAM_RANGES:
             if pn in sensitivity_results.get(field, {}):
                 s = sensitivity_results[field][pn]["mean_max_deviation"]
@@ -717,10 +698,13 @@ def summarize_and_recommend(cv_results: dict, sensitivity_results: dict,
             "max_param_sensitivity": f"{max_sensitivity:.1%}",
         }
 
+        cv_nonzero = cv_floor[cv_floor > 0]
+        slice_nonzero = slice_floor[slice_floor > 0]
+        combined_nonzero = combined_floor[combined_floor > 0]
         print(f"\n  {field}:")
-        print(f"    CV floor (mean):    {cv_floor.mean():.1%}")
-        print(f"    Slice floor (mean): {slice_floor.mean():.1%}")
-        print(f"    Combined floor:     {combined_floor.mean():.1%}")
+        print(f"    CV floor (mean):    {float(cv_nonzero.mean()) if cv_nonzero.size else 0.0:.1%}")
+        print(f"    Slice floor (mean): {float(slice_nonzero.mean()) if slice_nonzero.size else 0.0:.1%}")
+        print(f"    Combined floor:     {float(combined_nonzero.mean()) if combined_nonzero.size else 0.0:.1%}")
         print(f"    Max param sensitivity: {max_sensitivity:.1%}")
         print(f"    → Recommended targets:")
         print(f"      k < 1 h/Mpc:   {rec_low:.1%}")

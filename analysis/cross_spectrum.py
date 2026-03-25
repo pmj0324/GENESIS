@@ -277,6 +277,11 @@ def compute_spectrum_errors(
             f"x_true/x_gen batch mismatch: {x_true.shape[0]} vs {x_gen.shape[0]}"
         )
 
+    if x_true.ndim == 3:
+        x_true = x_true[np.newaxis]
+    if x_gen.ndim == 3:
+        x_gen = x_gen[np.newaxis]
+
     B = x_true.shape[0]
 
     # Helper: compute per-sample Pk list for a given pair of channels
@@ -300,10 +305,19 @@ def compute_spectrum_errors(
         P_true_mean = pks_true.mean(axis=0)
         P_gen_mean = pks_gen.mean(axis=0)
 
-        rel_err = np.abs(P_gen_mean - P_true_mean) / (P_true_mean + 1e-30)
-        mean_err = float(rel_err.mean())
-        max_err = float(rel_err.max())
-        rms_err = float(np.sqrt((rel_err**2).mean()))
+        rel_err = np.abs(P_gen_mean - P_true_mean) / (np.abs(P_true_mean) + 1e-30)
+        valid_mask = P_true_mean > 1e-30
+        n_valid_bins = int(valid_mask.sum())
+        valid_bin_fraction = float(valid_mask.mean())
+        if n_valid_bins > 0:
+            valid_rel_err = rel_err[valid_mask]
+            mean_err = float(valid_rel_err.mean())
+            max_err = float(valid_rel_err.max())
+            rms_err = float(np.sqrt((valid_rel_err**2).mean()))
+        else:
+            mean_err = 0.0
+            max_err = 0.0
+            rms_err = 0.0
 
         # ── [OLD] Uniform pass criterion ──
         # passed = bool(mean_err < 0.05 and max_err < 0.15 and rms_err < 0.07)
@@ -313,7 +327,7 @@ def compute_spectrum_errors(
         all_ranges_pass = True
         thresholds = AUTO_POWER_THRESHOLDS[ch]
         for label, k_lo, k_hi, thr_mean, thr_rms in thresholds:
-            mask = (k >= k_lo) & (k < k_hi)
+            mask = valid_mask & (k >= k_lo) & (k < k_hi)
             if mask.sum() == 0:
                 scale_errors[label] = {
                     "mean_error": 0.0, "rms_error": 0.0,
@@ -343,6 +357,9 @@ def compute_spectrum_errors(
             "P_true_mean": P_true_mean,
             "P_gen_mean": P_gen_mean,
             "relative_error": rel_err,
+            "valid_mask": valid_mask,
+            "valid_bin_fraction": valid_bin_fraction,
+            "n_valid_bins": n_valid_bins,
             "mean_error": mean_err,
             "max_error": max_err,
             "rms_error": rms_err,
@@ -361,9 +378,18 @@ def compute_spectrum_errors(
         P_gen_mean = pks_gen.mean(axis=0)
 
         rel_err = np.abs(P_gen_mean - P_true_mean) / (np.abs(P_true_mean) + 1e-30)
-        mean_err = float(rel_err.mean())
-        max_err = float(rel_err.max())
-        rms_err = float(np.sqrt((rel_err**2).mean()))
+        valid_mask = np.abs(P_true_mean) > 1e-30
+        n_valid_bins = int(valid_mask.sum())
+        valid_bin_fraction = float(valid_mask.mean())
+        if n_valid_bins > 0:
+            valid_rel_err = rel_err[valid_mask]
+            mean_err = float(valid_rel_err.mean())
+            max_err = float(valid_rel_err.max())
+            rms_err = float(np.sqrt((valid_rel_err**2).mean()))
+        else:
+            mean_err = 0.0
+            max_err = 0.0
+            rms_err = 0.0
 
         # ── [OLD] Uniform cross pass criterion ──
         # passed = bool(mean_err < 0.10)
@@ -377,6 +403,9 @@ def compute_spectrum_errors(
             "P_true_mean": P_true_mean,
             "P_gen_mean": P_gen_mean,
             "relative_error": rel_err,
+            "valid_mask": valid_mask,
+            "valid_bin_fraction": valid_bin_fraction,
+            "n_valid_bins": n_valid_bins,
             "mean_error": mean_err,
             "max_error": max_err,
             "rms_error": rms_err,
