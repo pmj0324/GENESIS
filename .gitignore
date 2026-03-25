@@ -12,10 +12,13 @@ logs/
 outputs/
 
 # 실험 결과 (runs/)
-runs/**/*.pt
-runs/**/*.pth
-runs/**/*.png
-runs/**/plots/ep*.png
+# runs/ 아래는 재현용 메타 파일(yaml/yml/txt)만 Git에 남기고,
+# 나머지 산출물은 모두 ignore 한다.
+runs/**
+!runs/**/
+!runs/**/*.yaml
+!runs/**/*.yml
+!runs/**/*.txt
 scripts/**/*.png
 
 # Python
