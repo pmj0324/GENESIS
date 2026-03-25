@@ -31,12 +31,32 @@ python evaluate.py \
   --n-samples 100 \
   --protocols lh cv 1p ex \
   --device cuda
+
+# 동일 동작 (신규 위치)
+python -m evaluation.cli.evaluate \
+  --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
+  --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
+  --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
+  --output-dir runs/analysis/example_eval \
+  --n-samples 100 \
+  --protocols lh cv 1p ex \
+  --device cuda
 ```
 
 ### 3) CV 샘플링 리포트
 
 ```bash
 python sample_cv.py \
+  --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
+  --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
+  --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
+  --output-dir runs/analysis/example_cv \
+  --n-samples 32 \
+  --batch-size 8 \
+  --device cuda
+
+# 동일 동작 (신규 위치)
+python -m evaluation.cli.sample_cv \
   --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
   --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
   --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
@@ -53,8 +73,8 @@ python sample_cv.py \
 ```
 GENESIS/
 ├── train.py                         # 학습 엔트리포인트
-├── evaluate.py                      # 프로토콜 기반 평가 엔트리포인트
-├── sample_cv.py                     # CV 조건 샘플링/비교 리포트
+├── evaluate.py                      # 평가 CLI 호환 래퍼
+├── sample_cv.py                     # CV 샘플링 CLI 호환 래퍼
 │
 ├── configs/                         # 실험/정규화/샘플러 설정
 │   ├── base.yaml
@@ -104,8 +124,19 @@ GENESIS/
 │   ├── sampling.py                  # sampling step 검증
 │   └── eval_helpers.py              # 평가 시각화 보조
 │
+├── evaluation/                      # 평가 코드 전용 패키지
+│   ├── README.md
+│   ├── cli/
+│   │   ├── evaluate.py              # 프로토콜 기반 평가 엔트리포인트
+│   │   └── sample_cv.py             # CV 조건 샘플링/비교 리포트
+│   ├── core/                        # 공통 평가 로직(확장 예정)
+│   ├── data/                        # 프로토콜 데이터 준비(확장 예정)
+│   └── experimental/                # 실험적 평가 코드(확장 예정)
+│
 ├── scripts/
 │   ├── prepare_eval_protocol_data.py
+│   ├── evaluate_lh_pairs.py
+│   ├── extended_eval_claude.py
 │   ├── normalization_stats.py
 │   └── audit/
 │       ├── generate_architecture_map.py
@@ -203,7 +234,7 @@ python -m dataloader.build_dataset augment \
 
 ## 4.5 평가 프로토콜(CV/1P/EX) 데이터 준비
 
-`evaluate.py`의 `cv`, `1p`, `ex` 프로토콜을 쓰려면 아래 파일이 필요합니다.
+`evaluate.py` 또는 `evaluation/cli/evaluate.py`의 `cv`, `1p`, `ex` 프로토콜을 쓰려면 아래 파일이 필요합니다.
 
 - `cv_maps.npy`, `cv_params.npy`
 - `ex_maps.npy`, `ex_params.npy`
@@ -212,6 +243,7 @@ python -m dataloader.build_dataset augment \
 생성 스크립트:
 
 ```bash
+# 현재 위치
 python scripts/prepare_eval_protocol_data.py \
   --camels-dir /path/to/CAMELS/IllustrisTNG \
   --out-dir GENESIS-data/affine_default
@@ -308,6 +340,43 @@ python train.py --help
 EDM 특이사항:
 - `eta`는 호환 alias 유지
 - `S_churn` 미지정 + `eta > 0`이면 `S_churn = eta * steps`로 매핑
+
+## 5.7 샘플링 코드 맵 (상세)
+
+샘플링은 "설정 해석"과 "실제 적분/역확산"으로 나뉩니다.
+
+- 설정 해석(공통)
+  - `utils/sampler_config.py::resolve_sampler_config`
+  - `utils/sampling.py::validate_sampling_steps`
+- Flow Matching 샘플러(생성용, `t: 1 -> 0`)
+  - `flow_matching/samplers.py`
+  - `EulerSampler.sample`, `HeunSampler.sample`, `RK4Sampler.sample`
+  - `build_sampler(name)`으로 선택
+- Diffusion 샘플러
+  - `diffusion/ddpm.py::GaussianDiffusion.ddpm_sample`
+  - `diffusion/ddpm.py::GaussianDiffusion.ddim_sample`
+- EDM 샘플러
+  - `diffusion/samplers_edm.py::heun_sample`
+  - `diffusion/samplers_edm.py::euler_sample`
+- Flow ODE inference 유틸(일반 ODE, `t: 0 -> 1`)
+  - `flow_matching/ode_solver.py::FlowODESolver.sample`
+  - `euler/heun/dopri5`, NFE 카운팅 포함
+
+## 5.8 샘플링 호출 경로
+
+- 평가 실행
+  - `evaluation/cli/evaluate.py::build_sampler_fn`
+  - 프레임워크별 sampler를 하나의 `sampler_fn(model, shape, cond)` 인터페이스로 래핑
+- CV 샘플링 실행
+  - `evaluation/cli/sample_cv.py`
+  - 내부에서 `build_sampler_fn`을 재사용해 배치 샘플 생성
+- 학습 중 시각화 샘플링
+  - `training/visualize.py`
+  - `viz.sampler_a`, `viz.sampler_b`, `viz.eval_n` 설정으로 epoch별 샘플/메트릭 생성
+
+주의:
+- Flow ODE solver(`flow_matching/ode_solver.py`)는 기본 학습 샘플러 경로와 별도 유틸입니다.
+- 기본 학습/평가 생성은 `flow_matching/samplers.py`, `diffusion/ddpm.py`, `diffusion/samplers_edm.py`를 사용합니다.
 
 ---
 
@@ -475,10 +544,14 @@ x1 = solver.sample(
 
 ## 9. 평가 파이프라인
 
-## 9.1 evaluate.py
+평가 엔트리포인트는 `evaluation/cli/`로 이동했으며, 루트 `evaluate.py`, `sample_cv.py`는
+기존 커맨드 호환을 위한 래퍼입니다.
+
+## 9.1 evaluate CLI
 
 ```bash
 python evaluate.py --help
+python -m evaluation.cli.evaluate --help
 ```
 
 핵심 인자:
@@ -501,10 +574,11 @@ python evaluate.py --help
 - `evaluation_summary.txt`
 - `<split>_sample_previews/` (옵션)
 
-## 9.2 sample_cv.py
+## 9.2 sample_cv CLI
 
 ```bash
 python sample_cv.py --help
+python -m evaluation.cli.sample_cv --help
 ```
 
 핵심 인자:
@@ -524,6 +598,16 @@ python sample_cv.py --help
 - `cv_metrics.png`
 - `cv_metrics_summary.json`
 - `sampling_info.yaml`
+
+## 9.3 보조 평가 스크립트
+
+- `scripts/prepare_eval_protocol_data.py`
+  - CV/1P/EX 프로토콜용 입력(`cv_maps.npy`, `1p/*`, `ex_maps.npy`) 생성
+- `scripts/evaluate_lh_pairs.py`
+  - LH real-vs-real baseline 측정용 보조 스크립트
+- `scripts/extended_eval_claude.py`
+  - bispectrum/절대 r(k) 등 실험적 확장 평가 스크립트
+  - 공식 기본 파이프라인과 분리 운영 권장
 
 ---
 
@@ -651,7 +735,7 @@ python scripts/normalization_stats.py --n 15000
 
 - 새 sampler 옵션 추가:
   - `utils/sampler_config.py` 우선순위 규칙 반영
-  - `train.py` + `evaluate.py` + `sample_cv.py` 경로 일관성 확인
+  - `train.py` + `evaluation/cli/evaluate.py` + `evaluation/cli/sample_cv.py` 경로 일관성 확인
 
 - 새 평가 지표 추가:
   - `analysis/*` 계산 함수
@@ -664,6 +748,6 @@ python scripts/normalization_stats.py --n 15000
 
 - `dataloader/README.md`: 데이터 파이프라인 집중 설명
 - `analysis/README.md`: 분석 모듈 원칙
+- `evaluation/README.md`: 평가 패키지 구조/운영 규칙
 - `REPO_STRUCTURE.md`: 상위 저장소 맥락/이전 기록
 - `docs/GENESIS_Evaluation_Criteria_Report.pdf`
-
