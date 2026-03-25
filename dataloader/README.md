@@ -18,13 +18,38 @@ dataloader/
 ### 1. 데이터 준비 (1회)
 
 ```bash
-python -m dataloader.build_dataset
+python -m dataloader.build_dataset stack --maps-dir /path/to/CAMELS/IllustrisTNG
 ```
 
 `Maps_Mcdm`, `Maps_Mgas`, `Maps_T` 세 파일을 합쳐
 `Maps_3ch_IllustrisTNG_LH_z=0.00.npy [15000, 3, 256, 256]` 하나로 저장.
 
-### 2. 학습 코드에서 사용
+### 2. 정규화 + split 저장 (1회)
+
+```bash
+python -m dataloader.build_dataset splits \
+  --maps-path /path/to/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+  --params-path /path/to/params_LH_IllustrisTNG.txt \
+  --out-dir GENESIS-data/affine_default \
+  --norm-config configs/base.yaml
+```
+
+### 3. train split 물리적 증설 (선택)
+
+파일 자체를 늘리고 싶다면 D4 대칭(90도 회전 4종 × 좌우반전 2종)으로
+train split을 증설한 새 데이터셋 디렉토리를 만들 수 있다.
+
+```bash
+python -m dataloader.build_dataset augment \
+  --data-dir GENESIS-data/affine_default \
+  --out-dir GENESIS-data/affine_default_x8 \
+  --copies 8
+```
+
+`copies=8`이면 각 train 맵이 D4 8개 대칭으로 한 번씩 materialize된다.
+val/test split은 그대로 복사된다.
+
+### 4. 학습 코드에서 사용
 
 ```python
 from dataloader import build_dataloaders

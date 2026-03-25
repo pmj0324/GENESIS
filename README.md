@@ -169,6 +169,31 @@ python -m dataloader.build_dataset \
 
 출력 파일: `Maps_3ch_IllustrisTNG_LH_z=0.00.npy` (shape: `[15000, 3, 256, 256]`, ~12 GB)
 
+정규화 + split 저장:
+
+```bash
+python -m dataloader.build_dataset splits \
+    --maps-path /path/to/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+    --params-path /path/to/params_LH_IllustrisTNG.txt \
+    --out-dir GENESIS-data/affine_default \
+    --norm-config configs/base.yaml
+```
+
+학습용 train split을 물리적으로 더 많이 만들고 싶다면, D4 대칭(회전/flip)으로 새 데이터셋 디렉토리를 생성할 수 있다.
+이 방식은 interpolation 없이 정확한 격자 대칭만 사용하므로 우주론 맵의 등방성 가정과 잘 맞는다.
+
+```bash
+python -m dataloader.build_dataset augment \
+    --data-dir GENESIS-data/affine_default \
+    --out-dir GENESIS-data/affine_default_x8 \
+    --copies 8
+```
+
+결과:
+- `train_maps.npy`, `train_params.npy`만 `copies`배로 증가
+- `val/test`는 그대로 복사
+- `metadata.yaml`에 증설 정보 기록
+
 ---
 
 ## 학습 실행

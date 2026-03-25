@@ -141,6 +141,13 @@ class Trainer:
         if epoch < self.warmup_epochs:
             self._set_lr(self._base_lr * (epoch + 1) / self.warmup_epochs)
 
+    def _warmup_lr_for_epoch(self, epoch: int) -> float:
+        if self.warmup_epochs <= 0:
+            return self._base_lr
+        if epoch < self.warmup_epochs:
+            return self._base_lr * (epoch + 1) / self.warmup_epochs
+        return self._base_lr
+
     # ── Train / Val ───────────────────────────────────────────────────────────
 
     def _train_epoch(self, loader: DataLoader, epoch: int) -> float:
@@ -302,6 +309,7 @@ class Trainer:
         gpu_mem  = torch.cuda.get_device_properties(self.device).total_memory / 1e9 if self.use_amp else 0
 
         frac_str = f"  ({self.data_fraction*100:.0f}% of full)" if self.data_fraction < 1.0 else ""
+        warmup_start_lr = self._warmup_lr_for_epoch(0) if self.warmup_epochs > 0 else self._base_lr
         print("=" * 60)
         print("  GENESIS Training Start")
         print("=" * 60)
@@ -311,6 +319,13 @@ class Trainer:
         print(f"  Epochs     : {start_epoch} → {self.max_epochs}  (warmup={self.warmup_epochs})")
         print(f"  Optimizer  : {self.optimizer.__class__.__name__}  lr={self._base_lr:.1e}  wd={self.optimizer.param_groups[0].get('weight_decay', 0):.1e}")
         print(f"  Schedule   : {self._schedule_type}  grad_clip={self.grad_clip}")
+        if self.warmup_epochs > 0:
+            print(
+                f"  Warmup     : enabled  epochs=1..{self.warmup_epochs}  "
+                f"lr={warmup_start_lr:.1e}→{self._base_lr:.1e}"
+            )
+        else:
+            print("  Warmup     : disabled")
         print(f"  Early stop : patience={self.early_stop_patience}")
         print(f"  Checkpoint : {self.ckpt_dir / self.ckpt_name if self.ckpt_dir else 'none'}")
         print("=" * 60)
@@ -324,6 +339,7 @@ class Trainer:
 
             if self._schedule_type not in ("cosine_warmup",):
                 self._warmup_step(epoch)
+            epoch_lr = float(self.optimizer.param_groups[0]["lr"])
 
             if self.use_amp:
                 torch.cuda.reset_peak_memory_stats(self.device)
@@ -339,6 +355,7 @@ class Trainer:
 
             self._history["train_loss"].append(train_loss)
             self._history["val_loss"].append(val_loss)
+            self._history["lr"].append(epoch_lr)
 
             # Scheduler step
             if epoch >= self.warmup_epochs or self._schedule_type in ("cosine_warmup", "cosine_restarts"):
@@ -348,9 +365,6 @@ class Trainer:
                     self.scheduler.step()
                 elif self._schedule_type == "plateau":
                     self.scheduler.step(val_loss)
-
-            cur_lr = self.optimizer.param_groups[0]["lr"]
-            self._history["lr"].append(float(cur_lr))
 
             # Best checkpoint
             improved = val_loss < self._best_val
@@ -372,6 +386,10 @@ class Trainer:
 
             is_warmup    = epoch < self.warmup_epochs
             warmup_tag   = "[W]" if is_warmup else "   "
+            warmup_info  = (
+                f"  warmup={epoch+1}/{self.warmup_epochs}"
+                if is_warmup and self.warmup_epochs > 0 else ""
+            )
             mem_str      = f"  mem={mem_gb:.1f}GB" if self.use_amp else ""
             patience_str = f"patience={self._no_improve}/{self.early_stop_patience}"
             best_str     = f"best={self._best_val:.5f}@ep{self._best_epoch}"
@@ -379,7 +397,8 @@ class Trainer:
 
             print(
                 f"{warmup_tag}[{epoch+1:04d}/{self.max_epochs}] "
-                f"train={train_loss:.5f}  val={val_loss:.5f}  lr={cur_lr:.2e}"
+                f"train={train_loss:.5f}  val={val_loss:.5f}  lr={epoch_lr:.2e}"
+                f"{warmup_info}"
                 f"  gnorm={self._last_grad_norm:.2f}{mem_str}"
                 f"  {elapsed:.1f}s/ep  eta={eta_str}"
                 f"  {patience_str}  {best_str}{best_mark}"

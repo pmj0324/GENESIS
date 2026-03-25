@@ -541,6 +541,7 @@ def main():
         device     = device,
         eval_conds = eval_conds,
         eval_n     = 8,
+        viz_cfg    = viz_cfg,
     )
 
     trainer = Trainer(

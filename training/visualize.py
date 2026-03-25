@@ -13,14 +13,14 @@ conditioning:
   시각화 시 denormalize해서 실제 물리값으로 표시.
 
 maps:
-  affine 정규화 → denormalize 하면 log10(field) 값으로 복원
-  샘플 맵은 log10 스케일로 표시.
+  denormalize 하면 physical linear field 값으로 복원
+  샘플 맵은 viz.samples.field_space 설정(log / linear)에 따라 표시.
 
 power spectrum:
   ref_map[0]: val set 첫 번째 실제 맵 (ref_cond와 동일 시뮬레이션)
   val avg   : val set 처음 8장 평균 P(k)
   sampler_a/b: ref_cond 조건으로 생성된 샘플의 P(k)
-  → 모두 denormalize된 log10 맵 기준 P(k)
+  → viz.power.field_space 설정(log / linear)에 따라 계산
 """
 
 import json
@@ -30,7 +30,6 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
@@ -70,22 +69,46 @@ class EpochVisualizer:
         device,
         eval_conds: Optional[torch.Tensor] = None,   # [N, 6] — 에폭 메트릭용 N개 조건
         eval_n:     int = 8,                          # 메트릭 평가에 사용할 샘플 수
+        viz_cfg:    Optional[Dict] = None,
     ):
         self.name_a, self.fn_a = sampler_a
         self.name_b, self.fn_b = sampler_b
         self.plot_dir = Path(plot_dir)
         self.plot_dir.mkdir(parents=True, exist_ok=True)
         self.device   = device
+        self.viz_cfg  = viz_cfg or {}
 
         # normalizer (maps denormalize 용)
         self.normalizer = Normalizer(norm_cfg) if norm_cfg else None
+
+        samples_cfg = self.viz_cfg.get("samples", {})
+        power_cfg = self.viz_cfg.get("power", {})
+        metrics_cfg = self.viz_cfg.get("metrics", {})
+        self.samples_field_space = self._normalize_field_space(
+            samples_cfg.get("field_space", "log")
+        )
+        self.power_field_space = self._normalize_field_space(
+            power_cfg.get("field_space", "log")
+        )
+        extra_spaces = power_cfg.get("extra_field_spaces", ["linear"])
+        if isinstance(extra_spaces, str):
+            extra_spaces = [extra_spaces]
+        self.extra_power_field_spaces = []
+        for space in extra_spaces:
+            norm_space = self._normalize_field_space(space)
+            if norm_space != self.power_field_space and norm_space not in self.extra_power_field_spaces:
+                self.extra_power_field_spaces.append(norm_space)
+        self.extra_power_every_n = max(1, int(power_cfg.get("extra_every_n_epochs", 10)))
+        self.metrics_field_space = self._normalize_field_space(
+            metrics_cfg.get("field_space", "log")
+        )
 
         # ref_maps → numpy [N, 3, 256, 256] (정규화 상태)
         if hasattr(ref_maps, "cpu"):
             ref_maps = ref_maps.cpu().numpy()
         self.ref_maps_norm = np.asarray(ref_maps[:8], dtype=np.float32)
-        # denormalize → log10(field) 값
-        self.ref_maps = self._denorm_maps(self.ref_maps_norm)
+        # denormalize → physical linear field 값
+        self.ref_maps_linear = self._denorm_maps(self.ref_maps_norm)
 
         # ref_cond: z-score 정규화된 값 보관
         if hasattr(ref_cond, "cpu"):
@@ -106,8 +129,23 @@ class EpochVisualizer:
 
     # ── Denormalize helpers ────────────────────────────────────────────────────
 
+    @staticmethod
+    def _normalize_field_space(field_space: str) -> str:
+        value = str(field_space).strip().lower()
+        aliases = {
+            "log10": "log",
+            "log_field": "log",
+            "log-field": "log",
+            "linear_field": "linear",
+            "linear-field": "linear",
+        }
+        value = aliases.get(value, value)
+        if value not in {"log", "linear"}:
+            raise ValueError(f"Unknown field_space: {field_space!r}. Options: log / linear")
+        return value
+
     def _denorm_maps(self, maps_norm: np.ndarray) -> np.ndarray:
-        """[N, 3, H, W] or [3, H, W] 정규화 → log10(field)"""
+        """[N, 3, H, W] or [3, H, W] 정규화 → physical linear field"""
         if self.normalizer is None:
             return maps_norm
         t = torch.from_numpy(maps_norm)
@@ -116,6 +154,24 @@ class EpochVisualizer:
             t = t.unsqueeze(0)
         out = self.normalizer.denormalize(t).numpy()
         return out[0] if squeezed else out
+
+    def _to_field_space(self, maps_linear: np.ndarray, field_space: str) -> np.ndarray:
+        maps_linear = np.asarray(maps_linear, dtype=np.float32)
+        if field_space == "log":
+            return np.log10(np.clip(maps_linear, 1e-30, None))
+        return maps_linear
+
+    def _field_space_from_norm(self, maps_norm: np.ndarray, field_space: str) -> np.ndarray:
+        return self._to_field_space(self._denorm_maps(maps_norm), field_space)
+
+    def _field_space_label(self, field_space: str) -> str:
+        return "log10 field" if field_space == "log" else "linear field"
+
+    def _plot_positive_loglog(self, ax, k: np.ndarray, pk: np.ndarray, *args, **kwargs) -> None:
+        mask = np.isfinite(k) & np.isfinite(pk) & (k > 0) & (pk > 0)
+        if mask.sum() == 0:
+            return
+        ax.loglog(k[mask], pk[mask], *args, **kwargs)
 
     def _cond_str(self) -> str:
         """실제 cosmological parameter 값 한 줄 문자열"""
@@ -140,7 +196,10 @@ class EpochVisualizer:
             sample_b = self._denorm_maps(raw_b)
 
             self._plot_samples(epoch, sample_a, sample_b)
-            self._plot_power_spectrum(epoch, sample_a, sample_b)
+            self._plot_power_spectrum(epoch, sample_a, sample_b, self.power_field_space, primary=True)
+            if self.extra_power_field_spaces and ((epoch + 1) % self.extra_power_every_n == 0):
+                for extra_space in self.extra_power_field_spaces:
+                    self._plot_power_spectrum(epoch, sample_a, sample_b, extra_space, primary=False)
             self._plot_loss(history)
             self._print_metrics(epoch, model)
 
@@ -156,27 +215,26 @@ class EpochVisualizer:
 
     def _plot_samples(self, epoch: int, sample_a: np.ndarray, sample_b: np.ndarray):
         """
-        3 rows × 3 cols  (denormalized 값)
+        3 rows × 3 cols
           rows : Real val[0] | sampler_a | sampler_b
           cols : Mcdm | Mgas | T
           각 subplot 독립 colorbar
         """
-        real = self.ref_maps[0]   # [3, 256, 256] denormalized
+        field_space = self.samples_field_space
+        real = self.ref_maps_linear[0]   # [3, 256, 256] physical linear field
         rows = [("Real (val[0])", real), (self.name_a, sample_a), (self.name_b, sample_b)]
 
         fig, axes = plt.subplots(3, 3, figsize=(14, 12))
         fig.suptitle(
-            f"Epoch {epoch+1:04d}  –  Field  [denormalized]\n"
+            f"Epoch {epoch+1:04d}  –  Field  [{self._field_space_label(field_space)}]\n"
             f"{self._cond_str()}",
             fontsize=10,
         )
 
-        # vmin/vmax: real 데이터 log10 값 기준으로 고정
-        # (10^x 대신 log10 공간 그대로 표시 → overflow 없음)
-        ref_log = np.log10(np.clip(self.ref_maps[0], 1e-30, None))  # [3, H, W]
+        ref_field = self._to_field_space(real, field_space)
         ch_ranges = []
         for ci in range(3):
-            d = ref_log[ci][np.isfinite(ref_log[ci])]
+            d = ref_field[ci][np.isfinite(ref_field[ci])]
             vmin = float(np.percentile(d, 1))  if len(d) else -1.0
             vmax = float(np.percentile(d, 99)) if len(d) else  1.0
             if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
@@ -187,8 +245,7 @@ class EpochVisualizer:
             for ci, (ch_label, cmap) in enumerate(zip(CHANNEL_LABELS, CMAPS)):
                 ax  = axes[ri, ci]
                 vmin, vmax = ch_ranges[ci]
-                # log10 공간으로 변환, 비정상값 클립
-                data = np.log10(np.clip(img[ci], 1e-30, None))
+                data = self._to_field_space(img[ci], field_space)
                 data = np.clip(data, vmin - 3, vmax + 3)   # 극단값 표시는 허용하되 무한대 방지
                 data = np.where(np.isfinite(data), data, vmin)
                 im  = ax.imshow(data, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
@@ -203,43 +260,58 @@ class EpochVisualizer:
 
     # ── 2. Power spectrum ──────────────────────────────────────────────────────
 
-    def _plot_power_spectrum(self, epoch: int, sample_a: np.ndarray, sample_b: np.ndarray):
+    def _plot_power_spectrum(
+        self,
+        epoch: int,
+        sample_a: np.ndarray,
+        sample_b: np.ndarray,
+        field_space: str,
+        primary: bool,
+    ):
         """
-        denormalized log10 맵 기준 P(k) 비교
+        선택된 field space 기준 P(k) 비교
           Real val[0]  : ref_cond와 동일 시뮬레이션의 실제 맵
           Real val avg : val set 처음 8장 평균 P(k)
           sampler_a/b  : ref_cond 조건으로 생성된 샘플
         """
         fig, axes = plt.subplots(1, 3, figsize=(15, 4))
         fig.suptitle(
-            f"Epoch {epoch+1:04d}  –  Power Spectrum  [log₁₀ field, denormalized]\n"
+            f"Epoch {epoch+1:04d}  –  Power Spectrum  [{self._field_space_label(field_space)}]\n"
             f"cond: {self._cond_str()}",
             fontsize=9,
         )
 
         for c, (ch_name, ax) in enumerate(zip(CHANNEL_NAMES, axes)):
-            k_r0, Pk_r0 = compute_power_spectrum_2d(self.ref_maps[0][c])
-            Pk_avg = np.mean(
-                [compute_power_spectrum_2d(m[c])[1] for m in self.ref_maps], axis=0
-            )
-            k_a, Pk_a = compute_power_spectrum_2d(sample_a[c])
-            k_b, Pk_b = compute_power_spectrum_2d(sample_b[c])
+            ref0 = self._to_field_space(self.ref_maps_linear[0][c], field_space)
+            ref_all = [self._to_field_space(m[c], field_space) for m in self.ref_maps_linear]
+            samp_a = self._to_field_space(sample_a[c], field_space)
+            samp_b = self._to_field_space(sample_b[c], field_space)
 
-            ax.loglog(k_r0, Pk_r0, "k-",  lw=2.0, label="Real val[0] (same cond)")
-            ax.loglog(k_r0, Pk_avg, "k--", lw=1.2, label="Real val avg (N=8)", alpha=0.6)
-            ax.loglog(k_a,  Pk_a,   "r-",  lw=1.5, label=f"{self.name_a} (generated)")
-            ax.loglog(k_b,  Pk_b,   "b-",  lw=1.5, label=f"{self.name_b} (generated)")
+            k_r0, Pk_r0 = compute_power_spectrum_2d(ref0)
+            Pk_avg = np.mean(
+                [compute_power_spectrum_2d(m)[1] for m in ref_all], axis=0
+            )
+            k_a, Pk_a = compute_power_spectrum_2d(samp_a)
+            k_b, Pk_b = compute_power_spectrum_2d(samp_b)
+
+            self._plot_positive_loglog(ax, k_r0, Pk_r0, "k-", lw=2.0, label="Real val[0] (same cond)")
+            self._plot_positive_loglog(ax, k_r0, Pk_avg, "k--", lw=1.2, label="Real val avg (N=8)", alpha=0.6)
+            self._plot_positive_loglog(ax, k_a, Pk_a, "r-", lw=1.5, label=f"{self.name_a} (generated)")
+            self._plot_positive_loglog(ax, k_b, Pk_b, "b-", lw=1.5, label=f"{self.name_b} (generated)")
 
             ax.set_title(ch_name, fontsize=11)
-            ax.set_xlabel("k  [pixel freq]")
+            ax.set_xlabel("k  [h/Mpc]")
             ax.set_ylabel("P(k)")
             ax.legend(fontsize=7)
             ax.grid(True, alpha=0.3, which="both")
 
         fig.tight_layout()
-        path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
+        path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum_{field_space}.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
-        shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
+        latest_space_path = self.plot_dir / f"latest_power_spectrum_{field_space}.png"
+        shutil.copy(path, latest_space_path)
+        if primary:
+            shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
         plt.close(fig)
 
     # ── 3. Per-epoch Metrics ───────────────────────────────────────────────────
@@ -259,19 +331,23 @@ class EpochVisualizer:
             raw_gen = self.fn_b(model, shape, self.eval_conds)   # [N, 3, H, W] normalized
             raw_gen = raw_gen[0] if isinstance(raw_gen, tuple) else raw_gen
 
-            # ── log10 공간 변환 ───────────────────────────────────────────────
-            true_log = self._to_log10(self.eval_maps_norm)   # [N, 3, H, W]
-            gen_log  = self._to_log10(raw_gen.cpu().numpy() if hasattr(raw_gen, "cpu") else raw_gen)
+            # ── 평가 공간 변환 ────────────────────────────────────────────────
+            field_space = self.metrics_field_space
+            true_eval = self._field_space_from_norm(self.eval_maps_norm, field_space)   # [N, 3, H, W]
+            gen_eval = self._field_space_from_norm(
+                raw_gen.cpu().numpy() if hasattr(raw_gen, "cpu") else raw_gen,
+                field_space,
+            )
 
             # ── Auto/Cross Power Spectrum ──────────────────────────────────────
-            spec_err  = compute_spectrum_errors(true_log, gen_log)
-            corr_err  = compute_correlation_errors(true_log, gen_log)
-            pdf_res   = compare_pixel_distributions(true_log, gen_log, log=False, ks_subsample=20000)
+            spec_err  = compute_spectrum_errors(true_eval, gen_eval)
+            corr_err  = compute_correlation_errors(true_eval, gen_eval)
+            pdf_res   = compare_pixel_distributions(true_eval, gen_eval, log=False, ks_subsample=20000)
 
             # ── 출력 ──────────────────────────────────────────────────────────
             sep = "─" * 78
             print(f"\n  {sep}")
-            print(f"  Epoch {epoch+1:04d} Metrics  (N={N}, {self.name_b})  [log₁₀ space]")
+            print(f"  Epoch {epoch+1:04d} Metrics  (N={N}, {self.name_b})  [{self._field_space_label(field_space)}]")
             print(f"  {sep}")
 
             # Auto-Power (scale-dependent thresholds, §4.1)
@@ -437,17 +513,6 @@ class EpochVisualizer:
         with open(metrics_path, "w") as f:
             json.dump(history, f, indent=2, allow_nan=True)
         print(f"  [metrics] saved → {metrics_path}", flush=True)
-
-    def _to_log10(self, x) -> np.ndarray:
-        """normalized z-space → log10(physical field)"""
-        if hasattr(x, "cpu"):
-            x = x.cpu().numpy()
-        x = np.asarray(x, dtype=np.float32)
-        t = torch.from_numpy(x)
-        if t.ndim == 3:
-            t = t.unsqueeze(0)
-        phys = self.normalizer.denormalize(t).numpy()          # 10^(z*scale+center)
-        return np.log10(np.clip(phys, 1e-30, None))            # log10 space
 
     # ── 4. Loss curve ──────────────────────────────────────────────────────────
 

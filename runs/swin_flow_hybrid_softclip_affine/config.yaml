@@ -16,7 +16,7 @@ data:
   data_fraction: 1.0
   data_dir: /home/work/cosmology/GENESIS/GENESIS-data/hybrid_softclip_affine
   norm_config: configs/normalization/hybrid_softclip_affine.yaml
-
+  augment: true
 model:
   architecture: swin
   in_channels: 3
