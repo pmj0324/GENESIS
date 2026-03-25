@@ -40,6 +40,7 @@ generative:
     viz:
       sampler_a: euler
       sampler_b: rk4
+      eval_n: 15
 
 training:
   batch_size: 32

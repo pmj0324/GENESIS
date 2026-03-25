@@ -469,16 +469,38 @@ def main():
         )
 
     # Epoch visualizer (diffusion / flow matching 공통)
-    val_dataset = val_loader.dataset
-    ref_maps    = torch.stack([val_dataset[i][0] for i in range(8)])  # [8, 3, 256, 256]
-    ref_cond    = val_dataset[0][1]                                    # [6]
-    eval_conds  = torch.stack([val_dataset[i][1] for i in range(8)])  # [8, 6] 메트릭용
     framework   = cfg["generative"]["framework"]
     sampler_cfg = resolve_sampler_config(cfg, framework)
     cfg_scale   = sampler_cfg["cfg_scale"]
 
     gcfg_s = cfg["generative"].get("sampler", {})
     viz_cfg = gcfg_s.get("viz", {})
+
+    # metadata.yaml에서 normalization config 로드 (denormalize + viz eval_n 상한)
+    _meta_path = Path(cfg["data"]["data_dir"]) / "metadata.yaml"
+    with open(_meta_path) as _f:
+        _meta = yaml.safe_load(_f)
+    norm_cfg = _meta.get("normalization", {})
+
+    val_dataset = val_loader.dataset
+    desired_eval_n = int(viz_cfg.get("eval_n", 15))
+    if desired_eval_n <= 0:
+        raise ValueError(f"generative.sampler.viz.eval_n must be > 0, got {desired_eval_n}")
+
+    maps_per_sim = int(_meta.get("split", {}).get("maps_per_sim", len(val_dataset)))
+    max_eval_n = max(1, min(len(val_dataset), maps_per_sim))
+    eval_n = min(desired_eval_n, max_eval_n)
+    if eval_n < desired_eval_n:
+        print(
+            f"[train] viz eval_n fallback: requested={desired_eval_n}, "
+            f"available_max={max_eval_n} -> using N={eval_n}"
+        )
+    else:
+        print(f"[train] viz eval_n={eval_n} (requested={desired_eval_n})")
+
+    ref_maps    = torch.stack([val_dataset[i][0] for i in range(eval_n)])   # [N, 3, 256, 256]
+    ref_cond    = val_dataset[0][1]                                          # [6]
+    eval_conds  = torch.stack([val_dataset[i][1] for i in range(eval_n)])   # [N, 6] 메트릭용
 
     if framework == "diffusion":
         name_a = viz_cfg.get("sampler_a", "ddpm").lower()
@@ -534,12 +556,6 @@ def main():
         sampler_a = (name_a.capitalize(), _flow_sampler(name_a))
         sampler_b = (name_b.capitalize(), _flow_sampler(name_b))
 
-    # metadata.yaml에서 normalization config 로드 (denormalize 용)
-    _meta_path = Path(cfg["data"]["data_dir"]) / "metadata.yaml"
-    with open(_meta_path) as _f:
-        _meta = yaml.safe_load(_f)
-    norm_cfg = _meta.get("normalization", {})
-
     epoch_callback = EpochVisualizer(
         sampler_a  = sampler_a,
         sampler_b  = sampler_b,
@@ -549,7 +565,7 @@ def main():
         norm_cfg   = norm_cfg,
         device     = device,
         eval_conds = eval_conds,
-        eval_n     = 8,
+        eval_n     = eval_n,
         viz_cfg    = viz_cfg,
     )
 

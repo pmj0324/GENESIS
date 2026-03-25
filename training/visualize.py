@@ -19,7 +19,7 @@ maps:
 
 power spectrum:
   ref_map[0]: val set 첫 번째 실제 맵 (ref_cond와 동일 시뮬레이션)
-  val avg   : val set 처음 8장 평균 P(k)
+  val avg   : val set 처음 N장 평균 P(k)
   sampler_a/b: ref_cond 조건으로 생성된 샘플의 P(k)
   linear: denormalized physical field 그대로 P(k) 계산
   log   : denormalized field를 log10(max(x, 1e-30))로 변환 후 P(k) 계산
@@ -74,7 +74,7 @@ class EpochVisualizer:
         norm_cfg:   Dict,
         device,
         eval_conds: Optional[torch.Tensor] = None,   # [N, 6] — 에폭 메트릭용 N개 조건
-        eval_n:     int = 8,                          # 메트릭 평가에 사용할 샘플 수
+        eval_n:     int = 15,                         # 메트릭 평가에 사용할 샘플 수
         viz_cfg:    Optional[Dict] = None,
     ):
         self.name_a, self.fn_a = sampler_a
@@ -122,7 +122,23 @@ class EpochVisualizer:
         # ref_maps → numpy [N, 3, 256, 256] (정규화 상태)
         if hasattr(ref_maps, "cpu"):
             ref_maps = ref_maps.cpu().numpy()
-        self.ref_maps_norm = np.asarray(ref_maps[:8], dtype=np.float32)
+        ref_maps_np = np.asarray(ref_maps, dtype=np.float32)
+        if ref_maps_np.ndim == 3:
+            ref_maps_np = ref_maps_np[None, ...]
+        if ref_maps_np.ndim != 4:
+            raise ValueError(f"ref_maps must be [N,3,H,W] or [3,H,W], got shape={ref_maps_np.shape}")
+
+        requested_n = max(1, int(eval_n))
+        available_n = len(ref_maps_np)
+        use_n = min(requested_n, available_n)
+        if use_n < requested_n:
+            print(
+                f"  [viz] eval_n fallback: requested={requested_n}, "
+                f"available={available_n} -> using N={use_n}",
+                flush=True,
+            )
+
+        self.ref_maps_norm = ref_maps_np[:use_n]
         # denormalize → physical linear field 값
         self.ref_maps_linear = self._denorm_maps(self.ref_maps_norm)
 
@@ -134,7 +150,7 @@ class EpochVisualizer:
         self.ref_cond      = ref_cond.view(1, -1).float().to(device)
 
         # 에폭 메트릭용: N개의 (맵, 조건) 쌍
-        n = min(eval_n, len(self.ref_maps_norm))
+        n = min(use_n, len(self.ref_maps_norm))
         self.eval_maps_norm = self.ref_maps_norm[:n]          # [N, 3, H, W] normalized
         if eval_conds is not None:
             ec = eval_conds[:n]
@@ -328,11 +344,12 @@ class EpochVisualizer:
     ):
         """
         linear/log field space 기준 P(k) 비교 (2행)
-          True mean    : ref_cond와 동일 시뮬레이션의 실제 맵 8장 평균 P(k)
+          True mean    : ref_cond와 동일 시뮬레이션의 실제 맵 N장 평균 P(k)
           True 16-84%  : same-condition realization band
           sampler_a/b  : ref_cond 조건으로 생성된 샘플
         """
         n_rows = len(field_spaces)
+        n_ref = int(len(self.ref_maps_linear))
         fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4 * n_rows), squeeze=False)
         fig.suptitle(
             f"Epoch {epoch+1:04d}  –  Power Spectrum  [linear + log10 | {self._power_estimator_label()}]\n"
@@ -372,9 +389,9 @@ class EpochVisualizer:
                         color="black",
                         alpha=0.16,
                         linewidth=0,
-                        label="True 16-84% (N=8)",
+                        label=f"True 16-84% (N={n_ref})",
                     )
-                self._plot_positive_loglog(ax, k_true, pk_true_mean, "k-", lw=2.0, label="True mean (N=8)")
+                self._plot_positive_loglog(ax, k_true, pk_true_mean, "k-", lw=2.0, label=f"True mean (N={n_ref})")
                 self._plot_positive_loglog(ax, k_a, Pk_a, "r-", lw=1.5, label=f"{self.name_a} (generated)")
                 self._plot_positive_loglog(ax, k_b, Pk_b, "b-", lw=1.5, label=f"{self.name_b} (generated)")
 
