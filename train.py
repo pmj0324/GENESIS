@@ -160,11 +160,16 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
         "model.swin.num_heads", kwargs.get("num_heads", [4, 8, 16, 32]), length=4
     )
     window_size = int(kwargs.get("window_size", 8))
+    cond_fusion = kwargs.get("cond_fusion", "add")
 
     _require_positive_int("model.swin.img_size", img_size)
     _require_positive_int("model.swin.patch_size", patch_size)
     _require_positive_int("model.swin.embed_dim", embed_dim)
     _require_positive_int("model.swin.window_size", window_size)
+    if cond_fusion not in {"add", "concat"}:
+        raise ValueError(
+            f"model.swin.cond_fusion must be 'add' or 'concat', got {cond_fusion!r}"
+        )
 
     if img_size % patch_size != 0:
         raise ValueError(
@@ -226,7 +231,8 @@ def _format_model_details(info: dict) -> str:
         return (
             f"patch={info.get('patch_size', 4)} embed={info.get('embed_dim', 128)} "
             f"depths={info.get('depths', [2, 2, 8, 2])} heads={info.get('num_heads', [4, 8, 16, 32])} "
-            f"window={info.get('window_size', 8)} dropout={info['dropout']}"
+            f"window={info.get('window_size', 8)} cond_fusion={info.get('cond_fusion', 'add')} "
+            f"dropout={info['dropout']}"
         )
     return str(info)
 
@@ -301,7 +307,7 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
             "swin",
             scfg,
             SwinUNet.PRESETS,
-            ("img_size", "patch_size", "embed_dim", "depths", "num_heads", "window_size"),
+            ("img_size", "patch_size", "embed_dim", "depths", "num_heads", "window_size", "cond_fusion"),
         )
         _validate_swin_kwargs(common, resolved)
         model = build_swin(
@@ -468,6 +474,17 @@ def main():
             plateau_factor=tcfg.get("plateau_factor", 0.5),
         )
 
+    ema_cfg_raw = tcfg.get("ema", {})
+    ema_cfg = ema_cfg_raw if isinstance(ema_cfg_raw, dict) else {}
+    ema_kwargs = dict(
+        ema_enabled=bool(ema_cfg.get("enabled", False)),
+        ema_decay=float(ema_cfg.get("decay", 0.9999)),
+        ema_update_every=int(ema_cfg.get("update_every", 1)),
+        ema_update_after_step=ema_cfg.get("update_after_step", "auto"),
+        ema_min_update_after_step=int(ema_cfg.get("min_update_after_step", 500)),
+        ema_eval_with_ema=bool(ema_cfg.get("eval_with_ema", True)),
+    )
+
     # Epoch visualizer (diffusion / flow matching 공통)
     framework   = cfg["generative"]["framework"]
     sampler_cfg = resolve_sampler_config(cfg, framework)
@@ -547,11 +564,19 @@ def main():
         name_a = viz_cfg.get("sampler_a", "euler").lower()
         name_b = viz_cfg.get("sampler_b", "heun").lower()
         steps  = sampler_cfg["steps"]
+        rtol   = sampler_cfg.get("rtol", 1e-5)
+        atol   = sampler_cfg.get("atol", 1e-5)
 
         def _flow_sampler(name):
             s = build_sampler(name)
             return lambda m, sh, c: s.sample(
-                m, sh, c, steps=steps, cfg_scale=cfg_scale, progress=False)
+                m, sh, c,
+                steps=steps,
+                cfg_scale=cfg_scale,
+                progress=False,
+                rtol=rtol,
+                atol=atol,
+            )
 
         sampler_a = (name_a.capitalize(), _flow_sampler(name_a))
         sampler_b = (name_b.capitalize(), _flow_sampler(name_b))
@@ -589,6 +614,7 @@ def main():
         epoch_callback=epoch_callback,
         data_fraction=cfg["data"].get("data_fraction", 1.0),
         **schedule_kwargs,
+        **ema_kwargs,
     )
 
     # Resume / Finetune

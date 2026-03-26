@@ -45,7 +45,7 @@ from analysis.cross_spectrum import compute_spectrum_errors
 from analysis.pixel_distribution import compare_pixel_distributions
 from analysis.power_spectrum import compute_power_spectrum_2d
 from dataloader.normalization import CHANNELS, PARAM_NAMES, Normalizer, denormalize_params
-from evaluation.cli.evaluate import build_model, build_sampler_fn
+from evaluation.cli.evaluate import build_model, build_sampler_fn, select_checkpoint_state_dict
 from utils.eval_helpers import channel_ranges, format_normalized_condition, to_log10_phys
 
 CHANNEL_LABELS = ["log10(Mcdm)", "log10(Mgas)", "log10(T)"]
@@ -128,6 +128,13 @@ def parse_args() -> argparse.Namespace:
             "Power spectrum estimator for CV plot. "
             "If omitted, uses config generative.sampler.viz.power.estimator (default: genesis)."
         ),
+    )
+    parser.add_argument(
+        "--model-source",
+        type=str,
+        default="auto",
+        choices=["auto", "ema", "raw"],
+        help="Checkpoint weight source. auto: EMA 우선, 없으면 raw.",
     )
     return parser.parse_args()
 
@@ -646,7 +653,7 @@ def main() -> None:
 
     model = build_model(cfg)
     ckpt = _load_checkpoint(checkpoint_path)
-    state_dict = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
+    state_dict, model_source_used = select_checkpoint_state_dict(ckpt, args.model_source)
     model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
@@ -667,6 +674,10 @@ def main() -> None:
     print(f"[sample_cv] output_dir={output_dir}")
     print(f"[sample_cv] n_samples={n_samples} batch_size={batch_size} batches={n_batches}")
     print(f"[sample_cv] power_spectrum_estimator={power_estimator}")
+    print(
+        f"[sample_cv] model_source={model_source_used} "
+        f"(requested={args.model_source}, has_ema={bool(ckpt.get('model_ema') is not None)})"
+    )
 
     with torch.no_grad():
         for batch_idx in range(n_batches):
@@ -738,6 +749,10 @@ def main() -> None:
                 "device": device,
                 "seed": int(args.seed),
                 "cfg_scale": cfg.get("generative", {}).get("sampler", {}).get("cfg_scale"),
+                "model_source_requested": args.model_source,
+                "model_source_used": model_source_used,
+                "checkpoint_has_model_ema": bool(ckpt.get("model_ema") is not None),
+                "checkpoint_val_loss_source": ckpt.get("val_loss_source"),
                 "power_spectrum_estimator": power_estimator,
                 "saved_normalized": bool(args.save_norm),
                 "matched_real_selection": {

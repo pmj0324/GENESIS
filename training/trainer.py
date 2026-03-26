@@ -8,6 +8,7 @@ Diffusion (.loss) 과 Flow Matching (.loss) 모두 지원.
 import math
 import sys
 import time
+from copy import deepcopy
 import torch
 from tqdm import tqdm
 import torch.nn as nn
@@ -67,6 +68,13 @@ class Trainer:
         epoch_callback: Optional[Callable] = None,
         # Data info (배너 표시용)
         data_fraction: float = 1.0,
+        # EMA
+        ema_enabled: bool = False,
+        ema_decay: float = 0.9999,
+        ema_update_every: int = 1,
+        ema_update_after_step: Union[int, str] = "auto",
+        ema_min_update_after_step: int = 500,
+        ema_eval_with_ema: bool = True,
     ):
         self.model    = model.to(device)
         self.loss_fn  = loss_fn
@@ -82,6 +90,7 @@ class Trainer:
         self.last_name      = "last.pt"
         self.epoch_callback = epoch_callback
         self.data_fraction  = data_fraction
+        self._global_step   = 0
 
         # Optimizer
         if optimizer == "adamw":
@@ -130,6 +139,29 @@ class Trainer:
         self._no_improve = 0
         self._base_lr = lr
         self._last_grad_norm = 0.0
+        self._last_val_source = "raw"
+
+        # EMA
+        self.ema_enabled = bool(ema_enabled)
+        self.ema_decay = float(ema_decay)
+        self.ema_update_every = int(ema_update_every)
+        self.ema_update_after_step_cfg = ema_update_after_step
+        self.ema_min_update_after_step = int(ema_min_update_after_step)
+        self.ema_eval_with_ema = bool(ema_eval_with_ema)
+        self.ema_update_after_step = 0
+        self.ema_updates = 0
+        self.ema_model: Optional[nn.Module] = None
+
+        if self.ema_enabled:
+            if not (0.0 < self.ema_decay < 1.0):
+                raise ValueError(f"ema_decay must be in (0, 1), got {self.ema_decay!r}")
+            if self.ema_update_every <= 0:
+                raise ValueError(f"ema_update_every must be > 0, got {self.ema_update_every!r}")
+            if self.ema_min_update_after_step < 0:
+                raise ValueError(
+                    f"ema_min_update_after_step must be >= 0, got {self.ema_min_update_after_step!r}"
+                )
+            self._reset_ema_from_model()
 
     # ── Warmup ────────────────────────────────────────────────────────────────
 
@@ -147,6 +179,48 @@ class Trainer:
         if epoch < self.warmup_epochs:
             return self._base_lr * (epoch + 1) / self.warmup_epochs
         return self._base_lr
+
+    # ── EMA ───────────────────────────────────────────────────────────────────
+
+    def _resolve_ema_update_after_step(self, steps_per_epoch: int) -> int:
+        cfg = self.ema_update_after_step_cfg
+        if isinstance(cfg, str):
+            mode = cfg.strip().lower()
+            if mode in {"auto", "warmup", "warmup_auto"}:
+                return max(self.ema_min_update_after_step, self.warmup_epochs * steps_per_epoch)
+            if mode in {"0", "none"}:
+                return 0
+            raise ValueError(
+                f"Unknown ema_update_after_step mode: {cfg!r}. "
+                "Use integer or one of: auto / warmup / none"
+            )
+        value = int(cfg)
+        if value < 0:
+            raise ValueError(f"ema_update_after_step must be >= 0, got {value!r}")
+        return value
+
+    def _reset_ema_from_model(self) -> None:
+        self.ema_model = deepcopy(self.model).to(self.device)
+        self.ema_model.eval()
+        for p in self.ema_model.parameters():
+            p.requires_grad_(False)
+
+    @torch.no_grad()
+    def _ema_update(self) -> None:
+        if not self.ema_enabled or self.ema_model is None:
+            return
+        one_minus_decay = 1.0 - self.ema_decay
+        for ema_p, p in zip(self.ema_model.parameters(), self.model.parameters()):
+            ema_p.mul_(self.ema_decay).add_(p.detach(), alpha=one_minus_decay)
+        # Keep buffers (if any) in sync for robust behavior across model variants.
+        for ema_b, b in zip(self.ema_model.buffers(), self.model.buffers()):
+            ema_b.copy_(b)
+        self.ema_updates += 1
+
+    def _current_eval_model(self) -> nn.Module:
+        if self.ema_enabled and self.ema_eval_with_ema and self.ema_model is not None:
+            return self.ema_model
+        return self.model
 
     # ── Train / Val ───────────────────────────────────────────────────────────
 
@@ -177,6 +251,14 @@ class Trainer:
                 self._last_grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip).item()
             scaler.step(self.optimizer)
             scaler.update()
+            self._global_step += 1
+
+            if self.ema_enabled and self.ema_model is not None:
+                if (
+                    self._global_step >= self.ema_update_after_step
+                    and (self._global_step % self.ema_update_every == 0)
+                ):
+                    self._ema_update()
 
             total += loss.item() * maps.size(0)
             n     += maps.size(0)
@@ -184,15 +266,16 @@ class Trainer:
         return total / n
 
     @torch.no_grad()
-    def _val_epoch(self, loader: DataLoader) -> float:
-        self.model.eval()
+    def _val_epoch(self, loader: DataLoader, eval_model: Optional[nn.Module] = None) -> float:
+        model_for_eval = eval_model if eval_model is not None else self.model
+        model_for_eval.eval()
         total, n = 0.0, 0
         pbar = tqdm(loader, desc="    val", leave=False, dynamic_ncols=True, disable=not sys.stdout.isatty())
         for maps, params in pbar:
             maps   = maps.to(self.device).float()
             params = params.to(self.device).float()
             with autocast("cuda", enabled=self.use_amp):
-                loss   = self.loss_fn(self.model, maps, params)
+                loss   = self.loss_fn(model_for_eval, maps, params)
             total += loss.item() * maps.size(0)
             n     += maps.size(0)
             pbar.set_postfix(loss=f"{total/n:.4f}")
@@ -215,7 +298,16 @@ class Trainer:
             "best_epoch": self._best_epoch,
             "no_improve": self._no_improve,
             "schedule_type": self._schedule_type,
+            "global_step": self._global_step,
+            "val_loss_source": self._last_val_source,
+            "ema_enabled": self.ema_enabled,
+            "ema_decay": self.ema_decay if self.ema_enabled else None,
+            "ema_update_every": self.ema_update_every if self.ema_enabled else None,
+            "ema_update_after_step": self.ema_update_after_step if self.ema_enabled else None,
+            "ema_updates": self.ema_updates if self.ema_enabled else None,
         }
+        if self.ema_enabled and self.ema_model is not None:
+            payload["model_ema"] = self.ema_model.state_dict()
         torch.save(payload, self.ckpt_dir / (name or self.ckpt_name))
 
     def load(self, path: Optional[Path] = None) -> int:
@@ -277,10 +369,26 @@ class Trainer:
         else:
             self._no_improve = 0
 
+        self._global_step = int(ck.get("global_step", 0))
+        self._last_val_source = str(ck.get("val_loss_source", "raw"))
+
+        ema_msg = ""
+        if self.ema_enabled and self.ema_model is not None:
+            ck_ema = ck.get("model_ema")
+            if ck_ema is not None:
+                self.ema_model.load_state_dict(ck_ema)
+                self.ema_updates = int(ck.get("ema_updates", 0))
+                ema_msg = "  ema=restored"
+            else:
+                self._reset_ema_from_model()
+                self.ema_updates = 0
+                ema_msg = "  ema=fallback(raw->ema copy)"
+            self.ema_model.eval()
+
         print(
             f"Loaded: epoch={ck['epoch']}  next_epoch={start_epoch}  "
             f"val_loss={ck['val_loss']:.5f}  best={self._best_val:.5f}@ep{self._best_epoch}  "
-            f"{scheduler_msg}"
+            f"{scheduler_msg}{ema_msg}"
         )
         return start_epoch
 
@@ -291,7 +399,23 @@ class Trainer:
             raise FileNotFoundError(f"Checkpoint not found: {p}")
         ck = torch.load(p, map_location=self.device)
         self.model.load_state_dict(ck["model"])
-        print(f"Weights loaded: epoch={ck['epoch']}  val_loss={ck['val_loss']:.5f}  (optimizer reset)")
+        ema_msg = ""
+        if self.ema_enabled and self.ema_model is not None:
+            ck_ema = ck.get("model_ema")
+            if ck_ema is not None:
+                self.ema_model.load_state_dict(ck_ema)
+                self.ema_updates = int(ck.get("ema_updates", 0))
+                ema_msg = "  ema=loaded"
+            else:
+                self._reset_ema_from_model()
+                self.ema_updates = 0
+                ema_msg = "  ema=fallback(raw->ema copy)"
+            self.ema_model.eval()
+        self._global_step = 0
+        print(
+            f"Weights loaded: epoch={ck['epoch']}  val_loss={ck['val_loss']:.5f}  "
+            f"(optimizer reset){ema_msg}"
+        )
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -304,18 +428,28 @@ class Trainer:
         n_train = len(train_loader.dataset)
         n_val   = len(val_loader.dataset)
         n_params = sum(p.numel() for p in self.model.parameters()) / 1e6
+        steps_per_epoch = len(train_loader)
 
         gpu_name = torch.cuda.get_device_name(self.device) if self.use_amp else "cpu"
         gpu_mem  = torch.cuda.get_device_properties(self.device).total_memory / 1e9 if self.use_amp else 0
 
         frac_str = f"  ({self.data_fraction*100:.0f}% of full)" if self.data_fraction < 1.0 else ""
         warmup_start_lr = self._warmup_lr_for_epoch(0) if self.warmup_epochs > 0 else self._base_lr
+        if self.ema_enabled:
+            self.ema_update_after_step = self._resolve_ema_update_after_step(steps_per_epoch)
+        else:
+            self.ema_update_after_step = 0
+
+        val_source = "ema" if (self.ema_enabled and self.ema_eval_with_ema and self.ema_model is not None) else "raw"
+        if val_source == "ema":
+            self._last_val_source = "ema"
+
         print("=" * 60)
         print("  GENESIS Training Start")
         print("=" * 60)
         print(f"  Device     : {self.device} ({gpu_name})" + (f"  [{gpu_mem:.1f}GB]" if self.use_amp else ""))
         print(f"  Model      : {self.model.__class__.__name__}  ({n_params:.1f}M params)")
-        print(f"  Data       : train={n_train}{frac_str}  val={n_val}  batches/ep={len(train_loader)}")
+        print(f"  Data       : train={n_train}{frac_str}  val={n_val}  batches/ep={steps_per_epoch}")
         print(f"  Epochs     : {start_epoch} → {self.max_epochs}  (warmup={self.warmup_epochs})")
         print(f"  Optimizer  : {self.optimizer.__class__.__name__}  lr={self._base_lr:.1e}  wd={self.optimizer.param_groups[0].get('weight_decay', 0):.1e}")
         print(f"  Schedule   : {self._schedule_type}  grad_clip={self.grad_clip}")
@@ -326,6 +460,15 @@ class Trainer:
             )
         else:
             print("  Warmup     : disabled")
+        if self.ema_enabled:
+            print(
+                f"  EMA        : enabled  decay={self.ema_decay:.6f}  update_every={self.ema_update_every}  "
+                f"update_after_step={self.ema_update_after_step}  val_source={val_source}"
+            )
+            if self._schedule_type == "plateau" and val_source == "ema":
+                print("  NOTE       : plateau scheduler uses EMA val_loss (scheduler.step(val_loss)).")
+        else:
+            print("  EMA        : disabled")
         print(f"  Early stop : patience={self.early_stop_patience}")
         print(f"  Checkpoint : {self.ckpt_dir / self.ckpt_name if self.ckpt_dir else 'none'}")
         print("=" * 60)
@@ -345,7 +488,9 @@ class Trainer:
                 torch.cuda.reset_peak_memory_stats(self.device)
 
             train_loss = self._train_epoch(train_loader, epoch)
-            val_loss   = self._val_epoch(val_loader)
+            eval_model = self._current_eval_model()
+            self._last_val_source = "ema" if eval_model is self.ema_model else "raw"
+            val_loss   = self._val_epoch(val_loader, eval_model=eval_model)
 
             elapsed = time.time() - t0
 
@@ -364,6 +509,7 @@ class Trainer:
                 elif self._schedule_type in ("cosine_warmup", "cosine_restarts"):
                     self.scheduler.step()
                 elif self._schedule_type == "plateau":
+                    # NOTE: val_loss source(raw vs ema)는 self._last_val_source로 추적된다.
                     self.scheduler.step(val_loss)
 
             # Best checkpoint
@@ -406,7 +552,14 @@ class Trainer:
 
             # Epoch callback (시각화 등)
             if self.epoch_callback is not None:
-                self.epoch_callback(epoch, self.model, self._history)
+                callback_model = eval_model
+                try:
+                    self.epoch_callback(epoch, callback_model, self._history, improved)
+                except TypeError:
+                    # Backward compatibility for 3-argument callbacks
+                    self.epoch_callback(epoch, callback_model, self._history)
+                if self.ema_enabled and self.ema_model is not None:
+                    self.ema_model.eval()
                 torch.cuda.empty_cache()   # viz 샘플링 후 caching allocator 정리
 
             # Early stopping

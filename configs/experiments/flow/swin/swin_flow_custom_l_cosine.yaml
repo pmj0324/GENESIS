@@ -12,11 +12,9 @@
 #   - Early stopping patience = 20
 #
 # NOTE:
-#   Current Swin implementation does not expose a YAML-only "cond concat"
-#   switch. Swin still uses the built-in additive conditioning:
-#       emb = t_embed(t) + c_embed(cond)
-#   If you want true concatenative conditioning for Swin, we need a small
-#   code patch in GENESIS/models/swin.py.
+#   Swin은 cond_fusion으로 결합 방식을 선택할 수 있음:
+#       cond_fusion: add     -> emb = t_embed(t) + c_embed(cond)
+#       cond_fusion: concat  -> emb = JointEmbedding(t_embed, c_embed)
 ##############################################################################
 
 data:

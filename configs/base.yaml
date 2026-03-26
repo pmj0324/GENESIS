@@ -20,6 +20,7 @@ model:
   swin:
     preset: B               # S (~40M) / B (~90M) / L (~200M)
     window_size: 8
+    cond_fusion: add        # add / concat, t_emb와 c_emb 결합 방식
 
 generative:
   framework: flow_matching  # flow_matching / diffusion
@@ -44,8 +45,11 @@ generative:
 
   sampler:                  # 추론 시 사용
     # flow_matching용
-    method: heun            # euler (50 steps) / heun (25 steps) / rk4 (15 steps)
+    method: heun            # euler (50) / heun (25) / rk4 (15) / dopri5(adaptive)
     steps: 25
+    # dopri5 전용 (flow_matching)
+    # rtol: 1.0e-5
+    # atol: 1.0e-5
     # diffusion용
     # method: ddim          # ddpm / ddim
     # steps: 50
@@ -75,6 +79,16 @@ training:
   # plateau 전용
   # plateau_patience: 5
   # plateau_factor: 0.5
+  # EMA 전용
+  # ema:
+  #   enabled: true
+  #   decay: 0.9999
+  #   update_every: 1
+  #   # "auto" => max(min_update_after_step, warmup_epochs * batches_per_epoch)
+  #   update_after_step: auto
+  #   min_update_after_step: 500
+  #   # true면 val/best/early-stop/plateau가 EMA val_loss 기준으로 동작
+  #   eval_with_ema: true
   early_stop_patience: 20
 
 checkpoint:

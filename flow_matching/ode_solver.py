@@ -7,7 +7,8 @@ Implements three solver modes with a shared interface:
   - dopri5 : adaptive-step Dormand-Prince via torchdiffeq.odeint
 
 Design notes:
-  - Integrates in t-direction 0 -> 1.
+  - Default integrates in t-direction 0 -> 1.
+  - Also supports reversed integration (e.g. 1 -> 0) via t_start/t_end.
   - Keeps batch dimension and spatial dimensions unchanged.
   - Tracks and logs actual NFE (number of velocity-field evaluations).
 """
@@ -92,9 +93,11 @@ class FlowMatchingODESolver:
         n_steps: int = 50,
         rtol: float = 1e-5,
         atol: float = 1e-5,
+        t_start: float = 0.0,
+        t_end: float = 1.0,
     ) -> torch.Tensor:
         """
-        Solve dx/dt = v_theta(x, t, cond) from t=0 to t=1.
+        Solve dx/dt = v_theta(x, t, cond) from t=t_start to t=t_end.
 
         Args:
             x0: Initial state at t=0, shape [B, C, ...].
@@ -102,6 +105,7 @@ class FlowMatchingODESolver:
             solver: 'euler' | 'heun' | 'dopri5'.
             n_steps: Fixed step count for euler/heun.
             rtol/atol: Adaptive tolerance for dopri5.
+            t_start/t_end: Integration interval endpoints.
 
         Returns:
             x1: Final state at t=1, same shape as x0.
@@ -110,6 +114,10 @@ class FlowMatchingODESolver:
         x = x0
         if cond is not None and cond.device != x.device:
             cond = cond.to(x.device)
+        t0 = float(t_start)
+        t1 = float(t_end)
+        if t0 == t1:
+            raise ValueError(f"t_start and t_end must differ, got {t0} == {t1}")
 
         nfe_counter = {"nfe": 0}
 
@@ -117,7 +125,7 @@ class FlowMatchingODESolver:
             if int(n_steps) <= 0:
                 raise ValueError(f"n_steps must be > 0 for {mode}, got {n_steps}")
             steps = int(n_steps)
-            ts = torch.linspace(0.0, 1.0, steps + 1, device=x.device, dtype=torch.float32)
+            ts = torch.linspace(t0, t1, steps + 1, device=x.device, dtype=torch.float32)
 
             if mode == "euler":
                 for i in range(steps):
@@ -140,7 +148,8 @@ class FlowMatchingODESolver:
             )
             if self.log_nfe:
                 print(
-                    f"[flow_ode] solver={mode}  n_steps={steps}  nfe={nfe_counter['nfe']}",
+                    f"[flow_ode] solver={mode}  t=[{t0:.3f}->{t1:.3f}]  "
+                    f"n_steps={steps}  nfe={nfe_counter['nfe']}",
                     flush=True,
                 )
             return x
@@ -160,7 +169,7 @@ class FlowMatchingODESolver:
             t_val = float(t.detach().cpu().item())
             return self._vf(y, t_val, cond, nfe_counter)
 
-        t_eval = torch.tensor([0.0, 1.0], device=x.device, dtype=torch.float32)
+        t_eval = torch.tensor([t0, t1], device=x.device, dtype=torch.float32)
         sol = odeint(ode_rhs, x, t_eval, method="dopri5", rtol=float(rtol), atol=float(atol))
         x1 = sol[-1]
 
@@ -172,9 +181,9 @@ class FlowMatchingODESolver:
         )
         if self.log_nfe:
             print(
-                f"[flow_ode] solver=dopri5  rtol={float(rtol):.1e}  atol={float(atol):.1e}  "
+                f"[flow_ode] solver=dopri5  t=[{t0:.3f}->{t1:.3f}]  "
+                f"rtol={float(rtol):.1e}  atol={float(atol):.1e}  "
                 f"nfe={nfe_counter['nfe']}",
                 flush=True,
             )
         return x1
-

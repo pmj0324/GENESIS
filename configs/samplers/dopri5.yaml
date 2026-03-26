@@ -1,0 +1,15 @@
+# Dopri5 Sampler (Adaptive Dormand-Prince)
+# framework: flow_matching 전용
+#
+# - steps는 adaptive에서는 사용되지 않지만, 인터페이스 호환을 위해 유지합니다.
+# - rtol/atol로 정확도-속도 tradeoff를 조절합니다.
+
+sampler:
+  method: dopri5
+  steps: 50
+  rtol: 1.0e-5
+  atol: 1.0e-5
+  cfg_scale: 1.0
+  viz:
+    sampler_a: heun
+    sampler_b: dopri5

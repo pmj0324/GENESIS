@@ -43,6 +43,8 @@ def resolve_sampler_config(cfg: dict, framework: str) -> dict:
     if framework == "flow_matching":
         out["method"] = _method(_pick(scfg.get("method"), scfg.get("sampler_a")), default="heun")
         out["steps"] = int(_pick(scfg.get("steps"), default=25))
+        out["rtol"] = float(_pick(scfg.get("rtol"), default=1e-5))
+        out["atol"] = float(_pick(scfg.get("atol"), default=1e-5))
         return out
 
     if framework == "diffusion":

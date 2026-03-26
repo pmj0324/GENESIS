@@ -98,8 +98,8 @@ GENESIS/
 │
 ├── flow_matching/
 │   ├── flows.py                     # OT/Stochastic/VP flow loss
-│   ├── samplers.py                  # Euler/Heun/RK4 sampler (t: 1->0)
-│   └── ode_solver.py                # Flow inference ODE solver util (t: 0->1)
+│   ├── samplers.py                  # Euler/Heun/RK4/Dopri5 sampler (t: 1->0)
+│   └── ode_solver.py                # Flow inference ODE solver util (default t: 0->1)
 │
 ├── diffusion/
 │   ├── ddpm.py                      # GaussianDiffusion (DDPM/DDIM)
@@ -300,20 +300,25 @@ python train.py --help
 
 ## 5.4 시각화/메트릭 출력
 
-`training/visualize.py`가 epoch마다 생성:
+`training/visualize.py` 출력:
 
 - `plots/epXXXX_samples.png`
 - `plots/epXXXX_power_spectrum.png`
 - `plots/loss.png`
 - `plots/lr.png`
+- `plots/best_samples.png`
+- `plots/best_power_spectrum.png`
 - `plots/latest_samples.png`
 - `plots/latest_power_spectrum.png`
+
+현재 동작:
+- `loss.png`, `lr.png`는 매 epoch 갱신
+- 샘플/파워/메트릭은 **best(val_loss 최소) 갱신 시에만** 생성/갱신
+- `latest_*`는 호환용 alias이며 `best_*`와 같은 타이밍으로 갱신
 
 메트릭 JSON:
 - `metrics_history.json`
 - `metrics_best.json`
-
-현재 동작:
 - 둘 다 **best(val_loss 최소) 기준 1개 레코드**만 유지
 
 ## 5.5 `N`(메트릭 샘플 수) 정책
@@ -350,7 +355,7 @@ EDM 특이사항:
   - `utils/sampling.py::validate_sampling_steps`
 - Flow Matching 샘플러(생성용, `t: 1 -> 0`)
   - `flow_matching/samplers.py`
-  - `EulerSampler.sample`, `HeunSampler.sample`, `RK4Sampler.sample`
+  - `EulerSampler.sample`, `HeunSampler.sample`, `RK4Sampler.sample`, `Dopri5Sampler.sample`
   - `build_sampler(name)`으로 선택
 - Diffusion 샘플러
   - `diffusion/ddpm.py::GaussianDiffusion.ddpm_sample`
@@ -358,8 +363,9 @@ EDM 특이사항:
 - EDM 샘플러
   - `diffusion/samplers_edm.py::heun_sample`
   - `diffusion/samplers_edm.py::euler_sample`
-- Flow ODE inference 유틸(일반 ODE, `t: 0 -> 1`)
-  - `flow_matching/ode_solver.py::FlowODESolver.sample`
+- Flow ODE inference 유틸(일반 ODE)
+  - `flow_matching/ode_solver.py::FlowMatchingODESolver.sample`
+  - 기본 `t: 0 -> 1`, 필요 시 `t_start/t_end`로 역방향(`1 -> 0`)도 지원
   - `euler/heun/dopri5`, NFE 카운팅 포함
 
 ## 5.8 샘플링 호출 경로
@@ -375,8 +381,10 @@ EDM 특이사항:
   - `viz.sampler_a`, `viz.sampler_b`, `viz.eval_n` 설정으로 epoch별 샘플/메트릭 생성
 
 주의:
-- Flow ODE solver(`flow_matching/ode_solver.py`)는 기본 학습 샘플러 경로와 별도 유틸입니다.
-- 기본 학습/평가 생성은 `flow_matching/samplers.py`, `diffusion/ddpm.py`, `diffusion/samplers_edm.py`를 사용합니다.
+- Flow ODE solver(`flow_matching/ode_solver.py`)는 단독 유틸로도 쓸 수 있고,
+  `flow_matching/samplers.py`의 `dopri5` 경로에서도 재사용됩니다.
+- 기본 학습/평가 생성은 여전히 `flow_matching/samplers.py`, `diffusion/ddpm.py`,
+  `diffusion/samplers_edm.py` 엔트리를 사용합니다.
 
 ---
 
@@ -410,7 +418,7 @@ checkpoint:
 - `dit`: `preset`, `patch_size`, `hidden_size/depth/num_heads/...`
 - `unet`: `preset`, `attention_resolution`, `channel_se`, `circular_conv`,
   `cross_attn_cond`, `per_scale_cond`, `cond_depth`
-- `swin`: `preset`, `window_size`, `embed_dim/depths/num_heads/...`
+- `swin`: `preset`, `window_size`, `cond_fusion`, `embed_dim/depths/num_heads/...`
 
 ## 6.3 generative 블록
 
@@ -424,7 +432,7 @@ generative:
     cfg_prob: 0.1
     sigma_min: 1.0e-4
   sampler:
-    method: rk4        # euler / heun / rk4
+    method: rk4        # euler / heun / rk4 / dopri5
     steps: 15
     cfg_scale: 1.1
     viz:
@@ -526,6 +534,7 @@ x1 = solver.sample(
 
 특징:
 - 적분 방향: `t=0 -> 1`
+- 필요 시 `t_start=1, t_end=0`으로 생성 경로와 동일한 역방향 적분 가능
 - batch 차원 유지
 - `euler/heun`: 직접 루프 (torchdiffeq 미사용)
 - `dopri5`: `torchdiffeq.odeint` 사용
@@ -537,8 +546,8 @@ x1 = solver.sample(
 - `GT_SOLVER_DEFAULT = {solver: dopri5, rtol: 1e-5, atol: 1e-5}`
 
 주의:
-- 기존 `flow_matching/samplers.py`는 생성 샘플링용(노이즈->데이터, `t: 1 -> 0`)
-- `ode_solver.py`는 일반 ODE inference 유틸(`t: 0 -> 1`)
+- `flow_matching/samplers.py`는 생성 샘플링용(노이즈->데이터, `t: 1 -> 0`)
+- `ode_solver.py`는 일반 ODE inference 유틸이며, 샘플러의 `dopri5` 경로에서도 재사용됩니다.
 
 ---
 

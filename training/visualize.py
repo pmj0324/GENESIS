@@ -8,6 +8,12 @@ GENESIS - EpochVisualizer
   3. Loss curve      → plots/loss.png                    (선형 + log-y loss; 매 에폭 덮어씀)
   4. Learning rate   → plots/lr.png                      (lr 히스토리 있을 때만; 매 에폭 덮어씀)
 
+샘플/파워/메트릭은 best 갱신 시에만 생성된다.
+요약 파일:
+  - plots/best_samples.png
+  - plots/best_power_spectrum.png
+  (호환을 위해 latest_*도 동일 파일로 유지)
+
 conditioning:
   ref_cond = val_dataset[0][1]  →  val set 첫 번째 샘플의 z-score 정규화된 cosmological params
   순서: [Ω_m, σ_8, A_SN1, A_SN2, A_AGN1, A_AGN2] (IllustrisTNG LH suite)
@@ -260,11 +266,18 @@ class EpochVisualizer:
     # ── Main call ──────────────────────────────────────────────────────────────
 
     @torch.no_grad()
-    def __call__(self, epoch: int, model, history: dict):
+    def __call__(self, epoch: int, model, history: dict, is_best: bool = False):
         model.eval()
         shape = (1, 3, 256, 256)
 
         try:
+            # loss/lr plot은 매 epoch 업데이트
+            self._plot_loss(history)
+
+            if not is_best:
+                print(f"  [viz] skip heavy plots at epoch {epoch+1:04d} (not best)", flush=True)
+                return
+
             print(f"  [viz] {self.name_a} sampling ...", flush=True)
             raw_a    = self.fn_a(model, shape, self.ref_cond)[0].cpu().numpy()
             sample_a = self._denorm_maps(raw_a)
@@ -275,11 +288,10 @@ class EpochVisualizer:
 
             self._plot_samples(epoch, sample_a, sample_b)
             self._plot_power_spectrum(epoch, sample_a, sample_b, self.power_plot_spaces)
-            self._plot_loss(history)
             self._print_metrics(epoch, model, history)
 
             torch.cuda.empty_cache()
-            print(f"  [viz] saved → {self.plot_dir}", flush=True)
+            print(f"  [viz] saved(best-update) → {self.plot_dir}", flush=True)
         except Exception as e:
             print(f"  [viz] WARNING: plot failed at epoch {epoch+1} — {e}", flush=True)
             plt.close("all")
@@ -330,6 +342,7 @@ class EpochVisualizer:
 
         path = self.plot_dir / f"ep{epoch+1:04d}_samples.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
+        shutil.copy(path, self.plot_dir / "best_samples.png")
         shutil.copy(path, self.plot_dir / "latest_samples.png")
         plt.close(fig)
 
@@ -404,6 +417,7 @@ class EpochVisualizer:
         fig.tight_layout()
         path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
+        shutil.copy(path, self.plot_dir / "best_power_spectrum.png")
         shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
         plt.close(fig)
 

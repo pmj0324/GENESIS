@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 from typing import List, Optional, Tuple
 
-from .embeddings import TimestepEmbedding, ConditionEmbedding
+from .embeddings import TimestepEmbedding, ConditionEmbedding, JointEmbedding
 
 
 # ── Window utils ──────────────────────────────────────────────────────────────
@@ -301,6 +301,7 @@ class SwinUNet(nn.Module):
         num_heads:   List[int]    = (4, 8, 16, 32),
         window_size: int          = 8,
         dropout:     float        = 0.0,
+        cond_fusion: str          = "add",
         preset:      Optional[str] = None,
     ):
         super().__init__()
@@ -309,15 +310,20 @@ class SwinUNet(nn.Module):
             embed_dim = cfg["embed_dim"]
             depths    = cfg["depths"]
             num_heads = cfg["num_heads"]
+        if cond_fusion not in {"add", "concat"}:
+            raise ValueError(f"cond_fusion must be 'add' or 'concat', got {cond_fusion!r}")
 
         emb_dim = embed_dim * 4
         self.patch_size  = patch_size
         self.embed_dim   = embed_dim
         self.window_size = window_size
+        self.cond_fusion = cond_fusion
 
         # Embeddings
         self.t_embed = TimestepEmbedding(sin_dim=256, out_dim=emb_dim)
         self.c_embed = ConditionEmbedding(cond_dim=cond_dim, out_dim=emb_dim)
+        self.joint   = JointEmbedding(t_dim=emb_dim, c_dim=emb_dim, out_dim=emb_dim) \
+                       if cond_fusion == "concat" else None
 
         # Patch embed
         self.patch_embed = PatchEmbed(patch_size, in_channels, embed_dim)
@@ -359,7 +365,12 @@ class SwinUNet(nn.Module):
         cond: torch.Tensor,   # [B, 6]
     ) -> torch.Tensor:
         B = x.shape[0]
-        emb = self.t_embed(t) + self.c_embed(cond)   # [B, emb_dim]
+        t_emb = self.t_embed(t)
+        c_emb = self.c_embed(cond)
+        if self.cond_fusion == "concat":
+            emb = self.joint(t_emb, c_emb)
+        else:
+            emb = t_emb + c_emb                                # [B, emb_dim]
 
         # Patch embed: [B, 3, 256, 256] → [B, 64*64, C], H=W=64
         x, H, W = self.patch_embed(x)

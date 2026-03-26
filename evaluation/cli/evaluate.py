@@ -138,6 +138,35 @@ def build_model(cfg: dict) -> torch.nn.Module:
     return model
 
 
+def select_checkpoint_state_dict(ckpt: dict, model_source: str = "auto") -> tuple[dict, str]:
+    """
+    Resolve which model weights to use from a checkpoint.
+
+    model_source:
+      - auto: prefer EMA when available, else raw model
+      - ema : require EMA weights
+      - raw : always raw model
+    """
+    source = str(model_source).strip().lower()
+    if source not in {"auto", "ema", "raw"}:
+        raise ValueError(f"Unknown model_source: {model_source!r}. Options: auto / ema / raw")
+
+    has_ema = isinstance(ckpt, dict) and (ckpt.get("model_ema") is not None)
+    raw_state = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
+
+    if source == "raw":
+        return raw_state, "raw"
+    if source == "ema":
+        if not has_ema:
+            raise ValueError("Requested model_source='ema' but checkpoint has no 'model_ema'.")
+        return ckpt["model_ema"], "ema"
+
+    # auto
+    if has_ema:
+        return ckpt["model_ema"], "ema"
+    return raw_state, "raw"
+
+
 # ── Sampler builder ────────────────────────────────────────────────────────────
 
 def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
@@ -162,10 +191,19 @@ def build_sampler_fn(cfg: dict, model: torch.nn.Module, device: str):
     if framework == "flow_matching":
         sampler_name = sampler_cfg["method"]
         sampler = build_sampler(sampler_name)
+        rtol = sampler_cfg.get("rtol", 1e-5)
+        atol = sampler_cfg.get("atol", 1e-5)
 
         def sampler_fn(m, shape, cond):
             return sampler.sample(
-                m, shape, cond, steps=steps, cfg_scale=cfg_scale, progress=False
+                m,
+                shape,
+                cond,
+                steps=steps,
+                cfg_scale=cfg_scale,
+                progress=False,
+                rtol=rtol,
+                atol=atol,
             )
 
         return sampler_fn, model
@@ -315,6 +353,10 @@ def parse_args():
         "--sample-preview-generations", type=int, default=4,
         help="Number of generated samples to render per conditioning example"
     )
+    parser.add_argument(
+        "--model-source", type=str, default="auto", choices=["auto", "ema", "raw"],
+        help="Checkpoint weight source. auto: EMA 우선, 없으면 raw."
+    )
     return parser.parse_args()
 
 
@@ -347,7 +389,7 @@ def main():
     # Model
     model = build_model(cfg)
     ckpt = torch.load(args.checkpoint, map_location="cpu")
-    state_dict = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
+    state_dict, model_source_used = select_checkpoint_state_dict(ckpt, args.model_source)
     model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
@@ -361,7 +403,11 @@ def main():
         best_str = f"  best_val={float(ckpt_best_val):.5f}"
         if ckpt_best_epoch is not None:
             best_str += f"@ep{int(ckpt_best_epoch)}"
-    print(f"[evaluate] model loaded: {args.checkpoint}  ({n_params:.1f}M params){best_str}")
+    has_ema = isinstance(ckpt, dict) and (ckpt.get("model_ema") is not None)
+    print(
+        f"[evaluate] model loaded: {args.checkpoint}  ({n_params:.1f}M params)"
+        f"{best_str}  source={model_source_used} (requested={args.model_source}, has_ema={has_ema})"
+    )
 
     # Sampler function
     sampler_fn, model = build_sampler_fn(cfg, model, device)
@@ -523,6 +569,10 @@ def main():
         "path": str(Path(args.checkpoint).resolve()),
         "best_epoch": int(ckpt_best_epoch) if ckpt_best_epoch is not None else None,
         "best_val_loss": float(ckpt_best_val) if ckpt_best_val is not None else None,
+        "val_loss_source": ckpt.get("val_loss_source"),
+        "has_model_ema": bool(has_ema),
+        "model_source_requested": args.model_source,
+        "model_source_used": model_source_used,
     }
 
     # Save JSON report

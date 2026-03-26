@@ -1,10 +1,11 @@
 """
 GENESIS - ODE Samplers for Flow Matching
 
-세 가지 적분 방법:
+네 가지 적분 방법:
   EulerSampler — 1차, 50 steps 권장
   HeunSampler  — 2차 Predictor-Corrector, 25 steps 권장
   RK4Sampler   — 4차 Runge-Kutta, 15 steps 권장 (최고 정밀도)
+  Dopri5Sampler — adaptive Dormand-Prince (torchdiffeq)
 
 모두 .sample(model, shape, cond, ...) 인터페이스 공유.
 t: 1.0 → 0.0 방향으로 적분 (noise → data).
@@ -15,6 +16,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from typing import Optional, Tuple
 
+from .ode_solver import FlowMatchingODESolver
 from utils.sampling import validate_sampling_steps
 
 
@@ -52,6 +54,8 @@ class EulerSampler:
         steps:     int   = 50,
         cfg_scale: float = 1.0,
         progress:  bool  = True,
+        rtol:      float = 1e-5,            # interface compatibility
+        atol:      float = 1e-5,            # interface compatibility
     ) -> torch.Tensor:
         steps = validate_sampling_steps(steps, name="flow steps")
         device = next(model.parameters()).device
@@ -90,6 +94,8 @@ class HeunSampler:
         steps:     int   = 25,
         cfg_scale: float = 1.0,
         progress:  bool  = True,
+        rtol:      float = 1e-5,            # interface compatibility
+        atol:      float = 1e-5,            # interface compatibility
     ) -> torch.Tensor:
         steps = validate_sampling_steps(steps, name="flow steps")
         device = next(model.parameters()).device
@@ -130,6 +136,8 @@ class RK4Sampler:
         steps:     int   = 15,
         cfg_scale: float = 1.0,
         progress:  bool  = True,
+        rtol:      float = 1e-5,            # interface compatibility
+        atol:      float = 1e-5,            # interface compatibility
     ) -> torch.Tensor:
         steps = validate_sampling_steps(steps, name="flow steps")
         device = next(model.parameters()).device
@@ -156,12 +164,60 @@ class RK4Sampler:
         return x
 
 
+class Dopri5Sampler:
+    """
+    Adaptive Dormand-Prince(dopri5).
+    torchdiffeq 기반 가변 스텝 적분이며, 생성 샘플링 경로에 맞게 t: 1 -> 0 적분.
+    """
+
+    @torch.no_grad()
+    def sample(
+        self,
+        model:     nn.Module,
+        shape:     Tuple[int, ...],
+        cond:      Optional[torch.Tensor],
+        steps:     int   = 50,    # interface compatibility (unused by dopri5)
+        cfg_scale: float = 1.0,
+        progress:  bool  = True,
+        rtol:      float = 1e-5,
+        atol:      float = 1e-5,
+    ) -> torch.Tensor:
+        device = next(model.parameters()).device
+        x0 = torch.randn(shape, device=device)
+
+        if cond is not None and cond.device != device:
+            cond = cond.to(device)
+
+        def velocity_fn(
+            x: torch.Tensor,
+            t_b: torch.Tensor,
+            cond_b: Optional[torch.Tensor],
+        ) -> torch.Tensor:
+            if cond_b is not None and cfg_scale > 1.0:
+                v_c = model(x, t_b, cond_b)
+                v_u = model(x, t_b, torch.zeros_like(cond_b))
+                return v_u + cfg_scale * (v_c - v_u)
+            return model(x, t_b, cond_b)
+
+        solver = FlowMatchingODESolver(velocity_fn, log_nfe=progress)
+        return solver.sample(
+            x0,
+            cond,
+            solver="dopri5",
+            rtol=rtol,
+            atol=atol,
+            t_start=1.0,
+            t_end=0.0,
+        )
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 SAMPLER_REGISTRY = {
     "euler": EulerSampler,
     "heun":  HeunSampler,
     "rk4":   RK4Sampler,
+    "dopri5": Dopri5Sampler,
 }
 
 
