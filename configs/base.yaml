@@ -21,6 +21,7 @@ model:
     preset: B               # S (~40M) / B (~90M) / L (~200M)
     window_size: 8
     cond_fusion: add        # add / concat, t_emb와 c_emb 결합 방식
+    periodic_boundary: false  # true면 shifted window가 periodic seam을 가로질러 attention
 
 generative:
   framework: flow_matching  # flow_matching / diffusion

@@ -418,7 +418,8 @@ checkpoint:
 - `dit`: `preset`, `patch_size`, `hidden_size/depth/num_heads/...`
 - `unet`: `preset`, `attention_resolution`, `channel_se`, `circular_conv`,
   `cross_attn_cond`, `per_scale_cond`, `cond_depth`
-- `swin`: `preset`, `window_size`, `cond_fusion`, `embed_dim/depths/num_heads/...`
+- `swin`: `preset`, `window_size`, `cond_fusion`, `periodic_boundary`,
+  `embed_dim/depths/num_heads/...`
 
 ## 6.3 generative 블록
 
@@ -503,6 +504,7 @@ generative:
   - conditioning 확장 옵션 포함
 - `SwinUNet` (`models/swin.py`)
   - window attention 기반 U-Net 구조
+  - `periodic_boundary=true`면 shifted window가 periodic seam을 가로질러 attention
 
 ## 7.2 생성 프레임워크
 

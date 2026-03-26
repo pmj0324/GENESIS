@@ -28,6 +28,7 @@ model:
     preset: B
     window_size: 8
     cond_fusion: concat
+    periodic_boundary: true
 
 generative:
   framework: flow_matching

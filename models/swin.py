@@ -123,12 +123,14 @@ class SwinBlock(nn.Module):
         window_size: int,
         shift_size:  int,
         emb_dim:     int,
+        periodic_boundary: bool = False,
         mlp_ratio:   float = 4.0,
         dropout:     float = 0.0,
     ):
         super().__init__()
         self.window_size = window_size
         self.shift_size  = shift_size
+        self.periodic_boundary = periodic_boundary
 
         self.norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
@@ -146,7 +148,10 @@ class SwinBlock(nn.Module):
         self._mask_hw:   Optional[Tuple[int, int]] = None
 
     def _get_mask(self, H: int, W: int, device: torch.device) -> Optional[torch.Tensor]:
-        if self.shift_size == 0:
+        # Standard Swin masks out cross-window tokens after cyclic shift.
+        # For periodic domains, the cyclic shift already represents a valid torus shift,
+        # so wrapped tokens should remain visible to each other.
+        if self.shift_size == 0 or self.periodic_boundary:
             return None
         if self._mask_hw == (H, W) and self._attn_mask is not None:
             return self._attn_mask.to(device)
@@ -239,13 +244,22 @@ class PatchExpanding(nn.Module):
 class SwinStage(nn.Module):
     """N개의 SwinBlock (W-MSA, SW-MSA 교대)."""
 
-    def __init__(self, dim: int, depth: int, num_heads: int, window_size: int, emb_dim: int, dropout: float = 0.0):
+    def __init__(
+        self,
+        dim: int,
+        depth: int,
+        num_heads: int,
+        window_size: int,
+        emb_dim: int,
+        periodic_boundary: bool = False,
+        dropout: float = 0.0,
+    ):
         super().__init__()
         self.blocks = nn.ModuleList([
             SwinBlock(
                 dim=dim, num_heads=num_heads, window_size=window_size,
                 shift_size=0 if i % 2 == 0 else window_size // 2,
-                emb_dim=emb_dim, dropout=dropout,
+                emb_dim=emb_dim, periodic_boundary=periodic_boundary, dropout=dropout,
             )
             for i in range(depth)
         ])
@@ -302,6 +316,7 @@ class SwinUNet(nn.Module):
         window_size: int          = 8,
         dropout:     float        = 0.0,
         cond_fusion: str          = "add",
+        periodic_boundary: bool   = False,
         preset:      Optional[str] = None,
     ):
         super().__init__()
@@ -318,6 +333,7 @@ class SwinUNet(nn.Module):
         self.embed_dim   = embed_dim
         self.window_size = window_size
         self.cond_fusion = cond_fusion
+        self.periodic_boundary = periodic_boundary
 
         # Embeddings
         self.t_embed = TimestepEmbedding(sin_dim=256, out_dim=emb_dim)
@@ -334,11 +350,29 @@ class SwinUNet(nn.Module):
         self.enc_stages  = nn.ModuleList()
         self.merges      = nn.ModuleList()
         for i in range(3):
-            self.enc_stages.append(SwinStage(enc_dims[i], depths[i], num_heads[i], window_size, emb_dim, dropout=dropout))
+            self.enc_stages.append(
+                SwinStage(
+                    enc_dims[i],
+                    depths[i],
+                    num_heads[i],
+                    window_size,
+                    emb_dim,
+                    periodic_boundary=periodic_boundary,
+                    dropout=dropout,
+                )
+            )
             self.merges.append(PatchMerging(enc_dims[i]))
 
         # Bottleneck
-        self.bottleneck = SwinStage(enc_dims[3], depths[3], num_heads[3], window_size, emb_dim, dropout=dropout)
+        self.bottleneck = SwinStage(
+            enc_dims[3],
+            depths[3],
+            num_heads[3],
+            window_size,
+            emb_dim,
+            periodic_boundary=periodic_boundary,
+            dropout=dropout,
+        )
 
         # Decoder: 3 stages + expanding + skip projection
         self.expands     = nn.ModuleList()
@@ -348,7 +382,17 @@ class SwinUNet(nn.Module):
             self.expands.append(PatchExpanding(enc_dims[i + 1]))
             # after expand: enc_dims[i] channels, concat skip: enc_dims[i] → 2*enc_dims[i]
             self.skip_projs.append(nn.Linear(2 * enc_dims[i], enc_dims[i], bias=False))
-            self.dec_stages.append(SwinStage(enc_dims[i], depths[i], num_heads[i], window_size, emb_dim, dropout=dropout))
+            self.dec_stages.append(
+                SwinStage(
+                    enc_dims[i],
+                    depths[i],
+                    num_heads[i],
+                    window_size,
+                    emb_dim,
+                    periodic_boundary=periodic_boundary,
+                    dropout=dropout,
+                )
+            )
 
         # Output: expand back to pixel resolution (64×64 → 256×256) then project
         self.out_expand1 = PatchExpanding(embed_dim)        # 64×64 → 128×128, C//2

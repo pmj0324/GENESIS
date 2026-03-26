@@ -77,6 +77,11 @@ def _require_positive_number(name: str, value: float) -> None:
         raise ValueError(f"{name} must be positive, got {value!r}")
 
 
+def _require_bool(name: str, value) -> None:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean, got {value!r}")
+
+
 def _require_int_sequence(name: str, value, *, length: int | None = None) -> list[int]:
     if not isinstance(value, (list, tuple)) or len(value) == 0:
         raise ValueError(f"{name} must be a non-empty list/tuple of positive integers")
@@ -161,11 +166,13 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
     )
     window_size = int(kwargs.get("window_size", 8))
     cond_fusion = kwargs.get("cond_fusion", "add")
+    periodic_boundary = kwargs.get("periodic_boundary", False)
 
     _require_positive_int("model.swin.img_size", img_size)
     _require_positive_int("model.swin.patch_size", patch_size)
     _require_positive_int("model.swin.embed_dim", embed_dim)
     _require_positive_int("model.swin.window_size", window_size)
+    _require_bool("model.swin.periodic_boundary", periodic_boundary)
     if cond_fusion not in {"add", "concat"}:
         raise ValueError(
             f"model.swin.cond_fusion must be 'add' or 'concat', got {cond_fusion!r}"
@@ -232,6 +239,7 @@ def _format_model_details(info: dict) -> str:
             f"patch={info.get('patch_size', 4)} embed={info.get('embed_dim', 128)} "
             f"depths={info.get('depths', [2, 2, 8, 2])} heads={info.get('num_heads', [4, 8, 16, 32])} "
             f"window={info.get('window_size', 8)} cond_fusion={info.get('cond_fusion', 'add')} "
+            f"periodic={info.get('periodic_boundary', False)} "
             f"dropout={info['dropout']}"
         )
     return str(info)
@@ -307,7 +315,16 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
             "swin",
             scfg,
             SwinUNet.PRESETS,
-            ("img_size", "patch_size", "embed_dim", "depths", "num_heads", "window_size", "cond_fusion"),
+            (
+                "img_size",
+                "patch_size",
+                "embed_dim",
+                "depths",
+                "num_heads",
+                "window_size",
+                "cond_fusion",
+                "periodic_boundary",
+            ),
         )
         _validate_swin_kwargs(common, resolved)
         model = build_swin(
