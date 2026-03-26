@@ -4,7 +4,7 @@ GENESIS - EpochVisualizer
 에폭 끝마다 호출:
   1. 샘플 맵         → plots/ep{N:04d}_samples.png       3×3 grid (Real / sampler_a / sampler_b)
   2. Power spectrum  → plots/ep{N:04d}_power_spectrum.png
-                       (2×3 grid: linear row + log10 row)
+                       (각 채널별 상단 P(k) + 하단 |ΔP|/P_true 상대오차 패널)
   3. Loss curve      → plots/loss.png                    (선형 + log-y loss; 매 에폭 덮어씀)
   4. Learning rate   → plots/lr.png                      (lr 히스토리 있을 때만; 매 에폭 덮어씀)
 
@@ -257,6 +257,51 @@ class EpochVisualizer:
             return
         ax.loglog(k[mask], pk[mask], *args, **kwargs)
 
+    @staticmethod
+    def _compute_relative_error_percent(
+        k_ref: np.ndarray,
+        pk_ref: np.ndarray,
+        k_cmp: np.ndarray,
+        pk_cmp: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return |P_cmp - P_ref| / |P_ref| * 100 on a shared positive-k grid."""
+        k_ref = np.asarray(k_ref, dtype=np.float64)
+        pk_ref = np.asarray(pk_ref, dtype=np.float64)
+        k_cmp = np.asarray(k_cmp, dtype=np.float64)
+        pk_cmp = np.asarray(pk_cmp, dtype=np.float64)
+
+        ref_mask = np.isfinite(k_ref) & np.isfinite(pk_ref) & (k_ref > 0)
+        cmp_mask = np.isfinite(k_cmp) & np.isfinite(pk_cmp) & (k_cmp > 0)
+        if ref_mask.sum() == 0 or cmp_mask.sum() == 0:
+            return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
+
+        k_ref_valid = k_ref[ref_mask]
+        pk_ref_valid = pk_ref[ref_mask]
+        k_cmp_valid = k_cmp[cmp_mask]
+        pk_cmp_valid = pk_cmp[cmp_mask]
+
+        if (
+            k_ref_valid.shape == k_cmp_valid.shape
+            and np.allclose(k_ref_valid, k_cmp_valid, rtol=1e-6, atol=0.0)
+        ):
+            pk_cmp_eval = pk_cmp_valid
+            k_eval = k_ref_valid
+            pk_ref_eval = pk_ref_valid
+        else:
+            k_lo = max(float(k_ref_valid.min()), float(k_cmp_valid.min()))
+            k_hi = min(float(k_ref_valid.max()), float(k_cmp_valid.max()))
+            overlap = (k_ref_valid >= k_lo) & (k_ref_valid <= k_hi)
+            if overlap.sum() == 0:
+                return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
+            k_eval = k_ref_valid[overlap]
+            pk_ref_eval = pk_ref_valid[overlap]
+            pk_cmp_eval = np.interp(k_eval, k_cmp_valid, pk_cmp_valid)
+
+        denom = np.clip(np.abs(pk_ref_eval), 1e-30, None)
+        rel_err = np.abs(pk_cmp_eval - pk_ref_eval) / denom * 100.0
+        mask = np.isfinite(k_eval) & np.isfinite(rel_err) & (k_eval > 0)
+        return k_eval[mask], rel_err[mask]
+
     def _cond_str(self) -> str:
         """실제 cosmological parameter 값 한 줄 문자열"""
         return "  ".join(
@@ -356,23 +401,35 @@ class EpochVisualizer:
         field_spaces: list[str],
     ):
         """
-        linear/log field space 기준 P(k) 비교 (2행)
+        linear/log field space 기준 P(k) 비교 + 하단 relative error 패널
           True mean    : ref_cond와 동일 시뮬레이션의 실제 맵 N장 평균 P(k)
           True 16-84%  : same-condition realization band
           sampler_a/b  : ref_cond 조건으로 생성된 샘플
         """
         n_rows = len(field_spaces)
         n_ref = int(len(self.ref_maps_linear))
-        fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4 * n_rows), squeeze=False)
+        height_ratios = []
+        for _ in field_spaces:
+            height_ratios.extend([3.5, 1.2])
+        fig, axes = plt.subplots(
+            n_rows * 2,
+            3,
+            figsize=(15, 5.0 * n_rows),
+            squeeze=False,
+            sharex="col",
+            gridspec_kw={"height_ratios": height_ratios, "hspace": 0.08},
+        )
         fig.suptitle(
-            f"Epoch {epoch+1:04d}  –  Power Spectrum  [linear + log10 | {self._power_estimator_label()}]\n"
+            f"Epoch {epoch+1:04d}  –  Power Spectrum + Relative Error  "
+            f"[linear + log10 | {self._power_estimator_label()}]\n"
             f"cond: {self._cond_str()}",
             fontsize=9,
         )
 
         for row, field_space in enumerate(field_spaces):
             for c, ch_name in enumerate(CHANNEL_NAMES):
-                ax = axes[row, c]
+                ax = axes[2 * row, c]
+                err_ax = axes[2 * row + 1, c]
                 ref_all = [self._to_field_space(m[c], field_space) for m in self.ref_maps_linear]
                 samp_a = self._to_field_space(sample_a[c], field_space)
                 samp_b = self._to_field_space(sample_b[c], field_space)
@@ -409,12 +466,35 @@ class EpochVisualizer:
                 self._plot_positive_loglog(ax, k_b, Pk_b, "b-", lw=1.5, label=f"{self.name_b} (generated)")
 
                 ax.set_title(f"{ch_name} [{self._field_space_label(field_space)}]", fontsize=10)
-                ax.set_xlabel("k  [h/Mpc]")
                 ax.set_ylabel("P(k)")
                 ax.legend(fontsize=7)
                 ax.grid(True, alpha=0.3, which="both")
+                ax.tick_params(axis="x", labelbottom=False)
 
-        fig.tight_layout()
+                k_err_a, rel_a = self._compute_relative_error_percent(k_true, pk_true_mean, k_a, Pk_a)
+                k_err_b, rel_b = self._compute_relative_error_percent(k_true, pk_true_mean, k_b, Pk_b)
+
+                if len(rel_a) > 0:
+                    err_ax.semilogx(k_err_a, rel_a, "r-", lw=1.3)
+                if len(rel_b) > 0:
+                    err_ax.semilogx(k_err_b, rel_b, "b-", lw=1.3)
+                err_ax.axhline(0.0, color="black", lw=0.8, alpha=0.6)
+                err_ax.grid(True, alpha=0.3, which="both")
+                err_ax.set_xlabel("k  [h/Mpc]")
+                if c == 0:
+                    err_ax.set_ylabel(r"$|\Delta P| / P_{\rm true}$ [%]")
+
+                err_max = 0.0
+                if len(rel_a) > 0:
+                    err_max = max(err_max, float(np.nanmax(rel_a)))
+                if len(rel_b) > 0:
+                    err_max = max(err_max, float(np.nanmax(rel_b)))
+                if np.isfinite(err_max) and err_max > 0:
+                    err_ax.set_ylim(0.0, err_max * 1.15)
+                else:
+                    err_ax.set_ylim(0.0, 1.0)
+
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
         path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
         shutil.copy(path, self.plot_dir / "best_power_spectrum.png")
