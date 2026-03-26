@@ -167,20 +167,54 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
     window_size = int(kwargs.get("window_size", 8))
     cond_fusion = kwargs.get("cond_fusion", "add")
     periodic_boundary = kwargs.get("periodic_boundary", False)
+    channel_se = kwargs.get("channel_se", False)
+    channel_se_reduction = int(kwargs.get("channel_se_reduction", 4))
+    cross_attn_cond = kwargs.get("cross_attn_cond", False)
+    cross_attn_stages = kwargs.get("cross_attn_stages", None)
+    cond_token_depth = int(kwargs.get("cond_token_depth", 2))
+    stem_type = kwargs.get("stem_type", "patch")
+    stem_channels = int(kwargs.get("stem_channels", 32))
+    output_head = kwargs.get("output_head", "linear")
 
     _require_positive_int("model.swin.img_size", img_size)
     _require_positive_int("model.swin.patch_size", patch_size)
     _require_positive_int("model.swin.embed_dim", embed_dim)
     _require_positive_int("model.swin.window_size", window_size)
     _require_bool("model.swin.periodic_boundary", periodic_boundary)
+    _require_bool("model.swin.channel_se", channel_se)
+    _require_positive_int("model.swin.channel_se_reduction", channel_se_reduction)
+    _require_bool("model.swin.cross_attn_cond", cross_attn_cond)
+    _require_positive_int("model.swin.cond_token_depth", cond_token_depth)
+    _require_positive_int("model.swin.stem_channels", stem_channels)
     if cond_fusion not in {"add", "concat"}:
         raise ValueError(
             f"model.swin.cond_fusion must be 'add' or 'concat', got {cond_fusion!r}"
         )
+    if stem_type not in {"patch", "conv2x_periodic"}:
+        raise ValueError(
+            f"model.swin.stem_type must be 'patch' or 'conv2x_periodic', got {stem_type!r}"
+        )
+    if output_head not in {"linear", "stem_skip_conv"}:
+        raise ValueError(
+            f"model.swin.output_head must be 'linear' or 'stem_skip_conv', got {output_head!r}"
+        )
+    if cross_attn_stages is not None:
+        if not isinstance(cross_attn_stages, (list, tuple)):
+            raise ValueError("model.swin.cross_attn_stages must be a list/tuple of stage names")
+        valid_stages = {"enc0", "enc1", "enc2", "bottleneck", "dec2", "dec1", "dec0"}
+        unknown = set(cross_attn_stages).difference(valid_stages)
+        if unknown:
+            raise ValueError(f"Unknown model.swin.cross_attn_stages: {sorted(unknown)}")
 
     if img_size % patch_size != 0:
         raise ValueError(
             f"model.swin.patch_size={patch_size} must divide img_size={img_size}"
+        )
+    if stem_type == "conv2x_periodic" and patch_size != 4:
+        raise ValueError("model.swin.stem_type='conv2x_periodic' currently requires patch_size=4")
+    if output_head == "stem_skip_conv" and stem_type != "conv2x_periodic":
+        raise ValueError(
+            "model.swin.output_head='stem_skip_conv' requires stem_type='conv2x_periodic'"
         )
 
     grid_size = img_size // patch_size
@@ -240,6 +274,9 @@ def _format_model_details(info: dict) -> str:
             f"depths={info.get('depths', [2, 2, 8, 2])} heads={info.get('num_heads', [4, 8, 16, 32])} "
             f"window={info.get('window_size', 8)} cond_fusion={info.get('cond_fusion', 'add')} "
             f"periodic={info.get('periodic_boundary', False)} "
+            f"channel_se={info.get('channel_se', False)} "
+            f"cross_attn={info.get('cross_attn_cond', False)} "
+            f"stem={info.get('stem_type', 'patch')} head={info.get('output_head', 'linear')} "
             f"dropout={info['dropout']}"
         )
     return str(info)
@@ -324,6 +361,14 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
                 "window_size",
                 "cond_fusion",
                 "periodic_boundary",
+                "channel_se",
+                "channel_se_reduction",
+                "cross_attn_cond",
+                "cross_attn_stages",
+                "cond_token_depth",
+                "stem_type",
+                "stem_channels",
+                "output_head",
             ),
         )
         _validate_swin_kwargs(common, resolved)

@@ -22,6 +22,19 @@ model:
     window_size: 8
     cond_fusion: add        # add / concat, t_emb와 c_emb 결합 방식
     periodic_boundary: false  # true면 shifted window가 periodic seam을 가로질러 attention
+    # 아래는 custom Swin 옵션
+    # patch_size: 4
+    # embed_dim: 128
+    # depths: [2, 2, 8, 2]
+    # num_heads: [4, 8, 16, 32]
+    # channel_se: false
+    # channel_se_reduction: 4
+    # cross_attn_cond: false
+    # cross_attn_stages: [enc2, bottleneck, dec2]
+    # cond_token_depth: 2
+    # stem_type: patch         # patch / conv2x_periodic
+    # stem_channels: 32
+    # output_head: linear      # linear / stem_skip_conv
 
 generative:
   framework: flow_matching  # flow_matching / diffusion

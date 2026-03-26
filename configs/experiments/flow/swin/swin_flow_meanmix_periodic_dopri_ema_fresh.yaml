@@ -2,20 +2,20 @@
 # swin_flow_meanmix_periodic_dopri_ema_fresh.yaml
 #
 # 목적:
-#   - runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt에서 fine-tuning
+#   - affine_mean_mix 데이터셋으로 Swin Flow를 scratch부터 학습
 #   - Swin shifted window에 periodic boundary 지원 활성화
 #   - 기본 샘플러: dopri5 (adaptive ODE)
 #   - 보조 샘플러(viz 비교): rk4
-#   - EMA + plateau 스케줄 + fresh run
+#   - EMA + cosine restarts + warmup
 #
 # 메모:
 #   - 이 설정은 framework=flow_matching 이므로 sampler에 eta를 쓰지 않습니다.
 #   - eta는 현재 코드베이스에서 diffusion(ddim) / edm 쪽 샘플러 옵션입니다.
+#   - dopri5는 rtol/atol이 너무 타이트하면 실용적으로 지나치게 느려질 수 있어 1e-4부터 시작합니다.
 #
 # 사용:
 #   python train.py \
-#     --config configs/experiments/flow/swin/swin_flow_meanmix_periodic_dopri_ema_fresh.yaml \
-#     --finetune runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt
+#     --config configs/experiments/flow/swin/swin_flow_meanmix_periodic_dopri_ema_fresh.yaml
 ##############################################################################
 
 data:
@@ -44,29 +44,28 @@ generative:
   sampler:
     method: dopri5
     steps: 50         # dopri5에서는 adaptive라 실질 미사용(인터페이스 호환용)
-    rtol: 1.0e-5
-    atol: 1.0e-5
-    cfg_scale: 1.05
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.5
     viz:
       sampler_a: dopri5
       sampler_b: rk4
       eval_n: 15
 
 training:
-  batch_size: 128
+  batch_size: 64
   num_workers: 4
-  max_epochs: 200
-  lr: 1.0e-5
+  max_epochs: 300
+  lr: 2.0e-4
   weight_decay: 1.0e-2
   betas: [0.9, 0.999]
-  warmup_epochs: 0
+  warmup_epochs: 5
   grad_clip: 1.0
   optimizer: adamw
-  schedule: plateau
-  plateau_patience: 5
-  plateau_factor: 0.5
+  schedule: cosine_restarts
+  T_0: 10
+  T_mult: 1
   eta_min: 1.0e-6
-  # NOTE: eval_with_ema=true 이면 plateau의 scheduler.step(val_loss)는 EMA val_loss 기준으로 동작
   ema:
     enabled: true
     decay: 0.9999
@@ -74,7 +73,7 @@ training:
     update_after_step: auto      # max(min_update_after_step, warmup_epochs * batches_per_epoch)
     min_update_after_step: 500
     eval_with_ema: true
-  early_stop_patience: 45
+  early_stop_patience: 30
 
 checkpoint:
   ckpt_dir: runs/flow/swin/swin_flow_meanmix_periodic_dopri_ema_fresh/
