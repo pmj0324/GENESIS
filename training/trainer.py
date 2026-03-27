@@ -73,6 +73,7 @@ class Trainer:
         ema_decay: float = 0.9999,
         ema_update_every: int = 1,
         ema_update_after_step: Union[int, str] = "auto",
+        ema_update_after_epoch: Optional[int] = None,
         ema_min_update_after_step: int = 500,
         ema_eval_with_ema: bool = True,
     ):
@@ -146,6 +147,9 @@ class Trainer:
         self.ema_decay = float(ema_decay)
         self.ema_update_every = int(ema_update_every)
         self.ema_update_after_step_cfg = ema_update_after_step
+        self.ema_update_after_epoch = (
+            None if ema_update_after_epoch is None else int(ema_update_after_epoch)
+        )
         self.ema_min_update_after_step = int(ema_min_update_after_step)
         self.ema_eval_with_ema = bool(ema_eval_with_ema)
         self.ema_update_after_step = 0
@@ -160,6 +164,11 @@ class Trainer:
             if self.ema_min_update_after_step < 0:
                 raise ValueError(
                     f"ema_min_update_after_step must be >= 0, got {self.ema_min_update_after_step!r}"
+                )
+            if self.ema_update_after_epoch is not None and self.ema_update_after_epoch < 0:
+                raise ValueError(
+                    "ema_update_after_epoch must be >= 0, "
+                    f"got {self.ema_update_after_epoch!r}"
                 )
             self._reset_ema_from_model()
 
@@ -183,6 +192,8 @@ class Trainer:
     # ── EMA ───────────────────────────────────────────────────────────────────
 
     def _resolve_ema_update_after_step(self, steps_per_epoch: int) -> int:
+        if self.ema_update_after_epoch is not None:
+            return self.ema_update_after_epoch * steps_per_epoch
         cfg = self.ema_update_after_step_cfg
         if isinstance(cfg, str):
             mode = cfg.strip().lower()
@@ -461,9 +472,13 @@ class Trainer:
         else:
             print("  Warmup     : disabled")
         if self.ema_enabled:
+            epoch_cfg = (
+                "none" if self.ema_update_after_epoch is None else str(self.ema_update_after_epoch)
+            )
             print(
                 f"  EMA        : enabled  decay={self.ema_decay:.6f}  update_every={self.ema_update_every}  "
-                f"update_after_step={self.ema_update_after_step}  val_source={val_source}"
+                f"update_after_step={self.ema_update_after_step}  update_after_epoch={epoch_cfg}  "
+                f"val_source={val_source}"
             )
             if self._schedule_type == "plateau" and val_source == "ema":
                 print("  NOTE       : plateau scheduler uses EMA val_loss (scheduler.step(val_loss)).")
@@ -492,11 +507,10 @@ class Trainer:
             self._last_val_source = "ema" if eval_model is self.ema_model else "raw"
             val_loss   = self._val_epoch(val_loader, eval_model=eval_model)
 
-            elapsed = time.time() - t0
+            train_val_elapsed = time.time() - t0
 
             if self.use_amp:
                 mem_gb = torch.cuda.max_memory_allocated(self.device) / 1e9
-            epoch_times.append(elapsed)
 
             self._history["train_loss"].append(train_loss)
             self._history["val_loss"].append(val_loss)
@@ -522,12 +536,6 @@ class Trainer:
             else:
                 self._no_improve += 1
 
-            # ETA
-            avg_epoch_sec = sum(epoch_times) / len(epoch_times)
-            remaining_epochs = self.max_epochs - (epoch + 1)
-            eta_sec = avg_epoch_sec * remaining_epochs
-            eta_str = time.strftime("%H:%M:%S", time.gmtime(eta_sec))
-
             self._save(epoch, val_loss, name=self.last_name)
 
             is_warmup    = epoch < self.warmup_epochs
@@ -540,18 +548,11 @@ class Trainer:
             patience_str = f"patience={self._no_improve}/{self.early_stop_patience}"
             best_str     = f"best={self._best_val:.5f}@ep{self._best_epoch}"
             best_mark    = " *" if improved else ""
-
-            print(
-                f"{warmup_tag}[{epoch+1:04d}/{self.max_epochs}] "
-                f"train={train_loss:.5f}  val={val_loss:.5f}  lr={epoch_lr:.2e}"
-                f"{warmup_info}"
-                f"  gnorm={self._last_grad_norm:.2f}{mem_str}"
-                f"  {elapsed:.1f}s/ep  eta={eta_str}"
-                f"  {patience_str}  {best_str}{best_mark}"
-            )
+            callback_elapsed = 0.0
 
             # Epoch callback (시각화 등)
             if self.epoch_callback is not None:
+                cb_t0 = time.time()
                 callback_model = eval_model
                 try:
                     self.epoch_callback(epoch, callback_model, self._history, improved)
@@ -561,6 +562,31 @@ class Trainer:
                 if self.ema_enabled and self.ema_model is not None:
                     self.ema_model.eval()
                 torch.cuda.empty_cache()   # viz 샘플링 후 caching allocator 정리
+                callback_elapsed = time.time() - cb_t0
+
+            total_elapsed = time.time() - t0
+            epoch_times.append(total_elapsed)
+
+            # ETA
+            avg_epoch_sec = sum(epoch_times) / len(epoch_times)
+            remaining_epochs = self.max_epochs - (epoch + 1)
+            eta_sec = avg_epoch_sec * remaining_epochs
+            eta_str = time.strftime("%H:%M:%S", time.gmtime(eta_sec))
+
+            timing_parts = [f"train+val={train_val_elapsed:.1f}s"]
+            if self.epoch_callback is not None:
+                timing_parts.append(f"cb={callback_elapsed:.1f}s")
+            timing_parts.append(f"total={total_elapsed:.1f}s/ep")
+            timing_str = "  ".join(timing_parts)
+
+            print(
+                f"{warmup_tag}[{epoch+1:04d}/{self.max_epochs}] "
+                f"train={train_loss:.5f}  val={val_loss:.5f}  lr={epoch_lr:.2e}"
+                f"{warmup_info}"
+                f"  gnorm={self._last_grad_norm:.2f}{mem_str}"
+                f"  {timing_str}  eta={eta_str}"
+                f"  {patience_str}  {best_str}{best_mark}"
+            )
 
             # Early stopping
             if self._no_improve >= self.early_stop_patience:

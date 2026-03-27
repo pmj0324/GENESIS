@@ -1,0 +1,65 @@
+created: '2026-03-28 03:05:02'
+normalization:
+  Mcdm:
+    center: 10.977
+    method: affine
+    scale: 0.59
+    scale_mult: 1.5
+  Mgas:
+    center: 10.4128
+    method: affine
+    scale: 0.627
+    scale_mult: 1.4
+  T:
+    center: 4.2362
+    method: affine
+    scale: 0.8163
+    scale_mult: 1.1
+sizes:
+  test: 1500
+  train: 12000
+  val: 1500
+source_maps: /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy
+source_params: /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt
+split:
+  id_files:
+    test: split_test.npy
+    train: split_train.npy
+    val: split_val.npy
+  legacy_id_files:
+    test: test_sim_ids.npy
+    train: train_sim_ids.npy
+    val: val_sim_ids.npy
+  maps_per_sim: 15
+  n_sims: 1000
+  seed: 42
+  strategy: stratified_1d
+  stratify:
+    bin_edges:
+    - 0.10019999742507935
+    - 0.14015999734401702
+    - 0.18011999726295472
+    - 0.22007999718189242
+    - 0.2600399971008301
+    - 0.29999999701976776
+    - 0.3399599969387055
+    - 0.37991999685764316
+    - 0.41987999677658083
+    - 0.4598399966955185
+    - 0.4997999966144562
+    label_counts:
+      0: 100
+      1: 100
+      2: 100
+      3: 100
+      4: 100
+      5: 100
+      6: 100
+      7: 100
+      8: 100
+      9: 100
+    n_bins: 10
+    param_index: 0
+    param_name: Omega_m
+  train_ratio: 0.8
+  val_ratio: 0.1

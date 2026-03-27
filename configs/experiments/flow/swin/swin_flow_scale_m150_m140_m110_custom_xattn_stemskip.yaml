@@ -1,0 +1,97 @@
+##############################################################################
+# swin_flow_scale_m150_m140_m110_custom_xattn_stemskip.yaml
+#
+# 목적:
+#   - 새 정규화 데이터셋 affine_scale_m150_m140_m110 으로 Swin Flow 학습
+#   - custom Swin 구조를 사용하되, 과도한 all-on 설정 대신
+#     periodic boundary + deep cross-attn + stem skip output 을 중심으로 구성
+#   - 데이터셋 이름에서 채널별 scale(Mcdm/Mgas/T)를 바로 읽을 수 있게 유지
+#
+# 모델 설계 포인트:
+#   - embed_dim=96 기반의 비교적 가벼운 custom backbone
+#   - depths=[2,2,4,4] 로 bottleneck 표현력 강화
+#   - cross-attn 는 enc2 / bottleneck / dec2 에만 사용
+#   - periodic conv stem + stem_skip_conv output 으로 seam 보존과 고해상도 복원 강화
+#
+# 사용:
+#   python train.py \
+#     --config configs/experiments/flow/swin/swin_flow_scale_m150_m140_m110_custom_xattn_stemskip.yaml
+##############################################################################
+
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_scale_m150_m140_m110
+  norm_config: configs/normalization/affine_scale_m150_m140_m110.yaml
+  augment: true
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+
+  swin:
+    patch_size: 4
+    embed_dim: 96
+    depths: [2, 2, 4, 4]
+    num_heads: [3, 6, 12, 24]
+    window_size: 8
+
+    cond_fusion: add
+    cross_attn_cond: true
+    cross_attn_stages: [enc2, bottleneck, dec2]
+    cond_token_depth: 2
+
+    periodic_boundary: true
+    channel_se: false
+    channel_se_reduction: 4
+
+    stem_type: conv2x_periodic
+    stem_channels: 32
+    output_head: stem_skip_conv
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.1
+    sigma_min: 1.0e-4
+
+  sampler:
+    method: dopri5
+    steps: 50
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.15
+    viz:
+      sampler_a: dopri5
+      sampler_b: rk4
+      samplers: [euler, heun, rk4, dopri5]
+      metrics_sampler: dopri5
+      eval_n: 15
+
+training:
+  batch_size: 64
+  num_workers: 20
+  max_epochs: 280
+  lr: 1.5e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 7
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine_restarts
+  T_0: 10
+  T_mult: 1
+  eta_min: 1.0e-6
+  # ema:
+  #   enabled: true
+  #   decay: 0.9999
+  #   update_every: 1
+  #   update_after_epoch: 27
+  #   eval_with_ema: true
+  early_stop_patience: 25
+
+checkpoint:
+  ckpt_dir: runs/flow/swin/swin_flow_scale_m150_m140_m110_custom_xattn_stemskip/
+  ckpt_name: best.pt

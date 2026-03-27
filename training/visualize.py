@@ -2,13 +2,15 @@
 GENESIS - EpochVisualizer
 
 에폭 끝마다 호출:
-  1. 샘플 맵         → plots/ep{N:04d}_samples.png       3×3 grid (Real / sampler_a / sampler_b)
+  1. 샘플 맵         → plots/ep{N:04d}_samples.png       3 cols × (Real + viz samplers)
   2. Power spectrum  → plots/ep{N:04d}_power_spectrum.png
-                       (각 채널별 상단 P(k) + 하단 |ΔP|/P_true 상대오차 패널)
+                       (각 채널별 상단 P(k) + 하단 |ΔP|/P_true 상대오차 패널,
+                        여러 viz sampler curve 지원)
   3. Loss curve      → plots/loss.png                    (선형 + log-y loss; 매 에폭 덮어씀)
   4. Learning rate   → plots/lr.png                      (lr 히스토리 있을 때만; 매 에폭 덮어씀)
 
-샘플/파워/메트릭은 best 갱신 시에만 생성된다.
+샘플/파워/메트릭은 기본적으로 best 갱신 시에만 생성되며,
+viz.every_epoch=true 이면 매 epoch 생성된다.
 요약 파일:
   - plots/best_samples.png
   - plots/best_power_spectrum.png
@@ -26,7 +28,7 @@ maps:
 power spectrum:
   ref_map[0]: val set 첫 번째 실제 맵 (ref_cond와 동일 시뮬레이션)
   val avg   : val set 처음 N장 평균 P(k)
-  sampler_a/b: ref_cond 조건으로 생성된 샘플의 P(k)
+  viz samplers: ref_cond 조건으로 생성된 샘플들의 P(k)
   linear: denormalized physical field 그대로 P(k) 계산
   log   : denormalized field를 log10(max(x, 1e-30))로 변환 후 P(k) 계산
   매 에폭 linear/log를 2행으로 함께 표시
@@ -54,15 +56,20 @@ from dataloader.normalization import Normalizer, denormalize_params, PARAM_NAMES
 CHANNEL_NAMES = ["Mcdm", "Mgas", "T"]
 CHANNEL_LABELS = ["log₁₀(Mcdm)", "log₁₀(Mgas)", "log₁₀(T)"]
 CMAPS         = ["viridis", "plasma", "inferno"]
+SAMPLER_COLORS = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd", "#8c564b"]
+SAMPLER_LINESTYLES = ["-", "--", "-.", ":"]
 
 SamplerFn = Callable[[torch.nn.Module, Tuple, torch.Tensor], torch.Tensor]
+SamplerSpec = Tuple[str, SamplerFn]
 
 
 class EpochVisualizer:
     """
     Args:
-        sampler_a  : (이름, 샘플 함수)  e.g. ("DDPM", ddpm_fn)
-        sampler_b  : (이름, 샘플 함수)  e.g. ("DDIM", ddim_fn)
+        sampler_a  : 기본 viz sampler (호환용)
+        sampler_b  : 기본 metric sampler (호환용)
+        samplers   : 샘플/파워 figure에 표시할 sampler 목록
+        metric_sampler: per-epoch metric 계산에 사용할 sampler
         plot_dir   : 그림 저장 폴더
         ref_maps   : [N, 3, 256, 256]  실제 val 맵 (정규화된 상태)
         ref_cond   : [6]  고정 conditioning 벡터 (z-score 정규화)
@@ -72,8 +79,8 @@ class EpochVisualizer:
 
     def __init__(
         self,
-        sampler_a:  Tuple[str, SamplerFn],
-        sampler_b:  Tuple[str, SamplerFn],
+        sampler_a:  SamplerSpec,
+        sampler_b:  SamplerSpec,
         plot_dir,
         ref_maps,
         ref_cond,
@@ -82,13 +89,22 @@ class EpochVisualizer:
         eval_conds: Optional[torch.Tensor] = None,   # [N, 6] — 에폭 메트릭용 N개 조건
         eval_n:     int = 15,                         # 메트릭 평가에 사용할 샘플 수
         viz_cfg:    Optional[Dict] = None,
+        samplers: Optional[list[SamplerSpec]] = None,
+        metric_sampler: Optional[SamplerSpec] = None,
     ):
-        self.name_a, self.fn_a = sampler_a
-        self.name_b, self.fn_b = sampler_b
+        self.samplers = list(samplers) if samplers is not None else [sampler_a, sampler_b]
+        if len(self.samplers) == 0:
+            raise ValueError("At least one visualization sampler is required.")
+
+        self.metric_sampler = metric_sampler or sampler_b
+        self.metric_name, self.metric_fn = self.metric_sampler
+        self.name_a, self.fn_a = self.samplers[0]
+        self.name_b, self.fn_b = self.metric_sampler
         self.plot_dir = Path(plot_dir)
         self.plot_dir.mkdir(parents=True, exist_ok=True)
         self.device   = device
         self.viz_cfg  = viz_cfg or {}
+        self.viz_every_epoch = bool(self.viz_cfg.get("every_epoch", False))
 
         # normalizer (maps denormalize 용)
         self.normalizer = Normalizer(norm_cfg) if norm_cfg else None
@@ -308,6 +324,12 @@ class EpochVisualizer:
             f"{n}={v:.4f}" for n, v in zip(PARAM_NAMES, self.ref_cond_raw)
         )
 
+    @staticmethod
+    def _tensor_to_numpy(value) -> np.ndarray:
+        if hasattr(value, "detach"):
+            value = value.detach().cpu().numpy()
+        return np.asarray(value)
+
     # ── Main call ──────────────────────────────────────────────────────────────
 
     @torch.no_grad()
@@ -319,24 +341,27 @@ class EpochVisualizer:
             # loss/lr plot은 매 epoch 업데이트
             self._plot_loss(history)
 
-            if not is_best:
+            if not self.viz_every_epoch and not is_best:
                 print(f"  [viz] skip heavy plots at epoch {epoch+1:04d} (not best)", flush=True)
                 return
 
-            print(f"  [viz] {self.name_a} sampling ...", flush=True)
-            raw_a    = self.fn_a(model, shape, self.ref_cond)[0].cpu().numpy()
-            sample_a = self._denorm_maps(raw_a)
+            sampled_maps: list[tuple[str, np.ndarray]] = []
+            for sampler_name, sampler_fn in self.samplers:
+                print(f"  [viz] {sampler_name} sampling ...", flush=True)
+                raw_sample = sampler_fn(model, shape, self.ref_cond)
+                raw_sample = raw_sample[0] if isinstance(raw_sample, tuple) else raw_sample
+                raw_sample = self._tensor_to_numpy(raw_sample)
+                if raw_sample.ndim == 4 and raw_sample.shape[0] == 1:
+                    raw_sample = raw_sample[0]
+                sampled_maps.append((sampler_name, self._denorm_maps(raw_sample)))
 
-            print(f"  [viz] {self.name_b} sampling ...", flush=True)
-            raw_b    = self.fn_b(model, shape, self.ref_cond)[0].cpu().numpy()
-            sample_b = self._denorm_maps(raw_b)
-
-            self._plot_samples(epoch, sample_a, sample_b)
-            self._plot_power_spectrum(epoch, sample_a, sample_b, self.power_plot_spaces)
+            self._plot_samples(epoch, sampled_maps)
+            self._plot_power_spectrum(epoch, sampled_maps, self.power_plot_spaces)
             self._print_metrics(epoch, model, history)
 
             torch.cuda.empty_cache()
-            print(f"  [viz] saved(best-update) → {self.plot_dir}", flush=True)
+            mode = "epoch-update" if self.viz_every_epoch else "best-update"
+            print(f"  [viz] saved({mode}) → {self.plot_dir}", flush=True)
         except Exception as e:
             print(f"  [viz] WARNING: plot failed at epoch {epoch+1} — {e}", flush=True)
             plt.close("all")
@@ -345,18 +370,19 @@ class EpochVisualizer:
 
     # ── 1. 샘플 맵 (3×3) ──────────────────────────────────────────────────────
 
-    def _plot_samples(self, epoch: int, sample_a: np.ndarray, sample_b: np.ndarray):
+    def _plot_samples(self, epoch: int, sampled_maps: list[tuple[str, np.ndarray]]):
         """
-        3 rows × 3 cols
-          rows : Real val[0] | sampler_a | sampler_b
+        n rows × 3 cols
+          rows : Real val[0] | viz samplers...
           cols : Mcdm | Mgas | T
           각 subplot 독립 colorbar
         """
         field_space = self.samples_field_space
         real = self.ref_maps_linear[0]   # [3, 256, 256] physical linear field
-        rows = [("Real (val[0])", real), (self.name_a, sample_a), (self.name_b, sample_b)]
+        rows = [("Real (val[0])", real), *sampled_maps]
+        n_rows = len(rows)
 
-        fig, axes = plt.subplots(3, 3, figsize=(14, 12))
+        fig, axes = plt.subplots(n_rows, 3, figsize=(14, max(4.8, 3.5 * n_rows)), squeeze=False)
         fig.suptitle(
             f"Epoch {epoch+1:04d}  –  Field  [{self._field_space_label(field_space)}]\n"
             f"{self._cond_str()}",
@@ -396,43 +422,56 @@ class EpochVisualizer:
     def _plot_power_spectrum(
         self,
         epoch: int,
-        sample_a: np.ndarray,
-        sample_b: np.ndarray,
+        sampled_maps: list[tuple[str, np.ndarray]],
         field_spaces: list[str],
     ):
         """
         linear/log field space 기준 P(k) 비교 + 하단 relative error 패널
           True mean    : ref_cond와 동일 시뮬레이션의 실제 맵 N장 평균 P(k)
           True 16-84%  : same-condition realization band
-          sampler_a/b  : ref_cond 조건으로 생성된 샘플
+          viz samplers : ref_cond 조건으로 생성된 샘플
         """
         n_rows = len(field_spaces)
         n_ref = int(len(self.ref_maps_linear))
         height_ratios = []
-        for _ in field_spaces:
+        n_plot_rows = n_rows * 2 + max(0, n_rows - 1)
+        for row_idx, _ in enumerate(field_spaces):
             height_ratios.extend([3.5, 1.2])
+            if row_idx < n_rows - 1:
+                # Add a dedicated spacer row so the upper error-panel xlabel
+                # never collides with the next field-space title.
+                height_ratios.append(0.5)
         fig, axes = plt.subplots(
-            n_rows * 2,
+            n_plot_rows,
             3,
-            figsize=(15, 5.0 * n_rows),
+            figsize=(15.5, 5.6 * n_rows),
             squeeze=False,
             sharex="col",
-            gridspec_kw={"height_ratios": height_ratios, "hspace": 0.08},
+            gridspec_kw={
+                "height_ratios": height_ratios,
+                "hspace": 0.12,
+                "wspace": 0.20,
+            },
         )
         fig.suptitle(
             f"Epoch {epoch+1:04d}  –  Power Spectrum + Relative Error  "
             f"[linear + log10 | {self._power_estimator_label()}]\n"
             f"cond: {self._cond_str()}",
             fontsize=9,
+            y=0.992,
         )
 
+        spacer_rows = range(2, n_plot_rows, 3)
+        for spacer_row in spacer_rows:
+            for c in range(3):
+                axes[spacer_row, c].axis("off")
+
         for row, field_space in enumerate(field_spaces):
+            base_row = row * 3
             for c, ch_name in enumerate(CHANNEL_NAMES):
-                ax = axes[2 * row, c]
-                err_ax = axes[2 * row + 1, c]
+                ax = axes[base_row, c]
+                err_ax = axes[base_row + 1, c]
                 ref_all = [self._to_field_space(m[c], field_space) for m in self.ref_maps_linear]
-                samp_a = self._to_field_space(sample_a[c], field_space)
-                samp_b = self._to_field_space(sample_b[c], field_space)
 
                 true_curves = np.asarray(
                     [self._compute_power_spectrum(m, field_space)[1] for m in ref_all],
@@ -442,8 +481,6 @@ class EpochVisualizer:
                 pk_true_mean = true_curves.mean(axis=0)
                 pk_true_lo = np.percentile(true_curves, 16, axis=0)
                 pk_true_hi = np.percentile(true_curves, 84, axis=0)
-                k_a, Pk_a = self._compute_power_spectrum(samp_a, field_space)
-                k_b, Pk_b = self._compute_power_spectrum(samp_b, field_space)
 
                 pos_band = (
                     (k_true > 0)
@@ -462,39 +499,55 @@ class EpochVisualizer:
                         label=f"True 16-84% (N={n_ref})",
                     )
                 self._plot_positive_loglog(ax, k_true, pk_true_mean, "k-", lw=2.0, label=f"True mean (N={n_ref})")
-                self._plot_positive_loglog(ax, k_a, Pk_a, "r-", lw=1.5, label=f"{self.name_a} (generated)")
-                self._plot_positive_loglog(ax, k_b, Pk_b, "b-", lw=1.5, label=f"{self.name_b} (generated)")
+
+                err_max = 0.0
+                for si, (sampler_name, sample_map) in enumerate(sampled_maps):
+                    sample_field = self._to_field_space(sample_map[c], field_space)
+                    k_s, pk_s = self._compute_power_spectrum(sample_field, field_space)
+                    color = SAMPLER_COLORS[si % len(SAMPLER_COLORS)]
+                    linestyle = SAMPLER_LINESTYLES[(si // len(SAMPLER_COLORS)) % len(SAMPLER_LINESTYLES)]
+                    self._plot_positive_loglog(
+                        ax,
+                        k_s,
+                        pk_s,
+                        color=color,
+                        linestyle=linestyle,
+                        lw=1.5,
+                        label=f"{sampler_name} (generated)",
+                    )
+
+                    k_err, rel = self._compute_relative_error_percent(k_true, pk_true_mean, k_s, pk_s)
+                    if len(rel) > 0:
+                        err_ax.semilogx(k_err, rel, color=color, linestyle=linestyle, lw=1.3)
+                        err_max = max(err_max, float(np.nanmax(rel)))
 
                 ax.set_title(f"{ch_name} [{self._field_space_label(field_space)}]", fontsize=10)
                 ax.set_ylabel("P(k)")
-                ax.legend(fontsize=7)
+                ax.legend(
+                    fontsize=6 if len(sampled_maps) > 3 else 7,
+                    loc="upper right",
+                    framealpha=0.9,
+                    ncol=2 if len(sampled_maps) > 4 else 1,
+                )
                 ax.grid(True, alpha=0.3, which="both")
                 ax.tick_params(axis="x", labelbottom=False)
 
-                k_err_a, rel_a = self._compute_relative_error_percent(k_true, pk_true_mean, k_a, Pk_a)
-                k_err_b, rel_b = self._compute_relative_error_percent(k_true, pk_true_mean, k_b, Pk_b)
-
-                if len(rel_a) > 0:
-                    err_ax.semilogx(k_err_a, rel_a, "r-", lw=1.3)
-                if len(rel_b) > 0:
-                    err_ax.semilogx(k_err_b, rel_b, "b-", lw=1.3)
                 err_ax.axhline(0.0, color="black", lw=0.8, alpha=0.6)
                 err_ax.grid(True, alpha=0.3, which="both")
-                err_ax.set_xlabel("k  [h/Mpc]")
+                if row == n_rows - 1:
+                    err_ax.set_xlabel("k  [h/Mpc]")
+                else:
+                    err_ax.set_xlabel("")
+                    err_ax.tick_params(axis="x", labelbottom=False)
                 if c == 0:
                     err_ax.set_ylabel(r"$|\Delta P| / P_{\rm true}$ [%]")
 
-                err_max = 0.0
-                if len(rel_a) > 0:
-                    err_max = max(err_max, float(np.nanmax(rel_a)))
-                if len(rel_b) > 0:
-                    err_max = max(err_max, float(np.nanmax(rel_b)))
                 if np.isfinite(err_max) and err_max > 0:
                     err_ax.set_ylim(0.0, err_max * 1.15)
                 else:
                     err_ax.set_ylim(0.0, 1.0)
 
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+        fig.subplots_adjust(left=0.06, right=0.985, bottom=0.07, top=0.89)
         path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
         shutil.copy(path, self.plot_dir / "best_power_spectrum.png")
@@ -506,23 +559,23 @@ class EpochVisualizer:
     @torch.no_grad()
     def _print_metrics(self, epoch: int, model, history: dict):
         """
-        eval_maps (N개) 각각에 대해 sampler_b로 생성 → log10 공간에서 메트릭 계산 후 출력.
-        sampler_b (보통 DDIM)로 N개를 한 번에 배치 샘플링.
+        eval_maps (N개) 각각에 대해 metric sampler로 생성 → log10 공간에서 메트릭 계산 후 출력.
+        기본은 viz.sampler_b 또는 별도 metric_sampler.
         """
         try:
             N = self.eval_maps_norm.shape[0]
 
-            # ── 배치 샘플링 (sampler_b 사용) ──────────────────────────────────
-            print(f"  [metrics] {self.name_b} sampling (N={N}) ...", flush=True)
+            # ── 배치 샘플링 (metric sampler 사용) ─────────────────────────────
+            print(f"  [metrics] {self.metric_name} sampling (N={N}) ...", flush=True)
             shape   = (N, 3, self.eval_maps_norm.shape[-2], self.eval_maps_norm.shape[-1])
-            raw_gen = self.fn_b(model, shape, self.eval_conds)   # [N, 3, H, W] normalized
+            raw_gen = self.metric_fn(model, shape, self.eval_conds)   # [N, 3, H, W] normalized
             raw_gen = raw_gen[0] if isinstance(raw_gen, tuple) else raw_gen
 
             # ── 평가 공간 변환 ────────────────────────────────────────────────
             field_space = self.metrics_field_space
             true_eval = self._field_space_from_norm(self.eval_maps_norm, field_space)   # [N, 3, H, W]
             gen_eval = self._field_space_from_norm(
-                raw_gen.cpu().numpy() if hasattr(raw_gen, "cpu") else raw_gen,
+                self._tensor_to_numpy(raw_gen),
                 field_space,
             )
 
@@ -534,7 +587,7 @@ class EpochVisualizer:
             # ── 출력 ──────────────────────────────────────────────────────────
             sep = "─" * 78
             print(f"\n  {sep}")
-            print(f"  Epoch {epoch+1:04d} Metrics  (N={N}, {self.name_b})  [{self._field_space_label(field_space)}]")
+            print(f"  Epoch {epoch+1:04d} Metrics  (N={N}, {self.metric_name})  [{self._field_space_label(field_space)}]")
             print(f"  {sep}")
 
             # Auto-Power (scale-dependent thresholds, §4.1)
@@ -599,15 +652,14 @@ class EpochVisualizer:
         pdf_res: dict,
         history: dict,
     ) -> None:
-        """메트릭 JSON을 val_loss 최소(best) 기준으로 저장.
+        """메트릭 JSON 저장.
 
         저장 위치:
-          - {plot_dir}/../metrics_history.json  (best record 1개를 list 형태로 저장)
-          - {plot_dir}/../metrics_best.json     (best record 단일 dict)
+          - {plot_dir}/../metrics_history.json
+          - {plot_dir}/../metrics_best.json
 
-        이유:
-          기존에는 epoch별 누적 기록을 저장했지만, 현재 운영 기준은
-          "val_loss 최소 체크포인트(best.pt) 기준 메트릭 1개"를 단일 기준으로 쓰는 것이다.
+        기본값은 best(val_loss 최소) 기준 1개만 유지하고,
+        viz.every_epoch=true 이면 epoch별 누적 기록을 유지한다.
         """
         # ── Auto-Power ────────────────────────────────────────────────────────
         auto = {}
@@ -727,7 +779,7 @@ class EpochVisualizer:
         records.append(record)
         records.sort(key=lambda r: int(r.get("epoch", 0)))
 
-        # ── best(val_loss 최소) epoch 레코드 1개만 유지 ────────────────────────
+        # ── best(val_loss 최소) epoch 레코드 계산 ─────────────────────────────
         best_record = None
         for r in records:
             if int(r.get("epoch", -1)) == int(best_epoch_by_val):
@@ -742,15 +794,16 @@ class EpochVisualizer:
         if best_record is None:
             best_record = record
 
-        best_list = [best_record]
+        history_payload = records if self.viz_every_epoch else [best_record]
         with open(metrics_path, "w") as f:
-            json.dump(best_list, f, indent=2, allow_nan=True)
+            json.dump(history_payload, f, indent=2, allow_nan=True)
 
         best_path = self.plot_dir.parent / "metrics_best.json"
         with open(best_path, "w") as f:
             json.dump(best_record, f, indent=2, allow_nan=True)
 
-        print(f"  [metrics] saved(best-only) → {metrics_path}", flush=True)
+        save_mode = "per-epoch" if self.viz_every_epoch else "best-only"
+        print(f"  [metrics] saved({save_mode}) → {metrics_path}", flush=True)
 
     # ── 4. Loss curve ──────────────────────────────────────────────────────────
 

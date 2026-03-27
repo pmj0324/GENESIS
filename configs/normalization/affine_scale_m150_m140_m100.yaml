@@ -1,0 +1,30 @@
+# Affine normalization with channel-wise scale emphasis in the filename.
+# z = (log10(x) - center) / (scale * scale_mult)
+#
+# Intended meaning:
+#   Mcdm -> scale_mult 1.50
+#   Mgas -> scale_mult 1.40
+#   T    -> scale_mult 1.00
+#
+# NOTE:
+# - centers below are the same empirical mean-centered values used by the
+#   existing affine_mean_mix_m130_m125_m100 setup.
+# - the filename intentionally emphasizes channel-wise scales rather than
+#   the mean-centered provenance.
+
+normalization:
+  Mcdm:
+    method: affine
+    center: 10.9770
+    scale: 0.590
+    scale_mult: 1.50
+  Mgas:
+    method: affine
+    center: 10.4128
+    scale: 0.627
+    scale_mult: 1.40
+  T:
+    method: affine
+    center: 4.2362
+    scale: 0.8163
+    scale_mult: 1.00

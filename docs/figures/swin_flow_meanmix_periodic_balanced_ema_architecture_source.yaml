@@ -1,0 +1,77 @@
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100_om10split
+  norm_config: configs/normalization/affine_mean_mix_m130_m125_m100.yaml
+  augment: true
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.1
+  swin:
+    embed_dim: 144
+    depths:
+    - 2
+    - 2
+    - 8
+    - 2
+    num_heads:
+    - 4
+    - 8
+    - 16
+    - 32
+    window_size: 8
+    cond_fusion: concat
+    periodic_boundary: true
+    stem_type: conv2x_periodic
+    stem_channels: 32
+    output_head: linear
+    channel_se: true
+    channel_se_reduction: 4
+    cross_attn_cond: true
+    cross_attn_stages:
+    - bottleneck
+    cond_token_depth: 1
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.1
+    sigma_min: 0.0001
+  sampler:
+    method: dopri5
+    steps: 50
+    rtol: 0.0001
+    atol: 0.0001
+    cfg_scale: 1.15
+    viz:
+      sampler_a: dopri5
+      sampler_b: rk4
+      eval_n: 15
+training:
+  batch_size: 64
+  num_workers: 20
+  max_epochs: 280
+  lr: 0.00015
+  weight_decay: 0.01
+  betas:
+  - 0.9
+  - 0.999
+  warmup_epochs: 7
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine_restarts
+  T_0: 10
+  T_mult: 1
+  eta_min: 1.0e-06
+  ema:
+    enabled: true
+    decay: 0.9999
+    update_every: 1
+    update_after_step: auto
+    min_update_after_step: 500
+    eval_with_ema: true
+  early_stop_patience: 25
+checkpoint:
+  ckpt_dir: runs/flow/swin/swin_flow_new_custom_meanmix_periodic_balanced_ema/
+  ckpt_name: best.pt

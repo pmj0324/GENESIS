@@ -543,6 +543,7 @@ def main():
         ema_decay=float(ema_cfg.get("decay", 0.9999)),
         ema_update_every=int(ema_cfg.get("update_every", 1)),
         ema_update_after_step=ema_cfg.get("update_after_step", "auto"),
+        ema_update_after_epoch=ema_cfg.get("update_after_epoch"),
         ema_min_update_after_step=int(ema_cfg.get("min_update_after_step", 500)),
         ema_eval_with_ema=bool(ema_cfg.get("eval_with_ema", True)),
     )
@@ -581,9 +582,35 @@ def main():
     ref_cond    = val_dataset[0][1]                                          # [6]
     eval_conds  = torch.stack([val_dataset[i][1] for i in range(eval_n)])   # [N, 6] 메트릭용
 
+    def _resolve_viz_sampler_names(default_names: list[str]) -> list[str]:
+        raw_names = viz_cfg.get("samplers")
+        if raw_names is None:
+            raw_names = default_names
+        elif isinstance(raw_names, str):
+            raw_names = [raw_names]
+        elif not isinstance(raw_names, (list, tuple)) or len(raw_names) == 0:
+            raise ValueError(
+                "generative.sampler.viz.samplers must be a non-empty string/list/tuple"
+            )
+
+        names: list[str] = []
+        for raw_name in raw_names:
+            name = str(raw_name).strip().lower()
+            if not name or name in names:
+                continue
+            names.append(name)
+        if not names:
+            raise ValueError("generative.sampler.viz.samplers resolved to an empty list")
+        return names
+
+    def _resolve_metric_sampler_name(default_name: str) -> str:
+        return str(viz_cfg.get("metrics_sampler", default_name)).strip().lower()
+
     if framework == "diffusion":
-        name_a = viz_cfg.get("sampler_a", "ddpm").lower()
-        name_b = viz_cfg.get("sampler_b", "ddim").lower()
+        viz_names = _resolve_viz_sampler_names(
+            [viz_cfg.get("sampler_a", "ddpm"), viz_cfg.get("sampler_b", "ddim")]
+        )
+        metric_name = _resolve_metric_sampler_name(viz_cfg.get("sampler_b", viz_names[-1]))
         steps  = sampler_cfg["steps"]
         eta    = sampler_cfg["eta"]
 
@@ -597,11 +624,15 @@ def main():
             else:
                 raise ValueError(f"Unknown diffusion viz sampler: {name!r}. Options: ddpm / ddim")
 
-        sampler_a = (name_a.upper(), _diff_sampler(name_a))
-        sampler_b = (name_b.upper(), _diff_sampler(name_b))
+        viz_samplers = [(name.upper(), _diff_sampler(name)) for name in viz_names]
+        metric_sampler = (metric_name.upper(), _diff_sampler(metric_name))
 
     elif framework == "edm":
         ecfg_s  = cfg["generative"]["edm"]
+        viz_names = _resolve_viz_sampler_names(
+            [viz_cfg.get("sampler_a", "heun"), viz_cfg.get("sampler_b", "euler")]
+        )
+        metric_name = _resolve_metric_sampler_name(viz_cfg.get("sampler_b", viz_names[-1]))
         steps = sampler_cfg["steps"]
         eta = sampler_cfg["eta"]
         s_churn = sampler_cfg["S_churn"]
@@ -619,12 +650,22 @@ def main():
             sigma_max=ecfg_s.get("sigma_max", 80.0),
             rho=sampler_cfg.get("rho", ecfg_s.get("rho", 7.0)),
         )
-        sampler_a = ("EDM-Heun",  lambda m, sh, c: heun_sample(m,  sh, c, **_edm_heun_kw))
-        sampler_b = ("EDM-Euler", lambda m, sh, c: euler_sample(m, sh, c, **_edm_euler_kw))
+
+        def _edm_sampler(name):
+            if name == "heun":
+                return ("EDM-Heun", lambda m, sh, c: heun_sample(m, sh, c, **_edm_heun_kw))
+            if name == "euler":
+                return ("EDM-Euler", lambda m, sh, c: euler_sample(m, sh, c, **_edm_euler_kw))
+            raise ValueError(f"Unknown EDM viz sampler: {name!r}. Options: heun / euler")
+
+        viz_samplers = [_edm_sampler(name) for name in viz_names]
+        metric_sampler = _edm_sampler(metric_name)
 
     else:  # flow_matching
-        name_a = viz_cfg.get("sampler_a", "euler").lower()
-        name_b = viz_cfg.get("sampler_b", "heun").lower()
+        viz_names = _resolve_viz_sampler_names(
+            [viz_cfg.get("sampler_a", "euler"), viz_cfg.get("sampler_b", "heun")]
+        )
+        metric_name = _resolve_metric_sampler_name(viz_cfg.get("sampler_b", viz_names[-1]))
         steps  = sampler_cfg["steps"]
         rtol   = sampler_cfg.get("rtol", 1e-5)
         atol   = sampler_cfg.get("atol", 1e-5)
@@ -640,12 +681,12 @@ def main():
                 atol=atol,
             )
 
-        sampler_a = (name_a.capitalize(), _flow_sampler(name_a))
-        sampler_b = (name_b.capitalize(), _flow_sampler(name_b))
+        viz_samplers = [(name.capitalize(), _flow_sampler(name)) for name in viz_names]
+        metric_sampler = (metric_name.capitalize(), _flow_sampler(metric_name))
 
     epoch_callback = EpochVisualizer(
-        sampler_a  = sampler_a,
-        sampler_b  = sampler_b,
+        sampler_a  = viz_samplers[0],
+        sampler_b  = metric_sampler,
         plot_dir   = Path(ckpt_cfg.get("ckpt_dir", "checkpoints/")) / "plots",
         ref_maps   = ref_maps,
         ref_cond   = ref_cond,
@@ -654,6 +695,8 @@ def main():
         eval_conds = eval_conds,
         eval_n     = eval_n,
         viz_cfg    = viz_cfg,
+        samplers   = viz_samplers,
+        metric_sampler = metric_sampler,
     )
 
     trainer = Trainer(
