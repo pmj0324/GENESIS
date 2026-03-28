@@ -313,8 +313,9 @@ python train.py --help
 
 현재 동작:
 - `loss.png`, `lr.png`는 매 epoch 갱신
-- 샘플/파워/메트릭은 **best(val_loss 최소) 갱신 시에만** 생성/갱신
-- `latest_*`는 호환용 alias이며 `best_*`와 같은 타이밍으로 갱신
+- 기본값에서는 샘플/파워/메트릭이 **best(val_loss 최소) 갱신 시에만** 생성/갱신
+- `viz.every_epoch=true`면 `epXXXX_*`와 `latest_*`는 매 epoch 갱신
+- `best_*`는 항상 val loss 최소가 갱신된 epoch에서만 갱신
 
 메트릭 JSON:
 - `metrics_history.json`

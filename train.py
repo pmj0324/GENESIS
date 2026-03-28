@@ -194,9 +194,10 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
         raise ValueError(
             f"model.swin.stem_type must be 'patch' or 'conv2x_periodic', got {stem_type!r}"
         )
-    if output_head not in {"linear", "stem_skip_conv"}:
+    if output_head not in {"linear", "stem_skip_conv", "stem_skip_resize_conv"}:
         raise ValueError(
-            f"model.swin.output_head must be 'linear' or 'stem_skip_conv', got {output_head!r}"
+            "model.swin.output_head must be 'linear', 'stem_skip_conv', or "
+            f"'stem_skip_resize_conv', got {output_head!r}"
         )
     if cross_attn_stages is not None:
         if not isinstance(cross_attn_stages, (list, tuple)):
@@ -212,9 +213,10 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
         )
     if stem_type == "conv2x_periodic" and patch_size != 4:
         raise ValueError("model.swin.stem_type='conv2x_periodic' currently requires patch_size=4")
-    if output_head == "stem_skip_conv" and stem_type != "conv2x_periodic":
+    if output_head in {"stem_skip_conv", "stem_skip_resize_conv"} and stem_type != "conv2x_periodic":
         raise ValueError(
-            "model.swin.output_head='stem_skip_conv' requires stem_type='conv2x_periodic'"
+            "model.swin.output_head='stem_skip_conv'/'stem_skip_resize_conv' "
+            "requires stem_type='conv2x_periodic'"
         )
 
     grid_size = img_size // patch_size

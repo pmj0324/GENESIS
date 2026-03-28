@@ -415,6 +415,29 @@ class PeriodicOutputHead(nn.Module):
         return self.conv_out(x)
 
 
+class PeriodicResizeConvOutputHead(nn.Module):
+    """64x64 tokens -> nearest upsample + periodic conv -> 256x256 image."""
+
+    def __init__(self, embed_dim: int, stem_channels: int, out_channels: int):
+        super().__init__()
+        mid_ch = embed_dim // 2
+        self.pre_conv = _CircularConv2d(embed_dim, mid_ch, 3)
+        self.merge = _CircularConv2d(mid_ch + stem_channels, mid_ch, 3)
+        self.conv_mid = _CircularConv2d(mid_ch, embed_dim // 4, 3)
+        self.conv_out = _CircularConv2d(embed_dim // 4, out_channels, 3)
+
+    def forward(self, x: torch.Tensor, H: int, W: int, stem_skip: torch.Tensor) -> torch.Tensor:
+        B, _, C = x.shape
+        x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = F.silu(self.pre_conv(x))
+        x = torch.cat([x, stem_skip], dim=1)
+        x = F.silu(self.merge(x))
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = F.silu(self.conv_mid(x))
+        return self.conv_out(x)
+
+
 # ── SwinUNet ──────────────────────────────────────────────────────────────────
 
 class SwinUNet(nn.Module):
@@ -464,14 +487,18 @@ class SwinUNet(nn.Module):
             raise ValueError(f"cond_fusion must be 'add' or 'concat', got {cond_fusion!r}")
         if stem_type not in {"patch", "conv2x_periodic"}:
             raise ValueError(f"stem_type must be 'patch' or 'conv2x_periodic', got {stem_type!r}")
-        if output_head not in {"linear", "stem_skip_conv"}:
+        if output_head not in {"linear", "stem_skip_conv", "stem_skip_resize_conv"}:
             raise ValueError(
-                f"output_head must be 'linear' or 'stem_skip_conv', got {output_head!r}"
+                "output_head must be 'linear', 'stem_skip_conv', or "
+                f"'stem_skip_resize_conv', got {output_head!r}"
             )
         if stem_type == "conv2x_periodic" and patch_size != 4:
             raise ValueError("stem_type='conv2x_periodic' currently requires patch_size=4")
-        if output_head == "stem_skip_conv" and stem_type != "conv2x_periodic":
-            raise ValueError("output_head='stem_skip_conv' requires stem_type='conv2x_periodic'")
+        if output_head in {"stem_skip_conv", "stem_skip_resize_conv"} and stem_type != "conv2x_periodic":
+            raise ValueError(
+                "output_head='stem_skip_conv'/'stem_skip_resize_conv' "
+                "requires stem_type='conv2x_periodic'"
+            )
         valid_cross_stages = {"enc0", "enc1", "enc2", "bottleneck", "dec2", "dec1", "dec0"}
         if cross_attn_stages is None:
             cross_attn_stage_set = {"enc2", "bottleneck", "dec2"} if cross_attn_cond else set()
@@ -592,7 +619,12 @@ class SwinUNet(nn.Module):
             self.out_expand2 = None
             self.out_norm = None
             self.out_proj = None
-            self.periodic_out = PeriodicOutputHead(embed_dim, stem_channels, in_channels)
+            head_cls = (
+                PeriodicOutputHead
+                if output_head == "stem_skip_conv"
+                else PeriodicResizeConvOutputHead
+            )
+            self.periodic_out = head_cls(embed_dim, stem_channels, in_channels)
 
     def forward(
         self,

@@ -14,7 +14,10 @@ viz.every_epoch=true 이면 매 epoch 생성된다.
 요약 파일:
   - plots/best_samples.png
   - plots/best_power_spectrum.png
-  (호환을 위해 latest_*도 동일 파일로 유지)
+  - plots/latest_samples.png
+  - plots/latest_power_spectrum.png
+  best_*는 val loss best 갱신 시에만 갱신되고,
+  latest_*는 가장 최근에 렌더링한 epoch 결과를 가리킨다.
 
 conditioning:
   ref_cond = val_dataset[0][1]  →  val set 첫 번째 샘플의 z-score 정규화된 cosmological params
@@ -355,8 +358,13 @@ class EpochVisualizer:
                     raw_sample = raw_sample[0]
                 sampled_maps.append((sampler_name, self._denorm_maps(raw_sample)))
 
-            self._plot_samples(epoch, sampled_maps)
-            self._plot_power_spectrum(epoch, sampled_maps, self.power_plot_spaces)
+            self._plot_samples(epoch, sampled_maps, is_best=is_best)
+            self._plot_power_spectrum(
+                epoch,
+                sampled_maps,
+                self.power_plot_spaces,
+                is_best=is_best,
+            )
             self._print_metrics(epoch, model, history)
 
             torch.cuda.empty_cache()
@@ -370,7 +378,18 @@ class EpochVisualizer:
 
     # ── 1. 샘플 맵 (3×3) ──────────────────────────────────────────────────────
 
-    def _plot_samples(self, epoch: int, sampled_maps: list[tuple[str, np.ndarray]]):
+    def _update_aliases(self, src_path: Path, *, best_name: str, latest_name: str, is_best: bool) -> None:
+        if is_best:
+            shutil.copy(src_path, self.plot_dir / best_name)
+        shutil.copy(src_path, self.plot_dir / latest_name)
+
+    def _plot_samples(
+        self,
+        epoch: int,
+        sampled_maps: list[tuple[str, np.ndarray]],
+        *,
+        is_best: bool,
+    ):
         """
         n rows × 3 cols
           rows : Real val[0] | viz samplers...
@@ -413,8 +432,12 @@ class EpochVisualizer:
 
         path = self.plot_dir / f"ep{epoch+1:04d}_samples.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
-        shutil.copy(path, self.plot_dir / "best_samples.png")
-        shutil.copy(path, self.plot_dir / "latest_samples.png")
+        self._update_aliases(
+            path,
+            best_name="best_samples.png",
+            latest_name="latest_samples.png",
+            is_best=is_best,
+        )
         plt.close(fig)
 
     # ── 2. Power spectrum ──────────────────────────────────────────────────────
@@ -424,6 +447,8 @@ class EpochVisualizer:
         epoch: int,
         sampled_maps: list[tuple[str, np.ndarray]],
         field_spaces: list[str],
+        *,
+        is_best: bool,
     ):
         """
         linear/log field space 기준 P(k) 비교 + 하단 relative error 패널
@@ -550,8 +575,12 @@ class EpochVisualizer:
         fig.subplots_adjust(left=0.06, right=0.985, bottom=0.07, top=0.89)
         path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
-        shutil.copy(path, self.plot_dir / "best_power_spectrum.png")
-        shutil.copy(path, self.plot_dir / "latest_power_spectrum.png")
+        self._update_aliases(
+            path,
+            best_name="best_power_spectrum.png",
+            latest_name="latest_power_spectrum.png",
+            is_best=is_best,
+        )
         plt.close(fig)
 
     # ── 3. Per-epoch Metrics ───────────────────────────────────────────────────
