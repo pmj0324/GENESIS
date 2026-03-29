@@ -14,8 +14,12 @@ DiT, UNet과 동일한 인터페이스: forward(x, t, cond) → output
   PatchEmbed (patch=4) → 64×64 토큰
   Encoder: Stage×3 (SwinBlocks + PatchMerging)
   Bottleneck: SwinBlocks at 8×8
-  Decoder: Stage×3 (PatchExpanding + SwinBlocks + skip concat)
-  Output: PatchExpanding×2 → pixel space
+  Decoder: Stage×3 (Expand + SwinBlocks + skip concat)
+  Output: Expand×2 → pixel space
+
+expand_type:
+  "patch"        — PatchExpanding (learned sub-pixel shuffle, 원래 Swin 방식)
+  "nearest_conv" — NearestExpanding (nearest interpolate + CircularConv2d)
 
 프리셋:
   "S": embed=96,  depths=[2,2,4,2], heads=[3,6,12,24]   ~ 40M
@@ -213,9 +217,6 @@ class SwinBlock(nn.Module):
         self._mask_hw:   Optional[Tuple[int, int]] = None
 
     def _get_mask(self, H: int, W: int, device: torch.device) -> Optional[torch.Tensor]:
-        # Standard Swin masks out cross-window tokens after cyclic shift.
-        # For periodic domains, the cyclic shift already represents a valid torus shift,
-        # so wrapped tokens should remain visible to each other.
         if self.shift_size == 0 or self.periodic_boundary:
             return None
         if self._mask_hw == (H, W) and self._attn_mask is not None:
@@ -231,8 +232,8 @@ class SwinBlock(nn.Module):
             )):
                 img_mask[:, h_slice, w_slice, :] = hi * 3 + wi
 
-        windows = window_partition(img_mask, ws).view(-1, ws * ws)     # [nW, ws²]
-        mask    = windows.unsqueeze(1) - windows.unsqueeze(2)          # [nW, ws², ws²]
+        windows = window_partition(img_mask, ws).view(-1, ws * ws)
+        mask    = windows.unsqueeze(1) - windows.unsqueeze(2)
         mask    = mask.masked_fill(mask != 0, -100.0).masked_fill(mask == 0, 0.0)
         self._attn_mask = mask
         self._mask_hw   = (H, W)
@@ -241,7 +242,7 @@ class SwinBlock(nn.Module):
     def forward(self, x: torch.Tensor, H: int, W: int, emb: torch.Tensor) -> torch.Tensor:
         """x: [B, H*W, C]  emb: [B, emb_dim]"""
         shift_sa, scale_sa, gate_sa, shift_ff, scale_ff, gate_ff = \
-            self.adaLN(emb).chunk(6, dim=-1)                           # each [B, C]
+            self.adaLN(emb).chunk(6, dim=-1)
 
         B, L, C = x.shape
         ws = self.window_size
@@ -284,12 +285,12 @@ class PatchMerging(nn.Module):
         B, _, C = x.shape
         x = x.view(B, H, W, C)
         x = torch.cat([x[:, 0::2, 0::2], x[:, 1::2, 0::2],
-                        x[:, 0::2, 1::2], x[:, 1::2, 1::2]], dim=-1)  # [B, H/2, W/2, 4C]
-        return self.proj(self.norm(x.view(B, -1, 4 * C)))              # [B, H/2*W/2, 2C]
+                        x[:, 0::2, 1::2], x[:, 1::2, 1::2]], dim=-1)
+        return self.proj(self.norm(x.view(B, -1, 4 * C)))
 
 
 class PatchExpanding(nn.Module):
-    """2× upscale: [B, H*W, C] → [B, 2H*2W, C//2]"""
+    """2× upscale: [B, H*W, C] → [B, 2H*2W, C//2]  (learned sub-pixel shuffle)"""
 
     def __init__(self, dim: int):
         super().__init__()
@@ -298,10 +299,45 @@ class PatchExpanding(nn.Module):
 
     def forward(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
         B, _, C = x.shape
-        x = self.proj(self.norm(x))                                    # [B, H*W, 2C]
+        x = self.proj(self.norm(x))
         x = x.view(B, H, W, 2, 2, C // 2)
         x = x.permute(0, 1, 3, 2, 4, 5).contiguous()
-        return x.view(B, 4 * H * W, C // 2)                           # [B, 2H*2W, C//2]
+        return x.view(B, 4 * H * W, C // 2)
+
+
+class NearestExpanding(nn.Module):
+    """
+    2× upscale: nearest interpolate + periodic circular conv.
+    PatchExpanding의 drop-in replacement.
+
+    PatchExpanding과 동일한 인터페이스:
+      forward(x: [B, H*W, C], H, W) → [B, 4*H*W, C//2]
+
+    PatchExpanding은 Linear로 4*(C//2) 채널을 만들어 2×2 sub-pixel로
+    재배치하는데, 각 sub-pixel이 독립적인 projection output이라
+    인접 pixel 간 consistency가 보장되지 않아 checkerboard artifact 발생.
+
+    NearestExpanding은 nearest resize 후 circular conv로 smoothing하여
+    이 문제를 근본적으로 해결하고, periodic boundary도 보존한다.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        out_dim = dim // 2
+        self.norm = nn.LayerNorm(dim)
+        self.proj = _CircularConv2d(dim, out_dim, 3)
+
+    def forward(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
+        B, _, C = x.shape
+        x = self.norm(x)
+        # token → spatial
+        x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+        # nearest upsample + circular conv for smooth upscaling
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = F.silu(self.proj(x))
+        # spatial → token
+        x = x.flatten(2).transpose(1, 2)
+        return x
 
 
 # ── Stage ─────────────────────────────────────────────────────────────────────
@@ -369,9 +405,9 @@ class PatchEmbed(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, int, int]:
-        x = self.proj(x)                                               # [B, C, H/p, W/p]
+        x = self.proj(x)
         B, C, H, W = x.shape
-        x = x.flatten(2).transpose(1, 2)                               # [B, H*W, C]
+        x = x.flatten(2).transpose(1, 2)
         return self.norm(x), H, W
 
 
@@ -385,19 +421,21 @@ class ConvStemPatchEmbed(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, int, int, torch.Tensor]:
-        skip = F.silu(self.conv1(x))                                   # [B, stem_ch, 128, 128]
-        x = F.silu(self.conv2(skip))                                   # [B, embed_dim, 64, 64]
+        skip = F.silu(self.conv1(x))
+        x = F.silu(self.conv2(skip))
         B, C, H, W = x.shape
         x = x.flatten(2).transpose(1, 2)
         return self.norm(x), H, W, skip
 
 
 class PeriodicOutputHead(nn.Module):
-    """64x64 tokens -> 128x128 periodic skip fusion -> 256x256 image."""
+    """64x64 tokens -> 128x128 periodic skip fusion -> 256x256 image.
+    expand 모듈을 외부에서 주입받아 expand_type에 따라 동작."""
 
-    def __init__(self, embed_dim: int, stem_channels: int, out_channels: int):
+    def __init__(self, embed_dim: int, stem_channels: int, out_channels: int,
+                 expand: nn.Module):
         super().__init__()
-        self.expand = PatchExpanding(embed_dim)                        # 64 -> 128, C -> C/2
+        self.expand = expand
         mid_ch = embed_dim // 2
         self.merge = _CircularConv2d(mid_ch + stem_channels, mid_ch, 3)
         self.conv_mid = _CircularConv2d(mid_ch, embed_dim // 4, 3)
@@ -416,7 +454,8 @@ class PeriodicOutputHead(nn.Module):
 
 
 class PeriodicResizeConvOutputHead(nn.Module):
-    """64x64 tokens -> nearest upsample + periodic conv -> 256x256 image."""
+    """64x64 tokens -> nearest upsample + periodic conv -> 256x256 image.
+    PatchExpanding을 전혀 사용하지 않는 output head."""
 
     def __init__(self, embed_dim: int, stem_channels: int, out_channels: int):
         super().__init__()
@@ -475,6 +514,7 @@ class SwinUNet(nn.Module):
         stem_type: str            = "patch",
         stem_channels: int        = 32,
         output_head: str          = "linear",
+        expand_type: str          = "patch",
         preset:      Optional[str] = None,
     ):
         super().__init__()
@@ -492,6 +532,8 @@ class SwinUNet(nn.Module):
                 "output_head must be 'linear', 'stem_skip_conv', or "
                 f"'stem_skip_resize_conv', got {output_head!r}"
             )
+        if expand_type not in {"patch", "nearest_conv"}:
+            raise ValueError(f"expand_type must be 'patch' or 'nearest_conv', got {expand_type!r}")
         if stem_type == "conv2x_periodic" and patch_size != 4:
             raise ValueError("stem_type='conv2x_periodic' currently requires patch_size=4")
         if output_head in {"stem_skip_conv", "stem_skip_resize_conv"} and stem_type != "conv2x_periodic":
@@ -520,6 +562,13 @@ class SwinUNet(nn.Module):
         self.stem_type = stem_type
         self.stem_channels = stem_channels
         self.output_head = output_head
+        self.expand_type = expand_type
+
+        # ── Expand factory ──
+        def _make_expand(dim: int) -> nn.Module:
+            if expand_type == "nearest_conv":
+                return NearestExpanding(dim)
+            return PatchExpanding(dim)
 
         # Embeddings
         self.t_embed = TimestepEmbedding(sin_dim=256, out_dim=emb_dim)
@@ -542,7 +591,7 @@ class SwinUNet(nn.Module):
             )
 
         # Encoder: 3 stages + merging, dims = [C, 2C, 4C], bottleneck = 8C
-        enc_dims = [embed_dim * (2 ** i) for i in range(4)]  # [C, 2C, 4C, 8C]
+        enc_dims = [embed_dim * (2 ** i) for i in range(4)]
 
         self.enc_stages  = nn.ModuleList()
         self.merges      = nn.ModuleList()
@@ -586,8 +635,7 @@ class SwinUNet(nn.Module):
         self.dec_stages  = nn.ModuleList()
         for i in reversed(range(3)):
             stage_name = f"dec{i}"
-            self.expands.append(PatchExpanding(enc_dims[i + 1]))
-            # after expand: enc_dims[i] channels, concat skip: enc_dims[i] → 2*enc_dims[i]
+            self.expands.append(_make_expand(enc_dims[i + 1]))
             self.skip_projs.append(nn.Linear(2 * enc_dims[i], enc_dims[i], bias=False))
             self.dec_stages.append(
                 SwinStage(
@@ -605,26 +653,32 @@ class SwinUNet(nn.Module):
                 )
             )
 
-        # Output: expand back to pixel resolution (64×64 → 256×256) then project
+        # Output
         if output_head == "linear":
-            self.out_expand1 = PatchExpanding(embed_dim)        # 64×64 → 128×128, C//2
-            self.out_expand2 = PatchExpanding(embed_dim // 2)   # 128×128 → 256×256, C//4
+            self.out_expand1 = _make_expand(embed_dim)
+            self.out_expand2 = _make_expand(embed_dim // 2)
             self.out_norm    = nn.LayerNorm(embed_dim // 4)
             self.out_proj    = nn.Linear(embed_dim // 4, in_channels)
             nn.init.zeros_(self.out_proj.weight)
             nn.init.zeros_(self.out_proj.bias)
             self.periodic_out = None
-        else:
+        elif output_head == "stem_skip_conv":
             self.out_expand1 = None
             self.out_expand2 = None
             self.out_norm = None
             self.out_proj = None
-            head_cls = (
-                PeriodicOutputHead
-                if output_head == "stem_skip_conv"
-                else PeriodicResizeConvOutputHead
+            self.periodic_out = PeriodicOutputHead(
+                embed_dim, stem_channels, in_channels,
+                expand=_make_expand(embed_dim),
             )
-            self.periodic_out = head_cls(embed_dim, stem_channels, in_channels)
+        elif output_head == "stem_skip_resize_conv":
+            self.out_expand1 = None
+            self.out_expand2 = None
+            self.out_norm = None
+            self.out_proj = None
+            self.periodic_out = PeriodicResizeConvOutputHead(
+                embed_dim, stem_channels, in_channels,
+            )
 
     def forward(
         self,
@@ -639,9 +693,9 @@ class SwinUNet(nn.Module):
         if self.cond_fusion == "concat":
             emb = self.joint(t_emb, c_emb)
         else:
-            emb = t_emb + c_emb                                # [B, emb_dim]
+            emb = t_emb + c_emb
 
-        # Patch embed: [B, 3, 256, 256] → [B, 64*64, C], H=W=64
+        # Patch embed
         stem_skip = None
         if self.stem_type == "patch":
             x, H, W = self.patch_embed(x)
@@ -668,11 +722,11 @@ class SwinUNet(nn.Module):
             x = skip_proj(torch.cat([x, skip], dim=-1))
             x = stage(x, H, W, emb, cond_tokens=c_tokens)
 
-        # Output: 64×64 → 256×256
+        # Output
         if self.output_head == "linear":
             x = self.out_expand1(x, H, W);    H, W = H * 2, W * 2
             x = self.out_expand2(x, H, W);    H, W = H * 2, W * 2
-            x = self.out_proj(self.out_norm(x))                        # [B, 256*256, 3]
+            x = self.out_proj(self.out_norm(x))
             return x.view(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
 
         if stem_skip is None:

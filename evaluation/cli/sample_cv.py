@@ -488,14 +488,23 @@ def _extract_checkpoint_best(ckpt: dict) -> dict:
 
 
 def _plot_metric_series(ax, history: list[dict], current_metrics: dict, group: str, key: str, title: str) -> None:
-    epochs = [entry["epoch"] for entry in history]
+    epochs = [entry["epoch"] for entry in history if isinstance(entry, dict) and "epoch" in entry]
     palette = ["tab:blue", "tab:orange", "tab:green"]
 
     for color, name in zip(palette, key.split(",")):
         metric_name = name.strip()
+        series_epochs = []
         series = []
         for entry in history:
-            payload = entry[group][metric_name]
+            if not isinstance(entry, dict):
+                continue
+            payload = (
+                entry.get(group, {}).get(metric_name)
+                if isinstance(entry.get(group, {}), dict)
+                else None
+            )
+            if payload is None:
+                continue
             if group == "auto_power":
                 series.append(payload["mean_error"] * 100.0)
             elif group == "cross_power":
@@ -504,7 +513,9 @@ def _plot_metric_series(ax, history: list[dict], current_metrics: dict, group: s
                 series.append(payload["max_delta_r"])
             else:
                 series.append(payload["ks_statistic"])
-        ax.plot(epochs, series, color=color, linewidth=1.6, label=f"{metric_name} train")
+            series_epochs.append(entry["epoch"])
+        if series:
+            ax.plot(series_epochs, series, color=color, linewidth=1.6, label=f"{metric_name} train")
 
         current_payload = current_metrics[group][metric_name]
         if group in {"auto_power", "cross_power"}:
@@ -650,6 +661,12 @@ def main() -> None:
     normalizer = _load_normalizer(data_dir)
     cond_np = _load_cv_condition(data_dir)
     cond = torch.from_numpy(cond_np[None, :]).to(device)
+    cv_maps_norm_all = _load_cv_maps(data_dir)
+    if cv_maps_norm_all.ndim != 4:
+        raise ValueError(f"Unexpected cv_maps shape: {cv_maps_norm_all.shape}")
+    sample_c = int(cv_maps_norm_all.shape[1])
+    sample_h = int(cv_maps_norm_all.shape[2])
+    sample_w = int(cv_maps_norm_all.shape[3])
 
     model = build_model(cfg)
     ckpt = _load_checkpoint(checkpoint_path)
@@ -683,7 +700,11 @@ def main() -> None:
         for batch_idx in range(n_batches):
             current_bs = min(batch_size, n_samples - batch_idx * batch_size)
             print(f"[sample_cv] batch {batch_idx + 1}/{n_batches} size={current_bs}", flush=True)
-            batch = sampler_fn(model, (current_bs, 3, 256, 256), cond.expand(current_bs, -1))
+            batch = sampler_fn(
+                model,
+                (current_bs, sample_c, sample_h, sample_w),
+                cond.expand(current_bs, -1),
+            )
             if isinstance(batch, tuple):
                 batch = batch[0]
             generated_norm.append(batch.detach().cpu())
@@ -691,7 +712,6 @@ def main() -> None:
     samples_norm = torch.cat(generated_norm, dim=0)
     samples_phys = normalizer.denormalize(samples_norm).cpu().numpy().astype(np.float32, copy=False)
 
-    cv_maps_norm_all = _load_cv_maps(data_dir)
     real_indices = _select_real_indices(n_samples, len(cv_maps_norm_all), seed=args.seed)
     real_norm = np.asarray(cv_maps_norm_all[real_indices], dtype=np.float32)
     real_phys = normalizer.denormalize(torch.from_numpy(real_norm)).cpu().numpy().astype(np.float32, copy=False)

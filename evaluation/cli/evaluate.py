@@ -13,6 +13,7 @@ GENESIS - Evaluation Entry Point
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 
 import matplotlib
@@ -44,6 +45,8 @@ from analysis.report import (
     plot_pdf_comparison,
     plot_cv_variance_ratio,
     plot_evaluation_dashboard,
+    plot_dual_space_comparison,
+    plot_dual_space_pdf,
     save_json_report,
     save_text_summary,
 )
@@ -53,6 +56,16 @@ from analysis.report import (
 
 CHANNEL_LABELS = ["log10(Mcdm)", "log10(Mgas)", "log10(T)"]
 CMAPS = ["viridis", "plasma", "inferno"]
+
+
+def _load_checkpoint(path: str | Path) -> dict:
+    """Load checkpoint with forward-compatible torch.load behavior."""
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            return torch.load(path, map_location="cpu")
 
 
 def _save_condition_preview(
@@ -388,7 +401,7 @@ def main():
 
     # Model
     model = build_model(cfg)
-    ckpt = torch.load(args.checkpoint, map_location="cpu")
+    ckpt = _load_checkpoint(args.checkpoint)
     state_dict, model_source_used = select_checkpoint_state_dict(ckpt, args.model_source)
     model.load_state_dict(state_dict)
     model = model.to(device)
@@ -415,6 +428,10 @@ def main():
     # Load selected split data
     split_maps_path = data_dir / f"{args.split}_maps.npy"
     split_params_path = data_dir / f"{args.split}_params.npy"
+    if not split_maps_path.exists():
+        raise FileNotFoundError(f"{args.split}_maps.npy not found: {split_maps_path}")
+    if not split_params_path.exists():
+        raise FileNotFoundError(f"{args.split}_params.npy not found: {split_params_path}")
     print(f"[evaluate] loading {args.split} data from {data_dir} ...")
     val_maps = np.load(split_maps_path)      # (N, 3, H, W)
     val_params = np.load(split_params_path)  # (N, 6)
@@ -426,13 +443,17 @@ def main():
     if "cv" in args.protocols or "1p" in args.protocols:
         cv_maps_path = data_dir / "cv_maps.npy"
         cv_params_path = data_dir / "cv_params.npy"
-        if cv_maps_path.exists():
+        if cv_maps_path.exists() and cv_params_path.exists():
             cv_maps = np.load(cv_maps_path)
             cv_params = np.load(cv_params_path)
             fiducial_cond = cv_params[0]  # All CV maps share the same params
             print(f"[evaluate] loaded CV data: {cv_maps.shape}")
         else:
-            print(f"[evaluate] WARNING: cv_maps.npy not found at {cv_maps_path}, skipping CV.")
+            print(
+                "[evaluate] WARNING: cv protocol files missing "
+                f"(maps: {cv_maps_path.exists()}, params: {cv_params_path.exists()}) "
+                "→ skipping CV/1P prerequisites."
+            )
             args.protocols = [p for p in args.protocols if p not in ("cv", "1p")]
 
     # Optionally load 1P data (§4.5)
@@ -481,6 +502,7 @@ def main():
         normalizer=normalizer,
         device=device,
         box_size=args.box_size,
+        sample_shape=tuple(int(v) for v in val_maps.shape[1:4]),
     )
 
     # Run evaluation
@@ -505,26 +527,57 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"[evaluate] saving results to {output_dir}")
 
-    # Determine the LH results for plotting (handle both flat and nested formats)
-    lh_results = all_results.get("lh", all_results)
+    # Extract log10 / physical sub-results (new nested format)
+    has_lh = "lh" in all_results or "auto_power" in all_results
+    lh_raw = all_results.get("lh", all_results) if has_lh else {}
+    lh_log10 = lh_raw.get("log10", lh_raw) if has_lh else {}
+    lh_phys = lh_raw.get("physical") if has_lh else None
 
     # Save plots
     title = f"GENESIS Evaluation — {Path(args.checkpoint).parent.name} ({args.split})"
 
-    plot_auto_power_comparison(lh_results, output_dir, title=title)
-    print("  auto_power_comparison.png")
+    # ── log10 space plots (primary, calibrated thresholds) ────────────────────
+    if has_lh:
+        plot_auto_power_comparison(lh_log10, output_dir, title=title + " [log10]")
+        print("  auto_power_comparison.png")
 
-    plot_cross_power_grid(lh_results, output_dir, title=title)
-    print("  cross_power_grid.png")
+        plot_cross_power_grid(lh_log10, output_dir, title=title + " [log10]")
+        print("  cross_power_grid.png")
 
-    plot_correlation_coefficients(lh_results, output_dir, title=title)
-    print("  correlation_coefficients.png")
+        plot_correlation_coefficients(lh_log10, output_dir, title=title + " [log10]")
+        print("  correlation_coefficients.png")
 
-    plot_pdf_comparison(lh_results, output_dir, title=title)
-    print("  pdf_comparison.png")
+        plot_pdf_comparison(lh_log10, output_dir, title=title + " [log10]")
+        print("  pdf_comparison.png")
 
-    plot_evaluation_dashboard(all_results, output_dir, title=title)
-    print("  evaluation_dashboard.png")
+        plot_evaluation_dashboard(all_results, output_dir, title=title)
+        print("  evaluation_dashboard.png")
+    else:
+        print("[evaluate] LH metrics not requested; skipping LH-specific plots.")
+
+    # ── physical space plots ──────────────────────────────────────────────────
+    if lh_phys is not None:
+        phys_dir = output_dir / "physical_space"
+        phys_dir.mkdir(parents=True, exist_ok=True)
+
+        plot_auto_power_comparison(lh_phys, phys_dir, title=title + " [physical]")
+        print("  physical_space/auto_power_comparison.png")
+
+        plot_cross_power_grid(lh_phys, phys_dir, title=title + " [physical]")
+        print("  physical_space/cross_power_grid.png")
+
+        plot_correlation_coefficients(lh_phys, phys_dir, title=title + " [physical]")
+        print("  physical_space/correlation_coefficients.png")
+
+        plot_pdf_comparison(lh_phys, phys_dir, title=title + " [physical]")
+        print("  physical_space/pdf_comparison.png")
+
+        # ── dual-space side-by-side comparison ────────────────────────────────
+        plot_dual_space_comparison(lh_log10, lh_phys, output_dir, title=title)
+        print("  dual_space_power_comparison.png")
+
+        plot_dual_space_pdf(lh_log10, lh_phys, output_dir, title=title)
+        print("  dual_space_pdf_comparison.png")
 
     if args.save_sample_images:
         n_preview = min(args.sample_preview_count, args.n_samples, len(val_maps))
@@ -537,10 +590,12 @@ def main():
                 f"(conditions={n_preview}, generations_per_condition={n_gen}) ..."
             )
             with torch.no_grad():
+                sample_h = int(val_maps.shape[-2])
+                sample_w = int(val_maps.shape[-1])
                 for sample_index in range(n_preview):
                     cond_np = np.asarray(val_params[sample_index], dtype=np.float32)
                     cond = torch.from_numpy(cond_np[None, :]).to(device).expand(n_gen, -1)
-                    preview_gen = sampler_fn(model, (n_gen, 3, 256, 256), cond)
+                    preview_gen = sampler_fn(model, (n_gen, 3, sample_h, sample_w), cond)
                     if isinstance(preview_gen, tuple):
                         preview_gen = preview_gen[0]
                     preview_gen_phys = normalizer.denormalize(
@@ -585,9 +640,10 @@ def main():
     save_text_summary(report_payload, txt_path)
     print(f"  {txt_path.name}")
 
-    # Print pass summary to console
+    # Print pass summary to console (log10 space)
     lh = all_results.get("lh", all_results)
-    pass_summary = lh.get("pass_summary", {})
+    lh_for_summary = lh.get("log10", lh)
+    pass_summary = lh_for_summary.get("pass_summary", {})
     if pass_summary:
         print("\n[evaluate] Pass Summary:")
         for metric, passed in pass_summary.items():

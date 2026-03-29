@@ -59,6 +59,7 @@ class CAMELSEvaluator:
         device,
         box_size: float = 25.0,
         n_gen_per_cond: int = 1,
+        sample_shape: Optional[tuple[int, int, int]] = None,
     ):
         self.model = model
         self.sampler_fn = sampler_fn
@@ -66,6 +67,11 @@ class CAMELSEvaluator:
         self.device = device
         self.box_size = box_size
         self.n_gen_per_cond = n_gen_per_cond
+        if sample_shape is None:
+            sample_shape = (3, 256, 256)
+        if len(sample_shape) != 3 or any(int(v) <= 0 for v in sample_shape):
+            raise ValueError(f"sample_shape must be (C,H,W) with positive integers, got {sample_shape!r}")
+        self.sample_shape = tuple(int(v) for v in sample_shape)
 
     def _progress(self, iterable, *, total=None, desc="", enabled=True, leave=False):
         """Wrap iterables with tqdm so long evaluations show ETA and progress."""
@@ -130,7 +136,7 @@ class CAMELSEvaluator:
                 f"cond batch mismatch: cond_rows={cond.shape[0]} n_samples={n_samples}"
             )
 
-        shape = (n_samples, 3, 256, 256)
+        shape = (n_samples, *self.sample_shape)
         sample_norm = self.sampler_fn(self.model, shape, cond_batch)  # (n_samples, 3, H, W)
         if isinstance(sample_norm, tuple):
             sample_norm = sample_norm[0]
@@ -168,65 +174,163 @@ class CAMELSEvaluator:
             end = min(start + batch_size, len(conds_np))
             batch = conds_np[start:end]
             outputs.append(self._generate_log10(batch, n_samples=len(batch)))
-        return np.concatenate(outputs, axis=0) if outputs else np.empty((0, 3, 256, 256), dtype=np.float32)
-
-    def evaluate_lh(
-        self,
-        val_maps,
-        val_params,
-        max_samples: int = 200,
-        verbose: bool = True,
-    ) -> dict:
-        """Evaluate on the LH (Latin Hypercube) validation set.
-
-        For each sample (up to max_samples), generates one map with the same
-        conditioning and evaluates power spectra, correlation coefficients, and
-        pixel distributions.
-
-        Args:
-            val_maps: (N, 3, H, W) normalized maps (torch or numpy).
-            val_params: (N, 6) normalized cosmological parameters (torch or numpy).
-            max_samples: Maximum number of validation samples to use.
-            verbose: If True, print progress.
-
-        Returns:
-            dict with keys: "auto_power", "cross_power", "correlation", "pdf",
-            "pdf_summary", "pass_summary"
-        """
-        val_maps_np = _to_numpy(val_maps)
-        val_params_np = _to_numpy(val_params)
-
-        N = min(len(val_maps_np), max_samples)
-
-        true_log10_list = [
-            self._to_log10(val_maps_np[i])
-            for i in self._progress(range(N), total=N, desc="LH samples", enabled=verbose)
-        ]
-        true_batch = np.stack(true_log10_list, axis=0)
-        gen_batch = self._generate_log10_in_chunks(
-            val_params_np[:N],
-            batch_size=8,
-            desc="LH generate",
-            enabled=verbose,
+        return (
+            np.concatenate(outputs, axis=0)
+            if outputs
+            else np.empty((0, *self.sample_shape), dtype=np.float32)
         )
 
-        if verbose:
-            print("  [evaluate_lh] computing spectrum errors ...", flush=True)
+    @torch.no_grad()
+    def _to_physical(self, x_norm) -> np.ndarray:
+        """Denormalize normalized maps to physical space (no log10 transform).
 
+        Args:
+            x_norm: (B,3,H,W) or (3,H,W) normalized maps (torch tensor or numpy).
+
+        Returns:
+            np.ndarray, same spatial shape, in physical units.
+        """
+        if hasattr(x_norm, "cpu"):
+            t = x_norm.float()
+        else:
+            t = torch.from_numpy(np.asarray(x_norm, dtype=np.float32))
+        squeezed = t.ndim == 3
+        if squeezed:
+            t = t.unsqueeze(0)
+        with torch.no_grad():
+            physical = self.normalizer.denormalize(t.to(self.device)).cpu()
+        arr = physical.numpy().astype(np.float32, copy=False)
+        return arr[0] if squeezed else arr
+
+    @torch.no_grad()
+    def _generate_norm(self, cond_norm, n_samples: Optional[int] = None) -> np.ndarray:
+        """Generate normalized (z-space) samples given a conditioning vector.
+
+        Returns:
+            np.ndarray of shape (n_samples, 3, H, W) in normalized space.
+        """
+        if hasattr(cond_norm, "cpu"):
+            cond = cond_norm.float().to(self.device)
+        else:
+            cond = torch.from_numpy(np.asarray(cond_norm, dtype=np.float32)).to(self.device)
+        if cond.ndim == 1:
+            cond = cond.view(1, -1)
+        elif cond.ndim != 2:
+            raise ValueError(f"cond_norm must be 1D or 2D, got shape={tuple(cond.shape)}")
+        if n_samples is None:
+            n_samples = int(cond.shape[0])
+        if cond.shape[0] == 1 and n_samples > 1:
+            cond_batch = cond.expand(n_samples, -1)
+        elif cond.shape[0] == n_samples:
+            cond_batch = cond
+        else:
+            raise ValueError(
+                f"cond batch mismatch: cond_rows={cond.shape[0]} n_samples={n_samples}"
+            )
+        shape = (n_samples, *self.sample_shape)
+        out = self.sampler_fn(self.model, shape, cond_batch)
+        if isinstance(out, tuple):
+            out = out[0]
+        return out.detach().cpu().numpy().astype(np.float32, copy=False)
+
+    @torch.no_grad()
+    def _generate_norm_in_chunks(
+        self,
+        conds_norm,
+        *,
+        batch_size: int = 8,
+        desc: Optional[str] = None,
+        enabled: bool = True,
+    ) -> np.ndarray:
+        """Generate normalized samples for varying conditions in chunks.
+
+        Returns:
+            np.ndarray of shape (N, 3, H, W) in normalized space.
+        """
+        conds_np = _to_numpy(conds_norm).astype(np.float32, copy=False)
+        if conds_np.ndim == 1:
+            conds_np = conds_np[None, :]
+        if conds_np.ndim != 2 or conds_np.shape[1] != 6:
+            raise ValueError(f"expected conds shape [N,6], got {conds_np.shape}")
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        outputs = []
+        starts = range(0, len(conds_np), batch_size)
+        if desc is not None:
+            starts = self._progress(
+                starts,
+                total=(len(conds_np) + batch_size - 1) // batch_size,
+                desc=desc,
+                enabled=enabled,
+            )
+        for start in starts:
+            end = min(start + batch_size, len(conds_np))
+            outputs.append(self._generate_norm(conds_np[start:end], n_samples=end - start))
+        return (
+            np.concatenate(outputs, axis=0)
+            if outputs
+            else np.empty((0, *self.sample_shape), dtype=np.float32)
+        )
+
+    def _norm_batch_to_log10(self, x_norm_np: np.ndarray) -> np.ndarray:
+        """Convert a batch of normalized maps to log10(physical) space.
+
+        Args:
+            x_norm_np: (N,3,H,W) float32 numpy in normalized space.
+
+        Returns:
+            (N,3,H,W) float32 numpy in log10(physical) space.
+        """
+        t = torch.from_numpy(x_norm_np.astype(np.float32))
+        with torch.no_grad():
+            physical = self.normalizer.denormalize(t.to(self.device)).cpu()
+        return torch.log10(torch.clamp(physical, min=1e-30)).numpy().astype(np.float32, copy=False)
+
+    def _norm_batch_to_physical(self, x_norm_np: np.ndarray) -> np.ndarray:
+        """Convert a batch of normalized maps to physical space (no log transform).
+
+        Args:
+            x_norm_np: (N,3,H,W) float32 numpy in normalized space.
+
+        Returns:
+            (N,3,H,W) float32 numpy in physical space.
+        """
+        t = torch.from_numpy(x_norm_np.astype(np.float32))
+        with torch.no_grad():
+            physical = self.normalizer.denormalize(t.to(self.device)).cpu()
+        return physical.numpy().astype(np.float32, copy=False)
+
+    def _compute_lh_metrics(
+        self,
+        true_batch: np.ndarray,
+        gen_batch: np.ndarray,
+        *,
+        pdf_log: bool = False,
+    ) -> dict:
+        """Compute all LH evaluation metrics for a (true, generated) batch pair.
+
+        Args:
+            true_batch: (N,3,H,W) true maps.
+            gen_batch: (N,3,H,W) generated maps.
+            pdf_log: If True, convert to log10 before PDF comparison (use when
+                inputs are in physical space). False when inputs are already log10.
+
+        Returns:
+            dict with keys: auto_power, cross_power, correlation, pdf,
+            pdf_summary, pass_summary.
+        """
         spectrum_errors = compute_spectrum_errors(
             true_batch, gen_batch, box_size=self.box_size
         )
         correlation_errors = compute_correlation_errors(
             true_batch, gen_batch, box_size=self.box_size
         )
-        pdf_results = compare_pixel_distributions(true_batch, gen_batch, log=False)
+        pdf_results = compare_pixel_distributions(true_batch, gen_batch, log=pdf_log)
         pdf_summary = compute_distribution_summary(true_batch, gen_batch)
 
-        # Separate auto and cross from spectrum_errors
         auto_power = {k: v for k, v in spectrum_errors.items() if v["type"] == "auto"}
         cross_power = {k: v for k, v in spectrum_errors.items() if v["type"] == "cross"}
 
-        # Pass summary
         pass_summary = {}
         for ch in CHANNELS:
             if ch in auto_power:
@@ -237,9 +341,7 @@ class CAMELSEvaluator:
             pass_summary[f"corr_{pair_key}"] = v["passed"]
         for ch, v in pdf_results.items():
             pass_summary[f"pdf_{ch}"] = v["passed"]
-
-        all_passed = all(pass_summary.values())
-        pass_summary["overall"] = all_passed
+        pass_summary["overall"] = all(pass_summary.values())
 
         return {
             "auto_power": auto_power,
@@ -249,6 +351,61 @@ class CAMELSEvaluator:
             "pdf_summary": pdf_summary,
             "pass_summary": pass_summary,
         }
+
+    def evaluate_lh(
+        self,
+        val_maps,
+        val_params,
+        max_samples: int = 200,
+        verbose: bool = True,
+    ) -> dict:
+        """Evaluate on the LH (Latin Hypercube) validation set.
+
+        Generates each map ONCE and computes metrics in both log10(physical) and
+        physical space to avoid redundant model inference.
+
+        Args:
+            val_maps: (N, 3, H, W) normalized maps (torch or numpy).
+            val_params: (N, 6) normalized cosmological parameters (torch or numpy).
+            max_samples: Maximum number of validation samples to use.
+            verbose: If True, print progress.
+
+        Returns:
+            dict with keys:
+                "log10"    — metrics computed on log10(physical) fields (primary,
+                             thresholds calibrated for this space).
+                "physical" — metrics computed on raw physical fields (amplitude check;
+                             thresholds are log10-calibrated, treat pass/fail as indicative).
+            Each sub-dict has keys: auto_power, cross_power, correlation, pdf,
+            pdf_summary, pass_summary.
+        """
+        val_maps_np = _to_numpy(val_maps).astype(np.float32, copy=False)
+        val_params_np = _to_numpy(val_params)
+        N = min(len(val_maps_np), max_samples)
+
+        # Generate normalized samples ONCE — avoids double model inference
+        gen_norm = self._generate_norm_in_chunks(
+            val_params_np[:N], batch_size=8, desc="LH generate", enabled=verbose
+        )
+
+        # Convert true and generated maps to both spaces in one pass
+        true_norm = val_maps_np[:N]
+        if verbose:
+            print("  [evaluate_lh] converting to log10 and physical space ...", flush=True)
+        true_log10 = self._norm_batch_to_log10(true_norm)
+        gen_log10  = self._norm_batch_to_log10(gen_norm)
+        true_phys  = self._norm_batch_to_physical(true_norm)
+        gen_phys   = self._norm_batch_to_physical(gen_norm)
+
+        if verbose:
+            print("  [evaluate_lh] computing log10 space metrics ...", flush=True)
+        log10_results = self._compute_lh_metrics(true_log10, gen_log10, pdf_log=False)
+
+        if verbose:
+            print("  [evaluate_lh] computing physical space metrics ...", flush=True)
+        phys_results = self._compute_lh_metrics(true_phys, gen_phys, pdf_log=True)
+
+        return {"log10": log10_results, "physical": phys_results}
 
     def evaluate_cv(
         self,
@@ -495,7 +652,7 @@ class CAMELSEvaluator:
         """Evaluate on the EX (Extreme) set (§4.5).
 
         Tests extrapolation robustness: no catastrophic failures (NaN, divergence,
-        >200% error). Error target: < 2× LH targets.
+        or auto-power mean error > 2× the LH threshold for each channel).
 
         Args:
             ex_maps_norm: (N_ex, 3, H, W) normalized extreme-parameter maps.
@@ -509,7 +666,8 @@ class CAMELSEvaluator:
                 "has_nan": bool (any NaN in generated maps)
                 "has_divergence": bool (any value > 1e10)
                 "max_auto_error": dict {channel: float} max mean error across samples
-                "passed": bool (no NaN, no divergence, no >200% error)
+                "auto_error_threshold_2x_lh": dict {channel: float} pass threshold
+                "passed": bool (no NaN, no divergence, no catastrophic error)
         """
         if box_size is None:
             box_size = self.box_size
@@ -550,11 +708,18 @@ class CAMELSEvaluator:
 
         # Check: auto-power error < 2× LH targets (§4.5 EX criterion)
         max_auto_error = {}
+        auto_error_threshold_2x_lh = {}
         catastrophic = False
         for ch in CHANNELS:
             me = spectrum_errors[ch]["mean_error"]
             max_auto_error[ch] = me
-            if me > 2.0:  # >200% error = catastrophic
+            lh_mean_threshold = max(
+                (thr_mean for _, _, _, thr_mean, _ in AUTO_POWER_THRESHOLDS.get(ch, [])),
+                default=1.0,
+            )
+            ex_threshold = 2.0 * lh_mean_threshold
+            auto_error_threshold_2x_lh[ch] = ex_threshold
+            if me > ex_threshold:
                 catastrophic = True
 
         passed = bool(not has_nan and not has_divergence and not catastrophic)
@@ -564,6 +729,7 @@ class CAMELSEvaluator:
             "has_nan": has_nan,
             "has_divergence": has_divergence,
             "max_auto_error": max_auto_error,
+            "auto_error_threshold_2x_lh": auto_error_threshold_2x_lh,
             "passed": passed,
         }
 
@@ -605,13 +771,13 @@ class CAMELSEvaluator:
                                       verbose=verbose)
             runs.append(result)
 
-        # Aggregate key metrics across runs
+        # Aggregate key metrics across runs — use log10 space results
         summary = {"auto_power": {}, "cross_power": {}, "correlation": {}, "pdf": {}}
 
         # Auto-power mean errors
         for ch in CHANNELS:
-            means = [r["auto_power"][ch]["mean_error"] for r in runs]
-            rms_vals = [r["auto_power"][ch]["rms_error"] for r in runs]
+            means = [r["log10"]["auto_power"][ch]["mean_error"] for r in runs]
+            rms_vals = [r["log10"]["auto_power"][ch]["rms_error"] for r in runs]
             summary["auto_power"][ch] = {
                 "mean_error_mean": float(np.mean(means)),
                 "mean_error_std": float(np.std(means)),
@@ -621,7 +787,7 @@ class CAMELSEvaluator:
 
         # Cross-power mean errors
         for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
-            means = [r["cross_power"][pair]["mean_error"] for r in runs]
+            means = [r["log10"]["cross_power"][pair]["mean_error"] for r in runs]
             summary["cross_power"][pair] = {
                 "mean_error_mean": float(np.mean(means)),
                 "mean_error_std": float(np.std(means)),
@@ -629,7 +795,7 @@ class CAMELSEvaluator:
 
         # Correlation max_delta_r
         for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
-            vals = [r["correlation"][pair]["max_delta_r"] for r in runs]
+            vals = [r["log10"]["correlation"][pair]["max_delta_r"] for r in runs]
             summary["correlation"][pair] = {
                 "max_delta_r_mean": float(np.mean(vals)),
                 "max_delta_r_std": float(np.std(vals)),
@@ -637,7 +803,7 @@ class CAMELSEvaluator:
 
         # PDF KS statistic
         for ch in CHANNELS:
-            vals = [r["pdf"][ch]["ks_statistic"] for r in runs]
+            vals = [r["log10"]["pdf"][ch]["ks_statistic"] for r in runs]
             summary["pdf"][ch] = {
                 "ks_statistic_mean": float(np.mean(vals)),
                 "ks_statistic_std": float(np.std(vals)),
@@ -708,6 +874,10 @@ class CAMELSEvaluator:
         """
         if protocols is None:
             protocols = ["lh"]
+
+        val_maps_np = _to_numpy(val_maps)
+        if val_maps_np.ndim == 4:
+            self.sample_shape = tuple(int(v) for v in val_maps_np.shape[1:4])
 
         all_results = {}
 

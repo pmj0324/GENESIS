@@ -1,0 +1,86 @@
+##############################################################################
+# swin_flow_custom_e96_xattn_linearhead_nearest_conv_cosine_restarts_warmup7.yaml
+#
+# 목적:
+#   - affine_mean_mix 데이터로 새 학습을 시작하는 Swin Flow 실험
+#   - custom e96 구조 + periodic boundary + cross-attn(enc2/bottleneck/dec2)
+#   - conv stem은 유지하고 output head만 linear 로 변경
+#   - nearest_conv expand 조합 유지
+#   - 학습 스케줄은 cosine_restarts 사용
+#   - warmup 7 epoch 추가
+#
+# 사용:
+#   python train.py \
+#     --config configs/experiments/flow/swin/swin_flow_custom_e96_xattn_linearhead_nearest_conv_cosine_restarts_warmup7.yaml
+##############################################################################
+
+data:
+  data_fraction: 1.0
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100
+  augment: true
+
+model:
+  architecture: swin
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+  swin:
+    patch_size: 4
+    embed_dim: 96
+    depths: [2, 2, 4, 4]
+    num_heads: [3, 6, 12, 24]
+    window_size: 8
+
+    cond_fusion: add
+    cross_attn_cond: true
+    cross_attn_stages: [enc2, bottleneck, dec2]
+    cond_token_depth: 2
+
+    periodic_boundary: true
+    channel_se: false
+    channel_se_reduction: 4
+
+    stem_type: conv2x_periodic
+    stem_channels: 32
+    output_head: linear
+    expand_type: nearest_conv
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.1
+    sigma_min: 1.0e-4
+  sampler:
+    method: dopri5
+    steps: 25
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.01
+    viz:
+      sampler_a: dopri5
+      sampler_b: dopri5
+      samplers: [euler, heun, rk4, dopri5]
+      metrics_sampler: dopri5
+      eval_n: 15
+      every_epoch: true
+
+training:
+  batch_size: 32
+  num_workers: 20
+  max_epochs: 80
+  lr: 2.0e-5
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 7
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine_restarts
+  T_0: 10
+  T_mult: 2
+  eta_min: 1.0e-6
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: runs/swin_flow_custom_e96_xattn_linearhead_nearest_conv_cosine_restarts_warmup7/
+  ckpt_name: best.pt

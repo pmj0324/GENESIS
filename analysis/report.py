@@ -384,6 +384,176 @@ def plot_pdf_comparison(results: dict, save_dir, title: str = ""):
     plt.close(fig)
 
 
+# ── Dual Space Comparison ─────────────────────────────────────────────────────
+
+def plot_dual_space_comparison(log10_results: dict, phys_results: dict, save_dir, title: str = ""):
+    """Plot P(k) comparison for log10 and physical space side by side.
+
+    2×3 grid:
+        Row 0 (log10 space): True vs Gen P(k) for Mcdm, Mgas, T
+        Row 1 (physical space): True vs Gen P(k) for Mcdm, Mgas, T
+
+    Relative error is shown as a shaded overlay on a twin y-axis.
+
+    Args:
+        log10_results: dict from evaluate_lh["log10"] containing "auto_power".
+        phys_results:  dict from evaluate_lh["physical"] containing "auto_power".
+        save_dir: Directory where the figure is saved.
+        title: Optional figure suptitle.
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    row_labels = ["log10(physical)", "physical"]
+    row_data = [
+        log10_results.get("auto_power", {}),
+        phys_results.get("auto_power", {}),
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+    fig.patch.set_facecolor("white")
+    if title:
+        fig.suptitle(title, fontsize=12, y=1.01)
+
+    for row_idx, (space_label, auto_results) in enumerate(zip(row_labels, row_data)):
+        for ci, ch in enumerate(CHANNELS):
+            ax = axes[row_idx, ci]
+            ax.set_facecolor("white")
+
+            if ch not in auto_results:
+                ax.set_visible(False)
+                continue
+
+            d = auto_results[ch]
+            k = np.asarray(d["k"])
+            P_true = np.asarray(d["P_true_mean"])
+            P_gen = np.asarray(d["P_gen_mean"])
+            rel_err = np.asarray(d["relative_error"])
+            passed = d.get("passed", None)
+
+            ax.loglog(k, np.abs(P_true), color=COLORS_TRUE, lw=2.0, ls="-", label="True")
+            ax.loglog(k, np.abs(P_gen), color=COLORS_GEN, lw=2.0, ls="--", label="Gen")
+
+            ax2 = ax.twinx()
+            ax2.semilogx(k, rel_err * 100, color="gray", lw=1.0, ls=":", alpha=0.7)
+            ax2.set_ylabel("Rel. err [%]", color="gray", fontsize=8)
+            ax2.tick_params(axis="y", labelcolor="gray", labelsize=7)
+
+            if row_idx == 0:
+                ax.set_title(f"{ch}", fontsize=12, fontweight="bold")
+            ax.set_ylabel(f"P(k)  [{space_label}]", fontsize=8)
+            if row_idx == 1:
+                ax.set_xlabel("k  [h/Mpc]")
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3, which="both")
+
+            mean_err = d.get("mean_error", None)
+            ann_parts = [f"[{space_label}]"]
+            if mean_err is not None:
+                ann_parts.append(f"mean={mean_err*100:.1f}%")
+            if passed is not None:
+                color = "green" if passed else "red"
+                ann_parts.append("PASS" if passed else "FAIL*")
+                ax.text(0.97, 0.05, "  ".join(ann_parts),
+                        transform=ax.transAxes, ha="right", va="bottom",
+                        fontsize=8, color=color, fontweight="bold")
+            else:
+                ax.text(0.97, 0.05, "  ".join(ann_parts),
+                        transform=ax.transAxes, ha="right", va="bottom",
+                        fontsize=8, color="gray")
+
+    fig.text(
+        0.01, 0.5,
+        "* physical-space PASS/FAIL uses log10-calibrated thresholds — indicative only",
+        va="center", rotation="vertical", fontsize=7, color="gray",
+    )
+    fig.tight_layout()
+    fig.savefig(save_dir / "dual_space_power_comparison.png", dpi=100,
+                bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def plot_dual_space_pdf(log10_results: dict, phys_results: dict, save_dir, title: str = ""):
+    """Plot pixel PDF comparison for log10 and physical space side by side.
+
+    2×3 grid: rows = spaces, columns = channels.
+    Note: both rows use log10-scale pixel values for display readability.
+
+    Args:
+        log10_results: dict from evaluate_lh["log10"] containing "pdf".
+        phys_results:  dict from evaluate_lh["physical"] containing "pdf".
+        save_dir: Directory where the figure is saved.
+        title: Optional figure suptitle.
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    row_labels = ["log10(physical)", "physical (log10 bins)"]
+    row_data = [
+        log10_results.get("pdf", {}),
+        phys_results.get("pdf", {}),
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+    fig.patch.set_facecolor("white")
+    if title:
+        fig.suptitle(title, fontsize=12, y=1.01)
+
+    for row_idx, (space_label, pdf_results) in enumerate(zip(row_labels, row_data)):
+        for ci, ch in enumerate(CHANNELS):
+            ax = axes[row_idx, ci]
+            ax.set_facecolor("white")
+
+            if ch not in pdf_results:
+                ax.set_visible(False)
+                continue
+
+            d = pdf_results[ch]
+            bins = np.asarray(d["bins"])
+            pdf_true = np.asarray(d["pdf_true"])
+            pdf_gen = np.asarray(d["pdf_gen"])
+            ks_stat = d.get("ks_statistic", None)
+            passed = d.get("passed", None)
+
+            width = bins[1] - bins[0] if len(bins) > 1 else 1.0
+            ax.bar(bins, pdf_true, width=width * 0.9, alpha=0.6,
+                   color=COLORS_TRUE, label="True", align="center")
+            ax.step(bins, pdf_gen, where="mid", color=COLORS_GEN, lw=2.0, ls="--",
+                    label="Gen")
+
+            if row_idx == 0:
+                ax.set_title(f"{ch}", fontsize=12, fontweight="bold")
+            ax.set_xlabel("log₁₀(field)")
+            ax.set_ylabel(f"PDF  [{space_label}]", fontsize=8)
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+
+            ann_lines = [f"[{space_label}]"]
+            if ks_stat is not None:
+                ks_pass = d.get("ks_passed", ks_stat < PDF_KS_D_THRESHOLD)
+                ks_mark = "✓" if ks_pass else "✗"
+                ann_lines.append(f"KS D={ks_stat:.3f} {ks_mark}")
+            mean_rel = d.get("mean_rel_error", None)
+            if mean_rel is not None:
+                m_pass = "✓" if d.get("mean_rel_passed", False) else "✗"
+                ann_lines.append(f"μ_err={mean_rel*100:.1f}% {m_pass}")
+            ax.text(0.97, 0.95, "\n".join(ann_lines),
+                    transform=ax.transAxes, ha="right", va="top",
+                    fontsize=8, bbox=dict(boxstyle="round,pad=0.3",
+                                          facecolor="white", alpha=0.8, edgecolor="gray"))
+
+            if passed is not None:
+                color = "green" if passed else "red"
+                ax.text(0.97, 0.05, "PASS" if passed else "FAIL",
+                        transform=ax.transAxes, ha="right", va="bottom",
+                        fontsize=9, color=color, fontweight="bold")
+
+    fig.tight_layout()
+    fig.savefig(save_dir / "dual_space_pdf_comparison.png", dpi=100,
+                bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
 # ── CV Variance Ratio ──────────────────────────────────────────────────────────
 
 def plot_cv_variance_ratio(results: dict, save_dir, title: str = ""):
@@ -468,7 +638,9 @@ def plot_evaluation_dashboard(all_results: dict, save_dir, title: str = ""):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    lh = all_results.get("lh", all_results)
+    lh_raw = all_results.get("lh", all_results)
+    # Handle both old flat format and new nested {"log10": ..., "physical": ...} format
+    lh = lh_raw.get("log10", lh_raw)
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.patch.set_facecolor("white")
@@ -728,7 +900,14 @@ def save_text_summary(all_results: dict, save_path):
     # Handle both run_all format {"lh": {...}} and direct evaluate_lh output
     if "lh" in all_results or "cv" in all_results:
         if "lh" in all_results:
-            _process_protocol("lh", all_results["lh"])
+            lh_raw = all_results["lh"]
+            # New nested format: {"log10": {...}, "physical": {...}}
+            if "log10" in lh_raw:
+                _process_protocol("lh [log10 space]", lh_raw["log10"])
+                if "physical" in lh_raw:
+                    _process_protocol("lh [physical space — thresholds indicative]", lh_raw["physical"])
+            else:
+                _process_protocol("lh", lh_raw)
         if "cv" in all_results:
             cv = all_results["cv"]
             lines.append("Protocol: CV")

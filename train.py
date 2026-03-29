@@ -175,6 +175,7 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
     stem_type = kwargs.get("stem_type", "patch")
     stem_channels = int(kwargs.get("stem_channels", 32))
     output_head = kwargs.get("output_head", "linear")
+    expand_type = kwargs.get("expand_type", "patch")
 
     _require_positive_int("model.swin.img_size", img_size)
     _require_positive_int("model.swin.patch_size", patch_size)
@@ -198,6 +199,10 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
         raise ValueError(
             "model.swin.output_head must be 'linear', 'stem_skip_conv', or "
             f"'stem_skip_resize_conv', got {output_head!r}"
+        )
+    if expand_type not in {"patch", "nearest_conv"}:
+        raise ValueError(
+            f"model.swin.expand_type must be 'patch' or 'nearest_conv', got {expand_type!r}"
         )
     if cross_attn_stages is not None:
         if not isinstance(cross_attn_stages, (list, tuple)):
@@ -279,6 +284,7 @@ def _format_model_details(info: dict) -> str:
             f"channel_se={info.get('channel_se', False)} "
             f"cross_attn={info.get('cross_attn_cond', False)} "
             f"stem={info.get('stem_type', 'patch')} head={info.get('output_head', 'linear')} "
+            f"expand={info.get('expand_type', 'patch')} "
             f"dropout={info['dropout']}"
         )
     return str(info)
@@ -371,6 +377,7 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
                 "stem_type",
                 "stem_channels",
                 "output_head",
+                "expand_type",
             ),
         )
         _validate_swin_kwargs(common, resolved)
@@ -501,8 +508,6 @@ def main():
             sigma_data = ecfg.get("sigma_data", 0.5),
         )
         loss_fn = edm_obj.loss_fn
-        # Trainer가 model을 forward하지만 EDM에서는 precond가 model을 내부적으로 가짐
-        # loss_fn(model, x0, cond) → 내부적으로 edm_obj.loss(x0, cond) 호출
         model = precond   # Trainer에 precond를 model로 전달
         print(f"[train] EDM preconditioning 적용  σ_data={ecfg.get('sigma_data',0.5)}")
 

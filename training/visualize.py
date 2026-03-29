@@ -351,24 +351,41 @@ class EpochVisualizer:
             sampled_maps: list[tuple[str, np.ndarray]] = []
             for sampler_name, sampler_fn in self.samplers:
                 print(f"  [viz] {sampler_name} sampling ...", flush=True)
-                raw_sample = sampler_fn(model, shape, self.ref_cond)
-                raw_sample = raw_sample[0] if isinstance(raw_sample, tuple) else raw_sample
-                raw_sample = self._tensor_to_numpy(raw_sample)
-                if raw_sample.ndim == 4 and raw_sample.shape[0] == 1:
-                    raw_sample = raw_sample[0]
-                sampled_maps.append((sampler_name, self._denorm_maps(raw_sample)))
+                try:
+                    raw_sample = sampler_fn(model, shape, self.ref_cond)
+                    raw_sample = raw_sample[0] if isinstance(raw_sample, tuple) else raw_sample
+                    raw_sample = self._tensor_to_numpy(raw_sample)
+                    if raw_sample.ndim == 4 and raw_sample.shape[0] == 1:
+                        raw_sample = raw_sample[0]
+                    sampled_maps.append((sampler_name, self._denorm_maps(raw_sample)))
+                except Exception as sampler_exc:
+                    print(
+                        f"  [viz] WARNING: {sampler_name} sampling failed at "
+                        f"epoch {epoch+1:04d} — {sampler_exc}",
+                        flush=True,
+                    )
 
-            self._plot_samples(epoch, sampled_maps, is_best=is_best)
-            self._plot_power_spectrum(
-                epoch,
-                sampled_maps,
-                self.power_plot_spaces,
-                is_best=is_best,
-            )
+            if sampled_maps:
+                self._plot_samples(epoch, sampled_maps, is_best=is_best)
+                self._plot_power_spectrum(
+                    epoch,
+                    sampled_maps,
+                    self.power_plot_spaces,
+                    is_best=is_best,
+                )
+            else:
+                print(
+                    f"  [viz] WARNING: all visualization samplers failed at "
+                    f"epoch {epoch+1:04d}; sample/power plots skipped",
+                    flush=True,
+                )
+
             self._print_metrics(epoch, model, history)
 
             torch.cuda.empty_cache()
             mode = "epoch-update" if self.viz_every_epoch else "best-update"
+            if not sampled_maps:
+                mode = f"{mode}, metrics-only"
             print(f"  [viz] saved({mode}) → {self.plot_dir}", flush=True)
         except Exception as e:
             print(f"  [viz] WARNING: plot failed at epoch {epoch+1} — {e}", flush=True)

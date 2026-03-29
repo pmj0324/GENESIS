@@ -10,6 +10,10 @@ logs/
 
 # 출력물 (재생성 가능)
 outputs/
+evaluation_results/
+
+# 로컬 백업
+_backup/
 
 # 실험 결과 (runs/)
 # runs/ 아래는 기본적으로 모두 ignore 하고,
