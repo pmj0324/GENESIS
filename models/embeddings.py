@@ -31,7 +31,6 @@ class SinusoidalEmbedding(nn.Module):
 
 class TimestepEmbedding(nn.Module):
     """Sinusoidal → 2-layer MLP → t embedding."""
-
     def __init__(self, sin_dim: int = 256, out_dim: int = 512):
         super().__init__()
         self.sin = SinusoidalEmbedding(sin_dim)

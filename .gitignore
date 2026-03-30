@@ -11,7 +11,7 @@ logs/
 # 출력물 (재생성 가능)
 outputs/
 evaluation_results/
-
+eval_suite_results/
 # 로컬 백업
 _backup/
 

@@ -1,5 +1,5 @@
 ##############################################################################
-# swin_flow_custom_l_cosine_0329_ft_cosine_ema.yaml
+# swin_flow_custom_l_cosine_0329_ft_cosine_ema_nowarmup_cosine_0330/config_resume.yaml
 #
 # 목적:
 #   - runs/flow/swin/swin_flow_custom_l_cosine_0329/best.pt 에서 가중치만 이어받아 추가 학습
@@ -9,7 +9,7 @@
 #
 # 사용:
 #   python train.py \
-#     --config configs/experiments/flow/swin/swin_flow_custom_l_cosine_0329_ft_cosine_ema.yaml \
+#     --config runs/flow/swin/swin_flow_custom_l_cosine_0329_ft_cosine_ema_nowarmup_cosine_0330/config_resume.yaml \
 #     --finetune runs/flow/swin/swin_flow_custom_l_cosine_0329/best.pt
 #
 # 참고:
@@ -40,7 +40,7 @@ generative:
     steps: 25
     rtol: 1.0e-4
     atol: 1.0e-4
-    cfg_scale: 1.01
+    cfg_scale: 1.2
     viz:
       sampler_a: dopri5
       sampler_b: dopri5
@@ -49,17 +49,17 @@ generative:
       eval_n: 15
       every_epoch: true
 training:
-  batch_size: 32
+  batch_size: 64
   num_workers: 20
   max_epochs: 120
-  lr: 1.0e-5
+  lr: 2.0e-5
   weight_decay: 1.0e-2
   betas: [0.9, 0.999]
   warmup_epochs: 0
   grad_clip: 1.0
   optimizer: adamw
   schedule: cosine
-  T_max: 120
+  T_max: 40
   eta_min: 3.0e-8
   ema:
     enabled: true
@@ -68,7 +68,7 @@ training:
     update_after_step: auto
     min_update_after_step: 500
     eval_with_ema: true
-  early_stop_patience: 35
+  early_stop_patience: 40
 checkpoint:
-  ckpt_dir: runs/flow/swin/swin_flow_custom_l_cosine_0329_ft_cosine_ema/
+  ckpt_dir: runs/flow/swin/swin_flow_custom_l_cosine_0329_ft_cosine_ema_nowarmup_cosine_0330/
   ckpt_name: best.pt
