@@ -1,22 +1,17 @@
 ##############################################################################
-# unet_flow_0330_ft_plateau.yaml
+# unet_flow_0330_s.yaml
 #
 # 목적:
-#   - runs/flow/unet/unet_flow_0330/best.pt 에서 UNet Flow를 이어서 fine-tuning
-#   - 이미 수렴한 가중치 기준으로 작은 LR + plateau 스케줄로 미세 조정
-#   - 원본 run은 보존하고 새 ckpt_dir에 저장
+#   - 기존 unet_flow_0330 설정을 기준으로 UNet S preset 실험
+#   - 데이터/생성 프레임워크는 최대한 동일하게 두고 모델 크기만 줄여 비교
 #
 # 사용:
 #   python train.py \
-#     --config configs/experiments/flow/unet/unet_flow_0330_ft_plateau.yaml \
-#     --finetune runs/flow/unet/unet_flow_0330/best.pt
+#     --config configs/experiments/flow/unet/unet_flow_0330_s.yaml
 #
 # 변경 포인트 vs unet_flow_0330:
-#   - lr: 3e-5 -> 1e-5
-#   - schedule: cosine -> plateau
-#   - warmup_epochs: 5 -> 0
-#   - max_epochs: 500 -> 180
-#   - early_stop_patience: 15 -> 30
+#   - preset: B -> S
+#   - 작은 모델이라 batch_size를 8 -> 16으로 상향
 #   - ckpt_dir 분리
 ##############################################################################
 
@@ -30,7 +25,7 @@ model:
   cond_dim: 6
   dropout: 0.05
   unet:
-    preset: B
+    preset: S
     attention_resolution: 32
     circular_conv: true
 
@@ -55,23 +50,18 @@ generative:
       every_epoch: true
 
 training:
-  batch_size: 8
+  batch_size: 16
   num_workers: 20
-  max_epochs: 180
-
-  lr: 1.0e-5
+  max_epochs: 500
+  lr: 3.0e-5
   weight_decay: 1.0e-2
   betas: [0.9, 0.999]
+  warmup_epochs: 5
   grad_clip: 1.0
   optimizer: adamw
-
-  schedule: plateau
-  plateau_patience: 4
-  plateau_factor: 0.65
-  eta_min: 1.0e-7
-
-  warmup_epochs: 0
-
+  schedule: cosine
+  T_max: 5
+  eta_min: 3.0e-8
   ema:
     enabled: true
     decay: 0.9999
@@ -79,9 +69,8 @@ training:
     update_after_step: auto
     min_update_after_step: 500
     eval_with_ema: true
-
-  early_stop_patience: 30
+  early_stop_patience: 15
 
 checkpoint:
-  ckpt_dir: runs/flow/unet/unet_flow_0330_ft_plateau/
+  ckpt_dir: runs/flow/unet/unet_flow_0330_s/
   ckpt_name: best.pt
