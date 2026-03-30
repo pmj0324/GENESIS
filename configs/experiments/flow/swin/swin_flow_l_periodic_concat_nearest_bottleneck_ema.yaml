@@ -30,10 +30,9 @@
 ##############################################################################
 
 data:
-  data_fraction: 1.0
+  data_fraction: 0.1
   data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100_om10split
   norm_config: configs/normalization/affine_mean_mix_m130_m125_m100.yaml
-  augment: true
 
 model:
   architecture: swin
@@ -52,14 +51,14 @@ model:
 
     # Stronger periodic/local prior to close the gap with circular-conv UNet
     periodic_boundary: true
-    stem_type: conv2x_periodic
-    stem_channels: 32
-    expand_type: nearest_conv
-    output_head: linear
+    #stem_type: conv2x_periodic
+    #stem_channels: 32
+    #expand_type: nearest_conv
+    #output_head: linear
 
     # Keep extra conditioning focused and stable
-    channel_se: true
-    channel_se_reduction: 4
+    #channel_se: true
+    #channel_se_reduction: 4
     cross_attn_cond: true
     cross_attn_stages: [bottleneck]
     cond_token_depth: 1
@@ -86,10 +85,10 @@ generative:
 
 training:
   # L-scale + deeper high/low-res stages 조합이라 학습률은 보수적으로 시작
-  batch_size: 16
+  batch_size: 64
   num_workers: 20
   max_epochs: 400
-  lr: 7.0e-5
+  lr: 3.0e-4
   weight_decay: 1.0e-2
   betas: [0.9, 0.999]
   warmup_epochs: 10
