@@ -54,11 +54,11 @@ model:
     #output_head: stem_skip_resize_conv
     #expand_type: nearest_conv
 
-    channel_se: true
-    channel_se_reduction: 4
+    #channel_se: true
+    #channel_se_reduction: 4
     cross_attn_cond: true
     cross_attn_stages: [bottleneck]
-    cond_token_depth: 1
+    cond_token_depth: 2
 
 generative:
   framework: flow_matching

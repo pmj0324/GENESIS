@@ -1,0 +1,75 @@
+═══ GENESIS Evaluation Summary ═══
+
+Protocol: LH [LOG10 SPACE]
+
+Auto-Power Spectrum (field+scale-dependent thresholds):
+  Mcdm    : mean=  3.8%  max= 17.6%  rms=  5.0%  → PASS
+     low_k: mean=  7.9% (thr=15%)  rms=  9.5% (thr=22%)  → PASS
+     mid_k: mean=  2.4% (thr=15%)  rms=  3.0% (thr=22%)  → PASS
+    high_k: mean=  3.1% (thr=25%)  rms=  3.4% (thr=38%)  → PASS
+  Mgas    : mean=  3.6%  max= 16.4%  rms=  4.9%  → PASS
+     low_k: mean=  7.7% (thr=18%)  rms=  9.0% (thr=27%)  → PASS
+     mid_k: mean=  2.6% (thr=18%)  rms=  3.3% (thr=27%)  → PASS
+    high_k: mean=  2.6% (thr=30%)  rms=  3.2% (thr=45%)  → PASS
+  T       : mean=  6.4%  max= 17.8%  rms=  7.2%  → PASS
+     low_k: mean=  8.9% (thr=20%)  rms= 10.1% (thr=30%)  → PASS
+     mid_k: mean=  6.3% (thr=20%)  rms=  7.1% (thr=30%)  → PASS
+    high_k: mean=  5.5% (thr=35%)  rms=  5.8% (thr=52%)  → PASS
+
+Cross-Power Spectrum (pair-dependent thresholds):
+  Mcdm-Mgas   : mean=  4.6%  (thr=30%)  → PASS
+  Mcdm-T      : mean= 17.9%  (thr=60%)  → PASS
+  Mgas-T      : mean= 16.0%  (thr=60%)  → PASS
+
+Correlation Coefficient (scale-dependent thresholds):
+  Mcdm-Mgas   : max_Δr=0.021  → PASS
+     all_k: max_Δr=0.021  (thr=0.10)  → PASS
+  Mcdm-T      : max_Δr=0.060  → PASS
+     all_k: max_Δr=0.060  (thr=0.30)  → PASS
+  Mgas-T      : max_Δr=0.061  → PASS
+     all_k: max_Δr=0.061  (thr=0.30)  → PASS
+
+Pixel Distribution (KS D<0.05, μ_err<5%, σ_err<10%):
+  Mcdm    : D=0.016  p=7.50e-06  μ_err=0.1%  σ_err=0.1%  → PASS
+  Mgas    : D=0.010  p=9.09e-03  μ_err=0.1%  σ_err=1.6%  → PASS
+  T       : D=0.018  p=1.27e-07  μ_err=0.8%  σ_err=2.6%  [unimodal]  → PASS
+
+Overall: PASS
+
+
+Protocol: LH [PHYSICAL SPACE — THRESHOLDS INDICATIVE]
+
+Auto-Power Spectrum (field+scale-dependent thresholds):
+  Mcdm    : mean=  9.5%  max= 56.5%  rms= 16.3%  → FAIL
+     low_k: mean= 27.8% (thr=15%)  rms= 32.7% (thr=22%)  → FAIL
+     mid_k: mean=  8.4% (thr=15%)  rms= 13.0% (thr=22%)  → PASS
+    high_k: mean=  3.3% (thr=25%)  rms=  4.7% (thr=38%)  → PASS
+  Mgas    : mean= 12.6%  max= 20.7%  rms= 14.2%  → PASS
+     low_k: mean= 11.8% (thr=18%)  rms= 14.3% (thr=27%)  → PASS
+     mid_k: mean=  6.9% (thr=18%)  rms=  8.2% (thr=27%)  → PASS
+    high_k: mean= 16.9% (thr=30%)  rms= 17.1% (thr=45%)  → PASS
+  T       : mean= 24.6%  max= 73.8%  rms= 31.1%  → FAIL
+     low_k: mean= 51.4% (thr=20%)  rms= 55.3% (thr=30%)  → FAIL
+     mid_k: mean= 23.2% (thr=20%)  rms= 24.8% (thr=30%)  → FAIL
+    high_k: mean= 15.3% (thr=35%)  rms= 20.2% (thr=52%)  → PASS
+
+Cross-Power Spectrum (pair-dependent thresholds):
+  Mcdm-Mgas   : mean= 11.0%  (thr=30%)  → PASS
+  Mcdm-T      : mean= 21.0%  (thr=60%)  → PASS
+  Mgas-T      : mean= 27.2%  (thr=60%)  → PASS
+
+Correlation Coefficient (scale-dependent thresholds):
+  Mcdm-Mgas   : max_Δr=0.032  → PASS
+     all_k: max_Δr=0.032  (thr=0.10)  → PASS
+  Mcdm-T      : max_Δr=0.092  → PASS
+     all_k: max_Δr=0.092  (thr=0.30)  → PASS
+  Mgas-T      : max_Δr=0.079  → PASS
+     all_k: max_Δr=0.079  (thr=0.30)  → PASS
+
+Pixel Distribution (KS D<0.05, μ_err<5%, σ_err<10%):
+  Mcdm    : D=0.016  p=7.50e-06  μ_err=0.1%  σ_err=0.1%  → PASS
+  Mgas    : D=0.010  p=9.09e-03  μ_err=0.1%  σ_err=1.6%  → PASS
+  T       : D=0.018  p=1.27e-07  μ_err=0.8%  σ_err=2.6%  [unimodal]  → PASS
+
+Overall: FAIL
+

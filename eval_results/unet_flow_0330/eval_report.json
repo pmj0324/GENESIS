@@ -1,0 +1,182 @@
+{
+  "_meta": {
+    "checkpoint": "/home/work/cosmology/GENESIS/runs/flow/unet/unet_flow_0330/best.pt",
+    "config": "/home/work/cosmology/GENESIS/runs/flow/unet/unet_flow_0330/config.yaml",
+    "split": "test",
+    "n_conditions": 100,
+    "n_gen": 8,
+    "cfg_scale": 1.0,
+    "seed": 42,
+    "model_source": "auto",
+    "box_size": 25.0,
+    "protocols": [
+      "lh"
+    ],
+    "samples_npy": null
+  },
+  "lh": {
+    "n_conditions": 100,
+    "auto_power": {
+      "Mcdm": {
+        "mean_error_avg": 0.407524937614253,
+        "mean_error_std": 1.2794855807284096,
+        "pass_rate": 0.0,
+        "passed": false,
+        "scale_errors_avg": {
+          "low_k": {
+            "mean_error_avg": 1.5174456982511912,
+            "rms_error_avg": 2.8298001771758394,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "pass_rate": 0.01,
+            "passed": false
+          },
+          "mid_k": {
+            "mean_error_avg": 0.1818665412600168,
+            "rms_error_avg": 0.24394231942293376,
+            "threshold_mean": 0.15,
+            "threshold_rms": 0.225,
+            "pass_rate": 0.33,
+            "passed": false
+          },
+          "high_k": {
+            "mean_error_avg": 0.13685738099913258,
+            "rms_error_avg": 0.15008826795937963,
+            "threshold_mean": 0.25,
+            "threshold_rms": 0.375,
+            "pass_rate": 0.94,
+            "passed": true
+          }
+        }
+      },
+      "Mgas": {
+        "mean_error_avg": 0.35751119458592784,
+        "mean_error_std": 0.4793308921154988,
+        "pass_rate": 0.01,
+        "passed": false,
+        "scale_errors_avg": {
+          "low_k": {
+            "mean_error_avg": 1.1057880710038273,
+            "rms_error_avg": 1.900560991889518,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "pass_rate": 0.02,
+            "passed": false
+          },
+          "mid_k": {
+            "mean_error_avg": 0.1826604848565207,
+            "rms_error_avg": 0.23965698247572387,
+            "threshold_mean": 0.18,
+            "threshold_rms": 0.27,
+            "pass_rate": 0.54,
+            "passed": true
+          },
+          "high_k": {
+            "mean_error_avg": 0.19076288731478688,
+            "rms_error_avg": 0.22764999379225972,
+            "threshold_mean": 0.3,
+            "threshold_rms": 0.45,
+            "pass_rate": 0.9,
+            "passed": true
+          }
+        }
+      },
+      "T": {
+        "mean_error_avg": 0.3949304016712155,
+        "mean_error_std": 0.3125187982620196,
+        "pass_rate": 0.02,
+        "passed": false,
+        "scale_errors_avg": {
+          "low_k": {
+            "mean_error_avg": 1.204995720283993,
+            "rms_error_avg": 1.8074178573266568,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "pass_rate": 0.03,
+            "passed": false
+          },
+          "mid_k": {
+            "mean_error_avg": 0.23591721046780542,
+            "rms_error_avg": 0.2988208161642274,
+            "threshold_mean": 0.2,
+            "threshold_rms": 0.3,
+            "pass_rate": 0.54,
+            "passed": true
+          },
+          "high_k": {
+            "mean_error_avg": 0.19345287303789271,
+            "rms_error_avg": 0.2429373724538966,
+            "threshold_mean": 0.35,
+            "threshold_rms": 0.525,
+            "pass_rate": 0.9,
+            "passed": true
+          }
+        }
+      }
+    },
+    "cross_power": {
+      "Mcdm-Mgas": {
+        "mean_error_avg": 0.6993587136310631,
+        "mean_error_std": 3.962393030973668,
+        "pass_rate": 0.68,
+        "passed": true,
+        "threshold": 0.3
+      },
+      "Mcdm-T": {
+        "mean_error_avg": 1.9669908632837865,
+        "mean_error_std": 6.535210950133662,
+        "pass_rate": 0.4,
+        "passed": false,
+        "threshold": 0.6
+      },
+      "Mgas-T": {
+        "mean_error_avg": 1.0443387211302966,
+        "mean_error_std": 1.547145949076274,
+        "pass_rate": 0.49,
+        "passed": false,
+        "threshold": 0.6
+      }
+    },
+    "correlation": {
+      "Mcdm-Mgas": {
+        "max_delta_r_avg": 0.055714570005167934,
+        "max_delta_r_std": 0.07766296287704472,
+        "pass_rate": 0.97,
+        "passed": true
+      },
+      "Mcdm-T": {
+        "max_delta_r_avg": 0.34014094692853597,
+        "max_delta_r_std": 0.18859130561558396,
+        "pass_rate": 0.51,
+        "passed": true
+      },
+      "Mgas-T": {
+        "max_delta_r_avg": 0.2959747732906909,
+        "max_delta_r_std": 0.1677467289486016,
+        "pass_rate": 0.66,
+        "passed": true
+      }
+    },
+    "pdf": {
+      "Mcdm": {
+        "ks_statistic_avg": 0.11486460000000003,
+        "ks_statistic_std": 0.07404083299666475,
+        "pass_rate": 0.18,
+        "passed": false
+      },
+      "Mgas": {
+        "ks_statistic_avg": 0.12180780000000001,
+        "ks_statistic_std": 0.07869963414883198,
+        "pass_rate": 0.14,
+        "passed": false
+      },
+      "T": {
+        "ks_statistic_avg": 0.1377756,
+        "ks_statistic_std": 0.08042071820519885,
+        "pass_rate": 0.07,
+        "passed": false
+      }
+    },
+    "passed_overall": false
+  }
+}
