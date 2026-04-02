@@ -198,14 +198,27 @@ def _to_log10(phys: np.ndarray) -> np.ndarray:
     return np.log10(np.clip(phys, 1e-30, None))
 
 
+def _to_ps_field(channel_idx: int, phys_map: np.ndarray) -> np.ndarray:
+    """Convert one physical-space map to the field used for P(k) plotting.
+
+    Mcdm/Mgas: linear overdensity field.
+    T: log10-temperature field.
+    """
+    phys_map = np.asarray(phys_map, dtype=np.float64)
+    if channel_idx in (0, 1):
+        mean_val = phys_map.mean()
+        return (phys_map - mean_val) / (mean_val + 1e-60)
+    return _to_log10(phys_map)
+
+
 def _compute_pk(
-    log10_map: np.ndarray,
+    field: np.ndarray,
     box_size: float = 25.0,
     n_bins: int = 30,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """(H, W) log10 map → (k_centers, Pk)."""
+    """(H, W) power-spectrum field representation → (k_centers, Pk)."""
     return compute_cross_power_spectrum_2d(
-        log10_map, log10_map, box_size=box_size, n_bins=n_bins
+        field, field, box_size=box_size, n_bins=n_bins
     )
 
 
@@ -309,7 +322,7 @@ def _draw_pk_panel(
 
         # 생성 샘플 라인
         for gi, g in enumerate(gen_phys):
-            k, Pk = _compute_pk(_to_log10(g[ci]), box_size)
+            k, Pk = _compute_pk(_to_ps_field(ci, g[ci]), box_size)
             mask = (k > 0) & (Pk > 0) if log_scale else np.ones_like(k, bool)
             ax.plot(
                 k[mask], Pk[mask],
@@ -319,7 +332,7 @@ def _draw_pk_panel(
 
         # 실제 맵 레퍼런스
         if real_phys is not None:
-            k, Pk = _compute_pk(_to_log10(real_phys[ci]), box_size)
+            k, Pk = _compute_pk(_to_ps_field(ci, real_phys[ci]), box_size)
             mask = (k > 0) & (Pk > 0) if log_scale else np.ones_like(k, bool)
             ax.plot(k[mask], Pk[mask], color=REAL_COLOR, lw=2.0, zorder=5, label="Real")
 

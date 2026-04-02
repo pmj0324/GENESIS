@@ -53,6 +53,7 @@ from sample import (
     _to_log10,
     _draw_pk_panel,
     _params_footer,
+    _to_ps_field,
     plot_fields,
 )
 from evaluation.cli.evaluate import build_sampler_fn
@@ -412,12 +413,13 @@ def plot_power_spectrum_bands(
         all_true_pk, all_gen_pk, k_ref = [], [], None
 
         for r in per_cond:
-            true_map = r["true_log10"][0, ci]   # (H, W)
+            true_map = _to_ps_field(ci, r["true_phys"][ci])   # (H, W)
             k, pt = compute_cross_power_spectrum_2d(true_map, true_map, box_size=box_size)
             all_true_pk.append(pt)
             if k_ref is None:
                 k_ref = k
-            for g_map in r["gen_log10"][:, ci]:
+            for g_phys in r["gen_phys"][:, ci]:
+                g_map = _to_ps_field(ci, g_phys)
                 _, pg = compute_cross_power_spectrum_2d(g_map, g_map, box_size=box_size)
                 all_gen_pk.append(pg)
 
@@ -446,12 +448,12 @@ def plot_power_spectrum_bands(
     print(f"  saved: {out_path.name}")
 
 
-def save_per_sample_visualizations(
+def save_per_condition_artifacts(
     per_cond: list[dict],
     out_dir: Path,
     box_size: float = 25.0,
 ) -> None:
-    """조건별/샘플별 필드 및 파워스펙트럼 플롯 저장."""
+    """조건별 생성 샘플/참조맵 저장 + 겹쳐진 플롯 저장."""
     base_dir = out_dir / "by_condition"
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -464,6 +466,8 @@ def save_per_sample_visualizations(
         true_phys = result["true_phys"]
         params_phys = result["params_phys"]
 
+        np.save(cond_dir / "samples.npy", gen_phys.astype(np.float32, copy=False))
+        np.save(cond_dir / "true.npy", true_phys[None].astype(np.float32, copy=False))
         plot_fields(gen_phys, true_phys, params_phys, cond_dir / "fields_all.png")
         plot_power_spectra_combined(
             gen_phys,
@@ -472,19 +476,6 @@ def save_per_sample_visualizations(
             cond_dir / "power_spectrum_all.png",
             box_size=box_size,
         )
-
-        for sample_idx in range(len(gen_phys)):
-            sample_dir = cond_dir / f"sample_{sample_idx + 1:02d}"
-            sample_dir.mkdir(parents=True, exist_ok=True)
-            single_gen = gen_phys[sample_idx : sample_idx + 1]
-            plot_fields(single_gen, true_phys, params_phys, sample_dir / "fields.png")
-            plot_power_spectra_combined(
-                single_gen,
-                true_phys,
-                params_phys,
-                sample_dir / "power_spectrum.png",
-                box_size=box_size,
-            )
 
 
 def plot_power_spectra_combined(
@@ -930,8 +921,8 @@ def main():
                 per_cond_results, solver_out_dir / "auto_power_lin.png",
                 box_size=args.box_size, log_scale=False,
             )
-            print("[eval] 조건/샘플별 플롯 저장 중 ...")
-            save_per_sample_visualizations(
+            print("[eval] 조건별 샘플/플롯 저장 중 ...")
+            save_per_condition_artifacts(
                 per_cond_results,
                 solver_out_dir,
                 box_size=args.box_size,
