@@ -46,8 +46,15 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# sample.py 의 핵심 API import
-from sample import load_model_and_normalizer, generate_samples, _to_log10
+# sample.py 의 핵심 API / plotting import
+from sample import (
+    load_model_and_normalizer,
+    generate_samples,
+    _to_log10,
+    _draw_pk_panel,
+    _params_footer,
+    plot_fields,
+)
 from evaluation.cli.evaluate import build_sampler_fn
 
 from dataloader.normalization import (
@@ -111,6 +118,8 @@ def evaluate_condition(
     pdf_res       = compare_pixel_distributions(true_rep, gen_log10, log=False)
 
     return {
+        "gen_phys":           gen_phys,
+        "true_phys":          true_phys,
         "gen_log10":          gen_log10,
         "true_log10":         true_log10,
         "spectrum_errors":    spectrum_err,
@@ -437,6 +446,69 @@ def plot_power_spectrum_bands(
     print(f"  saved: {out_path.name}")
 
 
+def save_per_sample_visualizations(
+    per_cond: list[dict],
+    out_dir: Path,
+    box_size: float = 25.0,
+) -> None:
+    """조건별/샘플별 필드 및 파워스펙트럼 플롯 저장."""
+    base_dir = out_dir / "by_condition"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    for result in per_cond:
+        cond_idx = int(result["condition_index"])
+        cond_dir = base_dir / f"cond_{cond_idx:04d}"
+        cond_dir.mkdir(parents=True, exist_ok=True)
+
+        gen_phys = result["gen_phys"]
+        true_phys = result["true_phys"]
+        params_phys = result["params_phys"]
+
+        plot_fields(gen_phys, true_phys, params_phys, cond_dir / "fields_all.png")
+        plot_power_spectra_combined(
+            gen_phys,
+            true_phys,
+            params_phys,
+            cond_dir / "power_spectrum_all.png",
+            box_size=box_size,
+        )
+
+        for sample_idx in range(len(gen_phys)):
+            sample_dir = cond_dir / f"sample_{sample_idx + 1:02d}"
+            sample_dir.mkdir(parents=True, exist_ok=True)
+            single_gen = gen_phys[sample_idx : sample_idx + 1]
+            plot_fields(single_gen, true_phys, params_phys, sample_dir / "fields.png")
+            plot_power_spectra_combined(
+                single_gen,
+                true_phys,
+                params_phys,
+                sample_dir / "power_spectrum.png",
+                box_size=box_size,
+            )
+
+
+def plot_power_spectra_combined(
+    gen_phys: np.ndarray,
+    real_phys: np.ndarray | None,
+    params_phys: np.ndarray,
+    out_path: Path,
+    box_size: float = 25.0,
+) -> None:
+    """Linear/log-log 파워스펙트럼을 한 장에 함께 저장."""
+    footer = _params_footer(params_phys)
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8.2))
+    fig.suptitle(
+        f"Power Spectrum (linear + log-log)\n{footer}",
+        fontsize=9,
+    )
+    _draw_pk_panel(axes[0], gen_phys, real_phys, box_size, log_scale=False)
+    _draw_pk_panel(axes[1], gen_phys, real_phys, box_size, log_scale=True)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved: {out_path.name}")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 보고서 저장
 # ══════════════════════════════════════════════════════════════════════════════
@@ -534,6 +606,23 @@ def save_report(aggregated: dict, cv_results: dict | None, out_dir: Path, meta: 
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# samples-meta 헬퍼
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _load_samples_metadata(meta_path: Path) -> dict:
+    """sample.py 가 저장한 metadata.json 을 읽고 기본 형식을 검증."""
+    if not meta_path.exists():
+        raise FileNotFoundError(f"{meta_path}")
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    if not isinstance(meta, dict):
+        raise ValueError(f"--samples-meta 는 JSON object 여야 합니다: {meta_path}")
+    return meta
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # CLI
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -602,9 +691,44 @@ def parse_args():
 def main():
     args = parse_args()
 
+    if args.samples_meta is not None and args.samples_npy is None:
+        raise ValueError("--samples-meta 는 --samples-npy 와 함께 사용해야 합니다.")
+
     device  = args.device if torch.cuda.is_available() else "cpu"
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    samples_meta = None
+    preloaded_mode = None
+    preloaded_ref_idx = None
+    effective_split = args.split
+
+    if args.samples_meta is not None:
+        meta_path = Path(args.samples_meta)
+        samples_meta = _load_samples_metadata(meta_path)
+        print(f"[eval] samples-meta 로드: {meta_path.resolve()}")
+
+        meta_mode = samples_meta.get("mode")
+        meta_split = samples_meta.get("split")
+        meta_ref_idx = samples_meta.get("ref_idx")
+
+        if meta_mode == "ref_idx":
+            if meta_ref_idx is None:
+                raise ValueError("--samples-meta 에 mode='ref_idx' 이지만 ref_idx 가 없습니다.")
+            preloaded_mode = "single_condition"
+            preloaded_ref_idx = int(meta_ref_idx)
+            if meta_split is not None:
+                if meta_split != args.split:
+                    print(
+                        f"[eval] samples-meta split={meta_split!r} 가 "
+                        f"--split={args.split!r} 와 달라 metadata 기준으로 평가합니다."
+                    )
+                effective_split = str(meta_split)
+        elif meta_mode == "params":
+            raise ValueError(
+                "--samples-meta 의 mode='params' 샘플은 기준 real map 이 없어 "
+                "eval.py 에서 직접 평가할 수 없습니다."
+            )
 
     # data_dir: --data-dir 없으면 config 에서 읽음
     if args.data_dir:
@@ -619,7 +743,7 @@ def main():
     print("  GENESIS eval.py")
     print("=" * 60)
     print(f"  device      : {device}")
-    print(f"  split       : {args.split}")
+    print(f"  split       : {effective_split}")
     print(f"  protocols   : {args.protocols}")
     print(f"  n_gen/cond  : {args.n_gen}")
     print(f"  cfg_scale   : {args.cfg_scale}")
@@ -644,8 +768,8 @@ def main():
     print(f"[eval] 솔버: {solvers}  (steps override: {args.steps})")
 
     # ── 데이터 로드 ────────────────────────────────────────────────────────────
-    maps_path   = data_dir / f"{args.split}_maps.npy"
-    params_path = data_dir / f"{args.split}_params.npy"
+    maps_path   = data_dir / f"{effective_split}_maps.npy"
+    params_path = data_dir / f"{effective_split}_params.npy"
     if not maps_path.exists():
         raise FileNotFoundError(f"{maps_path}")
 
@@ -666,7 +790,35 @@ def main():
         npy_path = Path(args.samples_npy)
         preloaded_gen = np.load(npy_path).astype(np.float32)   # (N, 3, H, W) physical
         print(f"[eval] 미리 생성된 샘플 로드: {npy_path}  shape={preloaded_gen.shape}")
-        if len(preloaded_gen) != n_cond:
+        if preloaded_gen.ndim != 4:
+            raise ValueError(
+                f"--samples-npy 는 shape=(N, 3, H, W) 여야 합니다. 현재 shape={preloaded_gen.shape}"
+            )
+
+        if samples_meta is not None:
+            meta_shape = samples_meta.get("sample_shape")
+            if meta_shape is not None and tuple(meta_shape) != tuple(preloaded_gen.shape[1:]):
+                raise ValueError(
+                    f"--samples-meta sample_shape={tuple(meta_shape)} 와 "
+                    f"samples-npy shape={tuple(preloaded_gen.shape[1:])} 가 다릅니다."
+                )
+
+        if preloaded_mode == "single_condition":
+            if not (0 <= preloaded_ref_idx < n_total):
+                raise ValueError(
+                    f"samples-meta ref_idx={preloaded_ref_idx} 범위 초과 "
+                    f"({effective_split} 데이터 크기: {n_total})"
+                )
+            if args.n_conditions not in (None, 1):
+                print("[eval] 단일 조건 metadata 이므로 --n-conditions 는 1로 고정합니다.")
+            n_cond = 1
+            indices = np.array([preloaded_ref_idx], dtype=int)
+            print(
+                f"[eval] samples-meta 기준 단일 조건 평가: "
+                f"split={effective_split} ref_idx={preloaded_ref_idx} "
+                f"generated={len(preloaded_gen)}"
+            )
+        elif len(preloaded_gen) != n_cond:
             print(
                 f"  [경고] preloaded_gen 크기({len(preloaded_gen)}) ≠ "
                 f"n_cond({n_cond}). n_cond 을 맞춰 조정합니다."
@@ -708,22 +860,36 @@ def main():
                 cond_seed = args.seed + int(idx)
 
                 if preloaded_gen is not None:
-                    # npy 모드: 미리 생성된 샘플 1개를 n_gen 번 복제
-                    gen_phys_single = preloaded_gen[ii][None]
-                    gen_phys  = np.repeat(gen_phys_single, args.n_gen, axis=0)
+                    if preloaded_mode == "single_condition":
+                        # sample.py 의 samples.npy + metadata.json 조합:
+                        # 하나의 조건에 대해 생성된 여러 샘플을 그대로 평가한다.
+                        gen_phys = preloaded_gen
+                    else:
+                        # generic npy 모드: 조건당 샘플 1개만 있을 때 n_gen 번 복제
+                        gen_phys_single = preloaded_gen[ii][None]
+                        gen_phys = np.repeat(gen_phys_single, args.n_gen, axis=0)
+
+                    gen_count = len(gen_phys)
                     true_norm = all_maps[idx].astype(np.float32)
 
                     true_phys = normalizer.denormalize(
                         torch.from_numpy(true_norm[None].astype(np.float32)).to(device)
                     ).cpu().numpy()[0]
+                    params_phys = denormalize_params(
+                        torch.from_numpy(all_params[idx].astype(np.float32))
+                    ).cpu().numpy()
                     true_log10 = _to_log10(true_phys[None])
                     gen_log10  = _to_log10(gen_phys)
 
-                    true_rep     = np.repeat(true_log10, args.n_gen, axis=0)
+                    true_rep     = np.repeat(true_log10, gen_count, axis=0)
                     spectrum_err = compute_spectrum_errors(true_rep, gen_log10, box_size=args.box_size)
                     corr_err     = compute_correlation_errors(true_rep, gen_log10, box_size=args.box_size)
                     pdf_res      = compare_pixel_distributions(true_rep, gen_log10, log=False)
                     per_cond_results.append({
+                        "condition_index":    int(idx),
+                        "params_phys":        params_phys.astype(np.float32),
+                        "gen_phys":           gen_phys,
+                        "true_phys":          true_phys,
                         "gen_log10":          gen_log10,
                         "true_log10":         true_log10,
                         "spectrum_errors":    spectrum_err,
@@ -742,6 +908,10 @@ def main():
                         device=device,
                         box_size=args.box_size,
                     )
+                    result["condition_index"] = int(idx)
+                    result["params_phys"] = denormalize_params(
+                        torch.from_numpy(all_params[idx].astype(np.float32))
+                    ).cpu().numpy().astype(np.float32)
                     per_cond_results.append(result)
 
             elapsed = time.time() - t0
@@ -750,7 +920,7 @@ def main():
             aggregated = _aggregate_results(per_cond_results)
 
             print("[eval] 플롯 저장 중 ...")
-            title = f"{ckpt_name} | {active_solver} | {args.split} | N={n_cond}"
+            title = f"{ckpt_name} | {active_solver} | {effective_split} | N={n_cond}"
             plot_summary_dashboard(aggregated, solver_out_dir / "dashboard.png", title=title)
             plot_power_spectrum_bands(
                 per_cond_results, solver_out_dir / "auto_power_log.png",
@@ -759,6 +929,12 @@ def main():
             plot_power_spectrum_bands(
                 per_cond_results, solver_out_dir / "auto_power_lin.png",
                 box_size=args.box_size, log_scale=False,
+            )
+            print("[eval] 조건/샘플별 플롯 저장 중 ...")
+            save_per_sample_visualizations(
+                per_cond_results,
+                solver_out_dir,
+                box_size=args.box_size,
             )
 
         else:
@@ -797,7 +973,8 @@ def main():
         meta_out = {
             "checkpoint":   str(Path(args.checkpoint).resolve()),
             "config":       str(Path(args.config).resolve()),
-            "split":        args.split,
+            "split":        effective_split,
+            "requested_split": args.split,
             "n_conditions": n_cond,
             "n_gen":        args.n_gen,
             "cfg_scale":    args.cfg_scale,
@@ -805,7 +982,10 @@ def main():
             "model_source": args.model_source,
             "box_size":     args.box_size,
             "protocols":    args.protocols,
-            "samples_npy":  args.samples_npy,
+            "samples_npy":  str(Path(args.samples_npy).resolve()) if args.samples_npy else None,
+            "samples_meta_path": str(Path(args.samples_meta).resolve()) if args.samples_meta else None,
+            "samples_meta": samples_meta,
+            "preloaded_mode": preloaded_mode,
             "solver":       active_solver,
             "steps":        args.steps if args.steps is not None else _steps_yaml,
         }
