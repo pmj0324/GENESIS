@@ -81,6 +81,8 @@ def load_model_and_normalizer(
     cfg_scale: float | None = None,
     solver: str | None = None,       # None → yaml의 method 그대로
     steps: int | None = None,        # None → yaml의 steps 그대로
+    rtol: float | None = None,       # None → yaml의 rtol 그대로
+    atol: float | None = None,       # None → yaml의 atol 그대로
 ):
     """모델 + 노멀라이저 + 샘플러 로드.
 
@@ -117,6 +119,10 @@ def load_model_and_normalizer(
         cfg.setdefault("generative", {}).setdefault("sampler", {})["method"] = solver
     if steps is not None:
         cfg.setdefault("generative", {}).setdefault("sampler", {})["steps"] = steps
+    if rtol is not None:
+        cfg.setdefault("generative", {}).setdefault("sampler", {})["rtol"] = rtol
+    if atol is not None:
+        cfg.setdefault("generative", {}).setdefault("sampler", {})["atol"] = atol
 
     # Normalizer: 데이터 디렉토리의 metadata.yaml 에서 로드
     data_dir = Path(cfg["data"]["data_dir"])
@@ -143,10 +149,12 @@ def load_model_and_normalizer(
     _sampler_cfg = cfg.get("generative", {}).get("sampler", {})
     _method  = _sampler_cfg.get("method", "?")
     _steps   = _sampler_cfg.get("steps", "?")
+    _rtol    = _sampler_cfg.get("rtol", "?")
+    _atol    = _sampler_cfg.get("atol", "?")
     print(
         f"[sample] model: {n_params:.1f}M params"
         f"{val_str}  source={src}  has_ema={has_ema}"
-        f"  solver={_method}  steps={_steps}"
+        f"  solver={_method}  steps={_steps}  rtol={_rtol}  atol={_atol}"
     )
 
     sampler_fn, model = build_sampler_fn(cfg, model, device)
@@ -196,19 +204,6 @@ def generate_samples(
 
 def _to_log10(phys: np.ndarray) -> np.ndarray:
     return np.log10(np.clip(phys, 1e-30, None))
-
-
-def _to_ps_field(channel_idx: int, phys_map: np.ndarray) -> np.ndarray:
-    """Convert one physical-space map to the field used for P(k) plotting.
-
-    Mcdm/Mgas: linear overdensity field.
-    T: log10-temperature field.
-    """
-    phys_map = np.asarray(phys_map, dtype=np.float64)
-    if channel_idx in (0, 1):
-        mean_val = phys_map.mean()
-        return (phys_map - mean_val) / (mean_val + 1e-60)
-    return _to_log10(phys_map)
 
 
 def _compute_pk(
@@ -303,38 +298,55 @@ def plot_fields(
     print(f"  saved: {out_path.name}")
 
 
+SIBLING_COLOR = "#e53935"   # 형제 맵들 (같은 simulation, 다른 projection)
+
 def _draw_pk_panel(
-    axes,                          # (3,) matplotlib Axes
-    gen_phys: np.ndarray,          # (n_gen, 3, H, W) physical
-    real_phys: np.ndarray | None,  # (3, H, W) physical or None
+    axes,                               # (3,) matplotlib Axes
+    gen_phys: np.ndarray,               # (n_gen, 3, H, W) physical
+    real_phys: np.ndarray | None,       # (3, H, W) physical — 선택된 ref 맵
     box_size: float,
     log_scale: bool,
+    siblings_phys: np.ndarray | None = None,  # (N_sib, 3, H, W) 같은 simulation의 다른 맵들
 ) -> None:
     for ci, (ch, color) in enumerate(zip(CHANNELS, CHANNEL_COLORS)):
         ax = axes[ci]
         ax.set_title(ch, fontsize=11, fontweight="bold")
         ax.set_xlabel("k  [h/Mpc]", fontsize=9)
         ax.set_ylabel("P(k)", fontsize=9)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
         ax.grid(True, alpha=0.3, which="both")
-        if log_scale:
-            ax.set_xscale("log")
-            ax.set_yscale("log")
+
+        # log_scale=True → log10(X_phys),  False(lin) → X_phys 그대로
+        def _field(m):
+            return _to_log10(m) if log_scale else np.asarray(m, dtype=np.float64)
+
+        # 같은 simulation의 다른 projection들 (얇은 빨간 선, 낮은 투명도)
+        if siblings_phys is not None:
+            for si, sib in enumerate(siblings_phys):
+                k, Pk = _compute_pk(_field(sib[ci]), box_size)
+                mask = (k > 0) & (Pk > 0)
+                ax.plot(
+                    k[mask], Pk[mask],
+                    color=SIBLING_COLOR, lw=0.7, alpha=0.3,
+                    label="Real (other proj.)" if si == 0 else None,
+                )
 
         # 생성 샘플 라인
         for gi, g in enumerate(gen_phys):
-            k, Pk = _compute_pk(_to_ps_field(ci, g[ci]), box_size)
-            mask = (k > 0) & (Pk > 0) if log_scale else np.ones_like(k, bool)
+            k, Pk = _compute_pk(_field(g[ci]), box_size)
+            mask = (k > 0) & (Pk > 0)
             ax.plot(
                 k[mask], Pk[mask],
                 color=GEN_COLOR, lw=0.9, alpha=0.75,
                 label="Generated" if gi == 0 else None,
             )
 
-        # 실제 맵 레퍼런스
+        # 선택된 ref 맵 (굵은 빨간 선)
         if real_phys is not None:
-            k, Pk = _compute_pk(_to_ps_field(ci, real_phys[ci]), box_size)
-            mask = (k > 0) & (Pk > 0) if log_scale else np.ones_like(k, bool)
-            ax.plot(k[mask], Pk[mask], color=REAL_COLOR, lw=2.0, zorder=5, label="Real")
+            k, Pk = _compute_pk(_field(real_phys[ci]), box_size)
+            mask = (k > 0) & (Pk > 0)
+            ax.plot(k[mask], Pk[mask], color=REAL_COLOR, lw=2.0, zorder=5, label="Real (ref)")
 
         ax.legend(fontsize=8)
 
@@ -345,16 +357,17 @@ def plot_power_spectra(
     params_phys: np.ndarray,
     out_dir: Path,
     box_size: float = 25.0,
+    siblings_phys: np.ndarray | None = None,
 ) -> None:
     """P(k) 플롯 2종 저장: linear (lin) + log-log (log)."""
     footer = _params_footer(params_phys)
     for log_scale, tag in [(False, "lin"), (True, "log")]:
         fig, axes = plt.subplots(1, 3, figsize=(14, 4.2))
         fig.suptitle(
-            f"Power Spectrum ({'log-log' if log_scale else 'linear scale'})\n{footer}",
+            f"Power Spectrum ({'log10 field' if log_scale else 'physical field'})\n{footer}",
             fontsize=9,
         )
-        _draw_pk_panel(axes, gen_phys, real_phys, box_size, log_scale)
+        _draw_pk_panel(axes, gen_phys, real_phys, box_size, log_scale, siblings_phys)
         fig.tight_layout(rect=[0, 0, 1, 0.88])
         out_path = out_dir / f"power_spectrum_{tag}.png"
         fig.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -462,8 +475,9 @@ def main():
     sample_shape = (3, 256, 256)   # CAMELS 기본
 
     # ── 조건 벡터 결정 ──────────────────────────────────────────────────────────
-    real_phys   = None   # ref-idx 가 있을 때만 채워짐
-    real_norm   = None
+    real_phys      = None   # ref-idx 가 있을 때만 채워짐
+    real_norm      = None
+    siblings_phys  = None  # 같은 simulation의 다른 projection들
 
     if args.params is not None:
         # --params 모드: 물리 → z-score 정규화
@@ -504,8 +518,35 @@ def main():
         real_phys   = real_phys_t.numpy()[0]                       # (3, H, W) physical
         sample_shape = tuple(real_norm.shape)
 
+        # 같은 simulation의 모든 projection 로드 (형제 맵들)
+        # maps_per_sim: metadata에 있으면 사용, 없으면 파라미터 연속 구간으로 자동 감지
+        maps_per_sim = meta.get("maps_per_sim")
+        if maps_per_sim is None:
+            ref_p = all_params[args.ref_idx]
+            _s = args.ref_idx
+            while _s > 0 and np.allclose(all_params[_s - 1], ref_p, atol=1e-5):
+                _s -= 1
+            _e = args.ref_idx
+            while _e < len(all_params) - 1 and np.allclose(all_params[_e + 1], ref_p, atol=1e-5):
+                _e += 1
+            maps_per_sim = _e - _s + 1
+            print(f"  [sample] maps_per_sim 자동 감지: {maps_per_sim}")
+        sim_idx   = args.ref_idx // maps_per_sim
+        sib_start = sim_idx * maps_per_sim
+        sib_end   = min(sib_start + maps_per_sim, len(all_maps))
+        sib_norm  = np.array(all_maps[sib_start:sib_end], dtype=np.float32)  # (N_sib, 3, H, W)
+        # ref 맵 자신은 제외 (이미 real_phys로 따로 그림)
+        sib_mask  = np.arange(sib_start, sib_end) != args.ref_idx
+        sib_norm  = sib_norm[sib_mask]
+        if len(sib_norm) > 0:
+            sib_phys_t   = normalizer.denormalize(
+                torch.from_numpy(sib_norm).to(device)
+            ).cpu()
+            siblings_phys = sib_phys_t.numpy()                    # (N_sib-1, 3, H, W)
+
         print(
-            f"[sample] ref_idx={args.ref_idx}  split={args.split}\n"
+            f"[sample] ref_idx={args.ref_idx}  split={args.split}  "
+            f"sim={sim_idx}  siblings={len(siblings_phys) if siblings_phys is not None else 0}\n"
             f"  조건 (physical): {_params_footer(params_phys)}"
         )
 
@@ -529,7 +570,8 @@ def main():
     # ── 시각화 ────────────────────────────────────────────────────────────────
     print("[sample] 플롯 저장 중 ...")
     plot_fields(gen_phys, real_phys, params_phys, out_dir / "fields.png")
-    plot_power_spectra(gen_phys, real_phys, params_phys, out_dir, box_size=box_size)
+    plot_power_spectra(gen_phys, real_phys, params_phys, out_dir,
+                       box_size=box_size, siblings_phys=siblings_phys)
 
     # ── npy 저장 ─────────────────────────────────────────────────────────────
     if args.save_npy:

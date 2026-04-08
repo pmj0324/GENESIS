@@ -12,6 +12,18 @@ logs/
 outputs/
 evaluation_results/
 eval_suite_results/
+paper_preparation/output/
+samples/
+eval_one_cond_15gen_test/
+GENESIS-data/affine_mean_mix_m130_m125_m100/cv_floor.npz
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+genesis_mnras_full/_not_for_zip/
 # 로컬 백업
 _backup/
 

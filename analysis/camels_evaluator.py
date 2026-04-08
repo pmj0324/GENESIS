@@ -272,6 +272,45 @@ class CAMELSEvaluator:
             else np.empty((0, *self.sample_shape), dtype=np.float32)
         )
 
+    def _generate_norm_per_cond(
+        self,
+        conds_norm,
+        *,
+        n_gen: int = 1,
+        desc: Optional[str] = None,
+        enabled: bool = True,
+    ) -> np.ndarray:
+        """조건마다 n_gen개 샘플을 생성. (N * n_gen, 3, H, W) 반환.
+
+        Args:
+            conds_norm: (N, 6) normalized condition vectors.
+            n_gen: Number of samples per condition.
+            desc: tqdm description label.
+            enabled: Whether to show progress bar.
+
+        Returns:
+            (N * n_gen, 3, H, W) float32 numpy in normalized space.
+            조건 i의 샘플들은 rows [i*n_gen : (i+1)*n_gen].
+        """
+        conds_np = _to_numpy(conds_norm).astype(np.float32, copy=False)
+        if conds_np.ndim == 1:
+            conds_np = conds_np[None, :]
+        if conds_np.ndim != 2 or conds_np.shape[1] != 6:
+            raise ValueError(f"expected conds shape [N,6], got {conds_np.shape}")
+        N = len(conds_np)
+        outputs = []
+        it = range(N)
+        if desc is not None:
+            it = self._progress(it, total=N, desc=desc, enabled=enabled)
+        for i in it:
+            gen = self._generate_norm(conds_np[i : i + 1], n_samples=n_gen)  # (n_gen,3,H,W)
+            outputs.append(gen)
+        return (
+            np.concatenate(outputs, axis=0)
+            if outputs
+            else np.empty((0, *self.sample_shape), dtype=np.float32)
+        )
+
     def _norm_batch_to_log10(self, x_norm_np: np.ndarray) -> np.ndarray:
         """Convert a batch of normalized maps to log10(physical) space.
 
@@ -382,16 +421,22 @@ class CAMELSEvaluator:
         val_maps_np = _to_numpy(val_maps).astype(np.float32, copy=False)
         val_params_np = _to_numpy(val_params)
         N = min(len(val_maps_np), max_samples)
+        n_gen = self.n_gen_per_cond
 
-        # Generate normalized samples ONCE — avoids double model inference
-        gen_norm = self._generate_norm_in_chunks(
-            val_params_np[:N], batch_size=8, desc="LH generate", enabled=verbose
+        # Generate n_gen_per_cond samples per condition → (N * n_gen, 3, H, W)
+        gen_norm = self._generate_norm_per_cond(
+            val_params_np[:N], n_gen=n_gen, desc="LH generate", enabled=verbose
         )
 
-        # Convert true and generated maps to both spaces in one pass
-        true_norm = val_maps_np[:N]
+        # Tile true maps to match: (N * n_gen, 3, H, W)
+        true_norm = np.repeat(val_maps_np[:N], n_gen, axis=0)
+
         if verbose:
-            print("  [evaluate_lh] converting to log10 and physical space ...", flush=True)
+            print(
+                f"  [evaluate_lh] N={N} conds × n_gen={n_gen} = {N*n_gen} pairs  "
+                "converting to log10 and physical space ...",
+                flush=True,
+            )
         true_log10 = self._norm_batch_to_log10(true_norm)
         gen_log10  = self._norm_batch_to_log10(gen_norm)
         true_phys  = self._norm_batch_to_physical(true_norm)
@@ -446,9 +491,18 @@ class CAMELSEvaluator:
             true_log10_list.append(self._to_log10(cv_maps_np[i]))
         true_batch = np.stack(true_log10_list, axis=0)  # (N_cv, 3, H, W)
 
-        # Generated log10 maps
+        # Generated log10 maps — use chunking to avoid OOM with large N_cv
         print(f"  [evaluate_cv] generating {N_cv} fiducial samples ...", flush=True)
-        gen_batch = self._generate_log10(fiducial_cond_norm, n_samples=N_cv)  # (N_cv, 3, H, W)
+        if hasattr(fiducial_cond_norm, "cpu"):
+            fid_np = fiducial_cond_norm.detach().cpu().float().numpy()
+        else:
+            fid_np = np.asarray(fiducial_cond_norm, dtype=np.float32)
+        if fid_np.ndim == 1:
+            fid_np = fid_np[np.newaxis, :]
+        fid_repeated = np.repeat(fid_np, N_cv, axis=0)  # (N_cv, 6)
+        gen_batch = self._generate_log10_in_chunks(
+            fid_repeated, batch_size=8, desc="CV generate", enabled=True
+        )  # (N_cv, 3, H, W)
 
         from .cross_spectrum import compute_cross_power_spectrum_2d
         results = {}
@@ -811,23 +865,41 @@ class CAMELSEvaluator:
 
         # Robust pass: mean + 1σ < target (§4.6)
         pass_robust = {}
+
+        # Auto-power (scale-dependent)
         for ch in CHANNELS:
             s = summary["auto_power"][ch]
-            # Check scale-dependent thresholds
             all_pass = True
             for label, k_lo, k_hi, thr_mean, thr_rms in AUTO_POWER_THRESHOLDS[ch]:
-                # Use overall mean_error as proxy (conservative)
                 if s["mean_error_mean"] + s["mean_error_std"] >= thr_mean:
                     all_pass = False
                     break
             pass_robust[f"auto_{ch}"] = all_pass
 
+        # Cross-power
         from .cross_spectrum import CROSS_POWER_THRESHOLDS
         for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
             s = summary["cross_power"][pair]
             thr = CROSS_POWER_THRESHOLDS[pair]
             pass_robust[f"cross_{pair}"] = bool(
                 s["mean_error_mean"] + s["mean_error_std"] < thr
+            )
+
+        # Correlation r(k) — pair-dependent threshold (max_delta_r + 1σ < thr)
+        from .correlation import CORRELATION_THRESHOLDS
+        for pair in ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]:
+            s = summary["correlation"][pair]
+            thr = max(t for _, _, _, t in CORRELATION_THRESHOLDS[pair])
+            pass_robust[f"corr_{pair}"] = bool(
+                s["max_delta_r_mean"] + s["max_delta_r_std"] < thr
+            )
+
+        # PDF KS statistic (D + 1σ < threshold)
+        from .pixel_distribution import PDF_KS_D_THRESHOLD
+        for ch in CHANNELS:
+            s = summary["pdf"][ch]
+            pass_robust[f"pdf_{ch}"] = bool(
+                s["ks_statistic_mean"] + s["ks_statistic_std"] < PDF_KS_D_THRESHOLD
             )
 
         return {
