@@ -48,6 +48,7 @@ class Trainer:
         # LR Schedule
         schedule:     str    = "cosine",   # "cosine" | "cosine_warmup" | "cosine_restarts" | "plateau"
         warmup_epochs: int   = 5,
+        warmup_scale:  float = 1.0,        # warmup 분모 스케일: LR = base_lr * (epoch+1) / (warmup_epochs * warmup_scale)
         # Cosine / cosine_warmup
         T_max:        int    = 200,
         eta_min:      float  = 1e-6,
@@ -91,6 +92,7 @@ class Trainer:
         self.grad_clip  = grad_clip
         self.early_stop_patience = early_stop_patience
         self.warmup_epochs = warmup_epochs
+        self.warmup_scale  = max(warmup_scale, 1e-8)
         self._schedule_type = schedule
         self.ckpt_dir       = Path(ckpt_dir) if ckpt_dir else None
         self.ckpt_name      = ckpt_name
@@ -103,6 +105,8 @@ class Trainer:
         self.c2ot_loss_fn   = c2ot_loss_fn
         # Gradient Accumulation
         self.grad_accum_steps = max(1, int(grad_accum_steps))
+        # GradScaler: __init__에서 한 번만 생성 → scale factor가 에폭 간 유지됨
+        self.scaler = GradScaler("cuda", enabled=self.use_amp)
 
         # Optimizer
         if optimizer == "adamw":
@@ -191,13 +195,13 @@ class Trainer:
 
     def _warmup_step(self, epoch: int):
         if epoch < self.warmup_epochs:
-            self._set_lr(self._base_lr * (epoch + 1) / self.warmup_epochs)
+            self._set_lr(self._base_lr * (epoch + 1) / (self.warmup_epochs * self.warmup_scale))
 
     def _warmup_lr_for_epoch(self, epoch: int) -> float:
         if self.warmup_epochs <= 0:
             return self._base_lr
         if epoch < self.warmup_epochs:
-            return self._base_lr * (epoch + 1) / self.warmup_epochs
+            return self._base_lr * (epoch + 1) / (self.warmup_epochs * self.warmup_scale)
         return self._base_lr
 
     # ── EMA ───────────────────────────────────────────────────────────────────
@@ -250,7 +254,7 @@ class Trainer:
         self.model.train()
         total, n = 0.0, 0
         accum = self.grad_accum_steps
-        scaler = GradScaler("cuda", enabled=self.use_amp)
+        scaler = self.scaler
         is_warmup = epoch < self.warmup_epochs
         desc = "  [W]train" if is_warmup else "     train"
         pbar = tqdm(loader, desc=desc, leave=False, dynamic_ncols=True, disable=not sys.stdout.isatty())
@@ -300,7 +304,7 @@ class Trainer:
 
         total, n  = 0.0, 0
         accum     = self.grad_accum_steps
-        scaler    = GradScaler("cuda", enabled=self.use_amp)
+        scaler    = self.scaler
         is_warmup = epoch < self.warmup_epochs
         desc      = "  [W] c2ot" if is_warmup else "      c2ot"
         n_steps   = len(pairs) // batch_size
@@ -394,6 +398,7 @@ class Trainer:
         }
         if self.ema_enabled and self.ema_model is not None:
             payload["model_ema"] = self.ema_model.state_dict()
+        payload["scaler"] = self.scaler.state_dict()
         torch.save(payload, self.ckpt_dir / (name or self.ckpt_name))
 
     def load(self, path: Optional[Path] = None) -> int:
@@ -408,6 +413,8 @@ class Trainer:
         ck = torch.load(p, map_location=self.device)
         self.model.load_state_dict(ck["model"])
         self.optimizer.load_state_dict(ck["optimizer"])
+        if ck.get("scaler") is not None:
+            self.scaler.load_state_dict(ck["scaler"])
         start_epoch = int(ck["epoch"]) + 1
 
         if ck.get("scheduler") is not None:

@@ -1,11 +1,11 @@
 ##############################################################################
-# unet_flow_0409_nocfg.yaml
+# unet_flow_0410_nocfg.yaml
 #
 # 목적:
 #   - unet_flow_0330 (B preset) 기반
 #   - CFG 완전 제거 (cfg_prob=0, cfg_scale=1.0)
 #     → 학습된 모델을 likelihood 기반 θ 추정에 직접 사용하기 위함
-#   - cosine_restarts 스케줄 (T_0=50, T_mult=2)
+#   - cosine_restarts 스케줄 (T_0=10, T_mult=1)
 #   - C²OT 옵션 내장 (method 한 줄로 전환)
 #
 # ── C²OT 전환 방법 ─────────────────────────────────────────────────────────
@@ -23,12 +23,12 @@
 #
 # 사용:
 #   python train.py \
-#     --config configs/experiments/flow/unet/unet_flow_0409_nocfg.yaml
+#     --config configs/experiments/flow/unet/unet_flow_0410_nocfg.yaml
 #
 # 변경 포인트 vs unet_flow_0330:
 #   - cfg_prob: 0.1 → 0.0
 #   - cfg_scale: 1.2 → 1.0
-#   - schedule: cosine → cosine_restarts (T_0=50, T_mult=2)
+#   - schedule: cosine → cosine_restarts (T_0=10, T_mult=1)
 #   - warmup_epochs: 5 → 10
 #   - max_epochs: 500 → 700
 #   - early_stop_patience: 15 → 25
@@ -80,19 +80,20 @@ generative:
 
 training:
   batch_size: 16        # GPU에 올라가는 실제 배치 (메모리 한계)
-  grad_accum_steps: 2   # 유효 배치 = 16 × 4 = 64 (메모리 추가 없이 큰 배치 효과)
+  grad_accum_steps: 2   # 유효 배치 = 16 × 2 = 32 (메모리 추가 없이 큰 배치 효과)
   num_workers: 400
   max_epochs: 700
   lr: 1.0e-4
   weight_decay: 1.0e-2
   betas: [0.9, 0.999]
   warmup_epochs: 10
+  warmup_scale: 1
   grad_clip: 1.0
   optimizer: adamw
   schedule: cosine_restarts
   T_0: 10
   T_mult: 1
-  eta_min: 1.0e-7
+  eta_min: 1.0e-6
   ema:
     enabled: true
     decay: 0.9999
@@ -102,5 +103,5 @@ training:
     eval_with_ema: true
   early_stop_patience: 30
 checkpoint:
-  ckpt_dir: runs/flow/unet/0409_ot_nocfg/
+  ckpt_dir: runs/flow/unet/0410_c2ot_nocfg/
   ckpt_name: best.pt
