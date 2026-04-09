@@ -22,6 +22,7 @@
 #   (x0 noise는 에폭마다 새로 샘플링되므로 overfitting 없음)
 #
 # 사용:
+#   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 #   python train.py \
 #     --config configs/experiments/flow/unet/unet_flow_0410_nocfg.yaml
 #
@@ -34,6 +35,7 @@
 #   - early_stop_patience: 15 → 25
 #   - dropout: 0.05 유지
 #   - cross_attn_cond / per_scale_cond: True 명시
+#   - compile.enabled: true (max-autotune)
 ##############################################################################
 
 data:
@@ -80,7 +82,7 @@ generative:
 
 training:
   batch_size: 16        # GPU에 올라가는 실제 배치 (메모리 한계)
-  grad_accum_steps: 2   # 유효 배치 = 16 × 2 = 32 (메모리 추가 없이 큰 배치 효과)
+  grad_accum_steps: 2   # 유효 배치 = 16 × 2 = 32
   num_workers: 400
   max_epochs: 700
   lr: 1.0e-4
@@ -102,6 +104,11 @@ training:
     min_update_after_step: 500
     eval_with_ema: true
   early_stop_patience: 30
+
+compile:
+  enabled: true
+  mode: max-autotune      # default | reduce-overhead | max-autotune
+
 checkpoint:
   ckpt_dir: runs/flow/unet/0410_c2ot_nocfg/
   ckpt_name: best.pt

@@ -88,6 +88,12 @@ class Trainer:
         self.loss_fn  = loss_fn
         self.device   = torch.device(device)
         self.use_amp  = self.device.type == "cuda" and torch.cuda.is_available()
+        # bfloat16: Ampere+(A100/H100)에서 float16보다 안정적이고 빠름
+        _bf16_ok = (
+            self.use_amp
+            and torch.cuda.is_bf16_supported()
+        )
+        self.amp_dtype = torch.bfloat16 if _bf16_ok else torch.float16
         self.max_epochs = max_epochs
         self.grad_clip  = grad_clip
         self.early_stop_patience = early_stop_patience
@@ -106,7 +112,8 @@ class Trainer:
         # Gradient Accumulation
         self.grad_accum_steps = max(1, int(grad_accum_steps))
         # GradScaler: __init__에서 한 번만 생성 → scale factor가 에폭 간 유지됨
-        self.scaler = GradScaler("cuda", enabled=self.use_amp)
+        # bfloat16은 스케일링 불필요 (언더플로우 문제 없음)
+        self.scaler = GradScaler("cuda", enabled=(self.use_amp and self.amp_dtype == torch.float16))
 
         # Optimizer
         if optimizer == "adamw":
@@ -261,10 +268,10 @@ class Trainer:
 
         self.optimizer.zero_grad()
         for step_idx, (maps, params) in enumerate(pbar):
-            maps   = maps.to(self.device).float()
+            maps   = maps.to(self.device, memory_format=torch.channels_last).float()
             params = params.to(self.device).float()
 
-            with autocast("cuda", enabled=self.use_amp):
+            with autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
                 loss = self.loss_fn(self.model, maps, params) / accum
 
             if not torch.isfinite(loss):
@@ -316,11 +323,11 @@ class Trainer:
         self.optimizer.zero_grad()
         for step_idx in pbar:
             batch   = pairs[step_idx * batch_size : (step_idx + 1) * batch_size]
-            x_data  = torch.stack([p["x_data"]  for p in batch]).to(self.device).float()
-            x_noise = torch.stack([p["x_noise"] for p in batch]).to(self.device).float()
+            x_data  = torch.stack([p["x_data"]  for p in batch]).to(self.device, memory_format=torch.channels_last).float()
+            x_noise = torch.stack([p["x_noise"] for p in batch]).to(self.device, memory_format=torch.channels_last).float()
             theta   = torch.stack([p["theta"]   for p in batch]).to(self.device).float()
 
-            with autocast("cuda", enabled=self.use_amp):
+            with autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
                 loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta) / accum
 
             if not torch.isfinite(loss):
@@ -362,9 +369,9 @@ class Trainer:
         total, n = 0.0, 0
         pbar = tqdm(loader, desc="    val", leave=False, dynamic_ncols=True, disable=not sys.stdout.isatty())
         for maps, params in pbar:
-            maps   = maps.to(self.device).float()
+            maps   = maps.to(self.device, memory_format=torch.channels_last).float()
             params = params.to(self.device).float()
-            with autocast("cuda", enabled=self.use_amp):
+            with autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
                 loss   = self.loss_fn(model_for_eval, maps, params)
             total += loss.item() * maps.size(0)
             n     += maps.size(0)

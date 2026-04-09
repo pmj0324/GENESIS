@@ -473,6 +473,13 @@ def main():
     device = args.device if torch.cuda.is_available() else "cpu"
     print(f"[train] device={device}  config={args.config}")
 
+    # GPU 가속 플래그
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True          # 고정 입력 크기 → cuDNN 자동 최적 알고리즘 선택
+        torch.backends.cuda.matmul.allow_tf32 = True   # Ampere 이상: matmul TF32
+        torch.backends.cudnn.allow_tf32 = True         # Ampere 이상: conv TF32
+        print("[train] cudnn.benchmark=True  TF32=True")
+
     # Dataloaders
     tcfg = cfg["training"]
     train_loader, val_loader, _ = build_dataloaders(
@@ -489,6 +496,18 @@ def main():
     n_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"[train] model={_format_model_label(model_info)}  params={n_params:.1f}M")
     print(f"[train] model_cfg={_format_model_details(model_info)}")
+
+    # channels_last: conv 연산 메모리 레이아웃 최적화 (UNet에 효과적)
+    if torch.cuda.is_available():
+        model = model.to(memory_format=torch.channels_last)
+        print("[train] memory_format=channels_last")
+
+    # torch.compile (PyTorch 2.0+, config에서 opt-in)
+    compile_cfg = cfg.get("compile", {})
+    if compile_cfg.get("enabled", False) and hasattr(torch, "compile"):
+        mode = compile_cfg.get("mode", "default")   # default | reduce-overhead | max-autotune
+        model = torch.compile(model, mode=mode)
+        print(f"[train] torch.compile enabled  mode={mode}")
 
     # Loss function
     framework = cfg["generative"]["framework"]
