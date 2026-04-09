@@ -209,6 +209,7 @@ class Trainer:
         self._base_lr = lr
         self._last_grad_norm = 0.0
         self._last_val_source = "raw"
+        self._c2ot_amp_guard_warned = False
 
         # EMA
         self.ema_enabled = bool(ema_enabled)
@@ -358,6 +359,26 @@ class Trainer:
         self.model.train()
         random.shuffle(pairs)
 
+        # C²OT는 fp16에서 초반 NaN이 비교적 쉽게 발생한다.
+        # bf16은 유지하고, fp16 환경에서는 기본적으로 autocast를 끈다.
+        c2ot_autocast_enabled = self.use_amp and (self.amp_dtype == torch.bfloat16)
+        if self.use_amp and not c2ot_autocast_enabled and not self._c2ot_amp_guard_warned:
+            print("[train] C²OT stability guard: autocast(fp16) disabled for C²OT path")
+            self._c2ot_amp_guard_warned = True
+
+        def _tensor_diag(name: str, tensor: torch.Tensor) -> str:
+            t = tensor.detach()
+            finite = torch.isfinite(t)
+            finite_ratio = float(finite.float().mean().item()) * 100.0
+            if bool(finite.any()):
+                vals = t[finite]
+                t_min = float(vals.min().item())
+                t_max = float(vals.max().item())
+            else:
+                t_min = float("nan")
+                t_max = float("nan")
+            return f"{name}: finite={finite_ratio:.2f}% min={t_min:.3e} max={t_max:.3e}"
+
         total, n  = 0.0, 0
         accum     = self.grad_accum_steps
         scaler    = self.scaler
@@ -387,12 +408,33 @@ class Trainer:
                 theta   = torch.stack([p["theta"]   for p in batch]).to(self.device).float()
                 b       = len(batch)
 
-            with autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
+            with autocast("cuda", enabled=c2ot_autocast_enabled, dtype=self.amp_dtype):
                 loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta) / accum
 
             if not torch.isfinite(loss):
+                # AMP 경로에서 터졌다면 fp32로 1회 재시도 후 계속 진행한다.
+                if c2ot_autocast_enabled:
+                    with autocast("cuda", enabled=False):
+                        retry_loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta) / accum
+                    if torch.isfinite(retry_loss):
+                        print(
+                            "[train] C²OT stability guard: non-finite loss under autocast; "
+                            "switch C²OT path to fp32 for this epoch"
+                        )
+                        c2ot_autocast_enabled = False
+                        loss = retry_loss
+
+            if not torch.isfinite(loss):
+                diag = " | ".join(
+                    [
+                        _tensor_diag("x_data", x_data),
+                        _tensor_diag("x_noise", x_noise),
+                        _tensor_diag("theta", theta),
+                    ]
+                )
                 raise RuntimeError(
-                    f"[C²OT] Loss is {loss.item()*accum:.4f} at epoch {epoch+1}. Stopping training."
+                    f"[C²OT] Loss is {loss.item()*accum:.4f} at epoch {epoch+1}. "
+                    f"step={step_idx+1}/{n_steps}. {diag}"
                 )
 
             scaler.scale(loss).backward()
