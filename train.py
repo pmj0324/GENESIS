@@ -755,6 +755,7 @@ def main():
         data_fraction=cfg["data"].get("data_fraction", 1.0),
         c2ot_sampler=c2ot_sampler,
         c2ot_loss_fn=c2ot_loss_fn,
+        grad_accum_steps=tcfg.get("grad_accum_steps", 1),
         **schedule_kwargs,
         **ema_kwargs,
     )

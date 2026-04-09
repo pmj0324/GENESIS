@@ -79,7 +79,8 @@ generative:
       every_epoch: true
 
 training:
-  batch_size: 16        # c2ot 사용 시 16 / ot 사용 시 8로 변경
+  batch_size: 16        # GPU에 올라가는 실제 배치 (메모리 한계)
+  grad_accum_steps: 4   # 유효 배치 = 16 × 4 = 64 (메모리 추가 없이 큰 배치 효과)
   num_workers: 400
   max_epochs: 700
   lr: 3.0e-5

@@ -72,6 +72,8 @@ class Trainer:
         # C²OT (Condition-Aware OT) — None이면 기존 학습 그대로
         c2ot_sampler = None,   # Optional[C2OTPairSampler]
         c2ot_loss_fn = None,   # Optional[Callable]  — paired_loss(model, x_data, x_noise, cond)
+        # Gradient Accumulation
+        grad_accum_steps: int = 1,   # 유효 배치 = batch_size × grad_accum_steps
         # EMA
         ema_enabled: bool = False,
         ema_decay: float = 0.9999,
@@ -99,6 +101,8 @@ class Trainer:
         # C²OT
         self.c2ot_sampler   = c2ot_sampler
         self.c2ot_loss_fn   = c2ot_loss_fn
+        # Gradient Accumulation
+        self.grad_accum_steps = max(1, int(grad_accum_steps))
 
         # Optimizer
         if optimizer == "adamw":
@@ -245,40 +249,42 @@ class Trainer:
     def _train_epoch(self, loader: DataLoader, epoch: int) -> float:
         self.model.train()
         total, n = 0.0, 0
+        accum = self.grad_accum_steps
         scaler = GradScaler("cuda", enabled=self.use_amp)
         is_warmup = epoch < self.warmup_epochs
         desc = "  [W]train" if is_warmup else "     train"
         pbar = tqdm(loader, desc=desc, leave=False, dynamic_ncols=True, disable=not sys.stdout.isatty())
-        for maps, params in pbar:
-            # Normalize/normalization pipeline changes can accidentally produce float64.
-            # Force float32 to match model weights (conv bias float32).
-            maps   = maps.to(self.device).float()    # [B, 3, 256, 256]
-            params = params.to(self.device).float()  # [B, 6]
 
-            self.optimizer.zero_grad()
+        self.optimizer.zero_grad()
+        for step_idx, (maps, params) in enumerate(pbar):
+            maps   = maps.to(self.device).float()
+            params = params.to(self.device).float()
+
             with autocast("cuda", enabled=self.use_amp):
-                loss = self.loss_fn(self.model, maps, params)
+                loss = self.loss_fn(self.model, maps, params) / accum
 
             if not torch.isfinite(loss):
-                raise RuntimeError(f"Loss is {loss.item():.4f} at epoch {epoch+1}. Stopping training.")
+                raise RuntimeError(f"Loss is {loss.item()*accum:.4f} at epoch {epoch+1}. Stopping training.")
 
             scaler.scale(loss).backward()
-            if self.grad_clip > 0:
-                # clip_grad_norm_ expects unscaled gradients
-                scaler.unscale_(self.optimizer)
-                self._last_grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip).item()
-            scaler.step(self.optimizer)
-            scaler.update()
-            self._global_step += 1
 
-            if self.ema_enabled and self.ema_model is not None:
-                if (
-                    self._global_step >= self.ema_update_after_step
-                    and (self._global_step % self.ema_update_every == 0)
-                ):
-                    self._ema_update()
+            if (step_idx + 1) % accum == 0:
+                if self.grad_clip > 0:
+                    scaler.unscale_(self.optimizer)
+                    self._last_grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip).item()
+                scaler.step(self.optimizer)
+                scaler.update()
+                self.optimizer.zero_grad()
+                self._global_step += 1
 
-            total += loss.item() * maps.size(0)
+                if self.ema_enabled and self.ema_model is not None:
+                    if (
+                        self._global_step >= self.ema_update_after_step
+                        and (self._global_step % self.ema_update_every == 0)
+                    ):
+                        self._ema_update()
+
+            total += loss.item() * accum * maps.size(0)
             n     += maps.size(0)
             pbar.set_postfix(loss=f"{total/n:.4f}")
         return total / n
@@ -292,8 +298,9 @@ class Trainer:
         self.model.train()
         random.shuffle(pairs)
 
-        total, n = 0.0, 0
-        scaler   = GradScaler("cuda", enabled=self.use_amp)
+        total, n  = 0.0, 0
+        accum     = self.grad_accum_steps
+        scaler    = GradScaler("cuda", enabled=self.use_amp)
         is_warmup = epoch < self.warmup_epochs
         desc      = "  [W] c2ot" if is_warmup else "      c2ot"
         n_steps   = len(pairs) // batch_size
@@ -302,40 +309,43 @@ class Trainer:
             dynamic_ncols=True, disable=not sys.stdout.isatty(),
         )
 
+        self.optimizer.zero_grad()
         for step_idx in pbar:
             batch   = pairs[step_idx * batch_size : (step_idx + 1) * batch_size]
             x_data  = torch.stack([p["x_data"]  for p in batch]).to(self.device).float()
             x_noise = torch.stack([p["x_noise"] for p in batch]).to(self.device).float()
             theta   = torch.stack([p["theta"]   for p in batch]).to(self.device).float()
 
-            self.optimizer.zero_grad()
             with autocast("cuda", enabled=self.use_amp):
-                loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta)
+                loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta) / accum
 
             if not torch.isfinite(loss):
                 raise RuntimeError(
-                    f"[C²OT] Loss is {loss.item():.4f} at epoch {epoch+1}. Stopping training."
+                    f"[C²OT] Loss is {loss.item()*accum:.4f} at epoch {epoch+1}. Stopping training."
                 )
 
             scaler.scale(loss).backward()
-            if self.grad_clip > 0:
-                scaler.unscale_(self.optimizer)
-                self._last_grad_norm = nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.grad_clip
-                ).item()
-            scaler.step(self.optimizer)
-            scaler.update()
-            self._global_step += 1
 
-            if self.ema_enabled and self.ema_model is not None:
-                if (
-                    self._global_step >= self.ema_update_after_step
-                    and (self._global_step % self.ema_update_every == 0)
-                ):
-                    self._ema_update()
+            if (step_idx + 1) % accum == 0:
+                if self.grad_clip > 0:
+                    scaler.unscale_(self.optimizer)
+                    self._last_grad_norm = nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.grad_clip
+                    ).item()
+                scaler.step(self.optimizer)
+                scaler.update()
+                self.optimizer.zero_grad()
+                self._global_step += 1
+
+                if self.ema_enabled and self.ema_model is not None:
+                    if (
+                        self._global_step >= self.ema_update_after_step
+                        and (self._global_step % self.ema_update_every == 0)
+                    ):
+                        self._ema_update()
 
             b = len(batch)
-            total += loss.item() * b
+            total += loss.item() * accum * b
             n     += b
             pbar.set_postfix(loss=f"{total/n:.4f}")
 
@@ -533,7 +543,8 @@ class Trainer:
         print(f"  Data       : train={n_train}{frac_str}  val={n_val}  batches/ep={steps_per_epoch}{c2ot_tag}")
         print(f"  Epochs     : {start_epoch} → {self.max_epochs}  (warmup={self.warmup_epochs})")
         print(f"  Optimizer  : {self.optimizer.__class__.__name__}  lr={self._base_lr:.1e}  wd={self.optimizer.param_groups[0].get('weight_decay', 0):.1e}")
-        print(f"  Schedule   : {self._schedule_type}  grad_clip={self.grad_clip}")
+        eff_batch = (c2ot_batch_size if c2ot_mode else train_loader.batch_size) * self.grad_accum_steps
+        print(f"  Schedule   : {self._schedule_type}  grad_clip={self.grad_clip}  grad_accum={self.grad_accum_steps}  eff_batch={eff_batch}")
         if self.warmup_epochs > 0:
             print(
                 f"  Warmup     : enabled  epochs=1..{self.warmup_epochs}  "
