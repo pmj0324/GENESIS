@@ -198,10 +198,14 @@ FLOW_REGISTRY = {
     "ot":           OTFlowMatching,
     "stochastic":   StochasticInterpolant,
     "vp":           VPFlowMatching,
+    "c2ot":         None,   # C2OTFlowMatching — train.py에서 직접 처리 (sampler 연동 필요)
 }
 
 
 def build_flow(name: str, **kwargs):
     if name not in FLOW_REGISTRY:
         raise ValueError(f"Unknown flow: {name!r}. Options: {list(FLOW_REGISTRY)}")
+    if name == "c2ot":
+        from .c2ot import C2OTFlowMatching
+        return C2OTFlowMatching(**{k: v for k, v in kwargs.items() if k in ("cfg_prob", "sigma_min")})
     return FLOW_REGISTRY[name](**kwargs)

@@ -415,3 +415,37 @@ def compute_spectrum_errors(
         }
 
     return results
+
+
+def compute_n_modes_per_bin(
+    box_size: float = 25.0,
+    n_bins: int = 30,
+    H: int = 256,
+    W: int = 256,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the number of Fourier modes in each log-spaced k-bin.
+
+    Binning is matched to the spectrum code path:
+      - k-grid from fftfreq and box_size
+      - positive modes only (k > 1e-10)
+      - log-spaced edges from [k_min, k_max]
+    """
+    kx = np.fft.fftfreq(W, 1.0 / W) * 2 * np.pi / box_size
+    ky = np.fft.fftfreq(H, 1.0 / H) * 2 * np.pi / box_size
+    kx_2d, ky_2d = np.meshgrid(kx, ky)
+    k_2d = np.sqrt(kx_2d**2 + ky_2d**2)
+
+    k_flat = k_2d.ravel()
+    pos_mask = k_flat > 1e-10
+    k_flat_pos = k_flat[pos_mask]
+
+    k_min = k_flat_pos.min()
+    k_max = k_flat_pos.max()
+    edges = np.logspace(np.log10(k_min), np.log10(k_max), n_bins + 1)
+    k_centers = (edges[:-1] + edges[1:]) / 2
+
+    n_modes = np.array([
+        int(((k_flat_pos >= edges[i]) & (k_flat_pos < edges[i + 1])).sum())
+        for i in range(n_bins)
+    ], dtype=np.int64)
+    return k_centers, n_modes

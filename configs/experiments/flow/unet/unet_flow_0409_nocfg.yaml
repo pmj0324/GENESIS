@@ -1,0 +1,106 @@
+##############################################################################
+# unet_flow_0409_nocfg.yaml
+#
+# 목적:
+#   - unet_flow_0330 (B preset) 기반
+#   - CFG 완전 제거 (cfg_prob=0, cfg_scale=1.0)
+#     → 학습된 모델을 likelihood 기반 θ 추정에 직접 사용하기 위함
+#   - cosine_restarts 스케줄 (T_0=50, T_mult=2)
+#   - C²OT 옵션 내장 (method 한 줄로 전환)
+#
+# ── C²OT 전환 방법 ─────────────────────────────────────────────────────────
+#   C²OT 끄기 (독립 샘플링):  method: ot   batch_size: 8
+#   C²OT 켜기:               method: c2ot  batch_size: 16
+#   → c2ot 섹션 파라미터는 method: c2ot 일 때만 사용됨
+#
+# ── C²OT 동작 방식 ─────────────────────────────────────────────────────────
+#   에폭 시작 시 compute_pairs() 호출:
+#     theta 800개 × 15장 순회
+#     → 새 noise 15개 샘플링  ← 매 에폭마다 새로 뽑음
+#     → 15×15 L2 비용행렬 → Sinkhorn → hard assignment
+#     → 12,000쌍 CPU 저장 → shuffle → 배치 학습
+#   (x0 noise는 에폭마다 새로 샘플링되므로 overfitting 없음)
+#
+# 사용:
+#   python train.py \
+#     --config configs/experiments/flow/unet/unet_flow_0409_nocfg.yaml
+#
+# 변경 포인트 vs unet_flow_0330:
+#   - cfg_prob: 0.1 → 0.0
+#   - cfg_scale: 1.2 → 1.0
+#   - schedule: cosine → cosine_restarts (T_0=50, T_mult=2)
+#   - warmup_epochs: 5 → 10
+#   - max_epochs: 500 → 700
+#   - early_stop_patience: 15 → 25
+#   - dropout: 0.05 유지
+#   - cross_attn_cond / per_scale_cond: True 명시
+##############################################################################
+
+data:
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100
+  data_fraction: 1.0
+
+model:
+  architecture: unet
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.05
+  unet:
+    preset: B
+    attention_resolution: 32
+    circular_conv: true
+    cross_attn_cond: true
+    per_scale_cond: true
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    # ── 전환 포인트 ──────────────────────────────────────────────
+    method: c2ot      # ot: 독립 샘플링 / c2ot: condition-aware OT
+    # ─────────────────────────────────────────────────────────────
+    cfg_prob: 0.0
+    sigma_min: 1.0e-4
+    c2ot:             # method: c2ot 일 때만 사용
+      n_per_theta: 15   # theta당 이미지 수 (데이터셋 구조와 일치)
+      eps: 0.1          # Sinkhorn entropy reg (0.05~0.1)
+      n_iter: 50        # Sinkhorn 반복 (15×15면 50회 충분)
+  sampler:
+    method: dopri5
+    steps: 25
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.0
+    viz:
+      sampler_a: dopri5
+      sampler_b: dopri5
+      samplers: [euler, heun, rk4, dopri5]
+      metrics_sampler: dopri5
+      eval_n: 15
+      every_epoch: true
+
+training:
+  batch_size: 16        # c2ot 사용 시 16 / ot 사용 시 8로 변경
+  num_workers: 400
+  max_epochs: 700
+  lr: 3.0e-5
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 10
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine_restarts
+  T_0: 50
+  T_mult: 2
+  eta_min: 3.0e-8
+  ema:
+    enabled: true
+    decay: 0.9999
+    update_every: 1
+    update_after_step: auto
+    min_update_after_step: 500
+    eval_with_ema: true
+  early_stop_patience: 25
+
+checkpoint:
+  ckpt_dir: runs/flow/unet/unet_flow_0409_nocfg/
+  ckpt_name: best.pt

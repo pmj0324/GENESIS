@@ -42,6 +42,7 @@ mpl.rcParams.update({
 import matplotlib.pyplot as plt
 import numpy as np
 
+from analysis.cross_spectrum import compute_n_modes_per_bin
 from . import metrics as M
 
 CHANNELS = ["Mcdm", "Mgas", "T"]
@@ -735,7 +736,12 @@ def plot_pk_zscore_grid(
         sd_g = d["P_gen_std"][0]
         mu_t = d["P_true_avg"][0]
         sd_t = d["P_true_std"][0]
-        z    = d["z_per_cond"][0]
+        if "z_mean" in d:
+            z = d["z_mean"][0]
+        elif "z_single" in d:
+            z = d["z_single"][0]
+        else:
+            z = d["z_per_cond"][0]
         w    = k ** 2
         ax = axes[0, col]
         ax.fill_between(k, w * (mu_t - sd_t), w * (mu_t + sd_t),
@@ -779,6 +785,9 @@ _VIZ_TRUE_BAND_A   = 0.16
 _VIZ_GEN_COLOR     = "#d62728"   # SAMPLER_COLORS[0]
 _VIZ_GEN_FAINT_A   = 0.18        # alpha for individual gen curves
 _VIZ_PARAM_NAMES   = ["Omega_m", "sigma_8", "A_SN1", "A_SN2", "A_AGN1", "A_AGN2"]
+_N_MODES_CACHE = {}
+_K_CENTERS, _N_MODES = compute_n_modes_per_bin(box_size=25.0, n_bins=25, H=256, W=256)
+LOW_MODE_THRESHOLD = 10
 
 
 def _viz_field_space_label(field_space: str) -> str:
@@ -830,6 +839,74 @@ def _viz_positive_loglog(ax, k, pk, *args, **kwargs):
     if mask.sum() == 0:
         return
     ax.loglog(k[mask], pk[mask], *args, **kwargs)
+
+
+def _n_modes_for_k(k_arr: np.ndarray) -> np.ndarray:
+    n_bins = int(len(k_arr))
+    if n_bins == len(_N_MODES):
+        return _N_MODES
+    if n_bins not in _N_MODES_CACHE:
+        _, n_modes = compute_n_modes_per_bin(box_size=25.0, n_bins=n_bins, H=256, W=256)
+        _N_MODES_CACHE[n_bins] = n_modes
+    return _N_MODES_CACHE[n_bins]
+
+
+def _add_mode_uncertainty_band(
+    ax,
+    k_arr: np.ndarray,
+    pk_med: np.ndarray,
+    w: np.ndarray,
+    color: str,
+    n_modes: np.ndarray,
+    alpha: float = 0.12,
+) -> None:
+    """Add a mode-count uncertainty proxy band: |P|/sqrt(N_modes)."""
+    sigma = np.abs(pk_med) / np.sqrt(np.where(n_modes > 0, n_modes, 1))
+    lo = (pk_med - sigma) * w
+    hi = (pk_med + sigma) * w
+    valid = (
+        np.isfinite(pk_med) & np.isfinite(sigma) &
+        np.isfinite(lo) & np.isfinite(hi) &
+        (k_arr > 0) & (hi > 0)
+    )
+    if valid.any():
+        ax.fill_between(
+            k_arr[valid],
+            np.clip(lo[valid], 1e-30, None),
+            np.clip(hi[valid], 1e-30, None),
+            color=color,
+            alpha=alpha,
+            lw=0,
+        )
+
+
+def _plot_ratio_with_mode_info(
+    rax,
+    k_arr: np.ndarray,
+    ratio: np.ndarray,
+    n_modes: np.ndarray,
+) -> None:
+    low_mode = n_modes < LOW_MODE_THRESHOLD
+    mr = np.isfinite(ratio) & (k_arr > 0)
+    reliable = mr & ~low_mode
+    uncertain = mr & low_mode
+
+    if reliable.any():
+        rax.plot(k_arr[reliable], ratio[reliable], color=_VIZ_GEN_COLOR, lw=1.5)
+    if uncertain.any():
+        rax.plot(k_arr[uncertain], ratio[uncertain], color=_VIZ_GEN_COLOR, lw=1.0, ls=":", alpha=0.55)
+        if (~low_mode & mr).any():
+            k_boundary = float(k_arr[np.where((~low_mode & mr))[0][0]])
+        else:
+            k_boundary = float(k_arr[mr][-1])
+        rax.axvspan(
+            float(k_arr[mr][0]),
+            k_boundary,
+            color="lightyellow",
+            alpha=0.35,
+            lw=0,
+            label=f"N_modes<{LOW_MODE_THRESHOLD}",
+        )
 
 
 # ── Maps ──────────────────────────────────────────────────────────────────────
@@ -920,14 +997,13 @@ def plot_cond_maps(
                 ax.set_ylabel(row_labels[ri], fontsize=8, color=color,
                               rotation=0, labelpad=58, va="center")
                 ax.yaxis.set_label_position("left")
-        # Separator between Real and Gen rows within each channel
-        if ri % 2 == 0 and ri < n_rows - 1:
-            sep_y = 1.0 - (ri + 1) / n_rows
-            fig.add_artist(plt.Line2D(
-                [0.04, 0.99], [sep_y, sep_y],
-                transform=fig.transFigure,
-                color="#888888", lw=0.8, ls="-", alpha=0.5,
-            ))
+            # Use axis spines (layout-safe) instead of figure-level separator line.
+            if ri % 2 == 0:
+                ax.spines["bottom"].set_linewidth(2.0)
+                ax.spines["bottom"].set_color("#aaaaaa")
+            else:
+                ax.spines["bottom"].set_linewidth(0.5)
+                ax.spines["bottom"].set_color("#dddddd")
 
     # Column index label on top row
     for ci_col in range(nc):
@@ -1006,6 +1082,7 @@ def plot_cond_pk(
         base_row = row_idx * 3
 
         k_arr = np.asarray(k[fs], dtype=np.float64)
+        n_modes = _n_modes_for_k(k_arr)
         pt    = pk_true[fs]   # (N_true, 3, n_k)
         pg    = pk_gen[fs]    # (N_gen,  3, n_k)
 
@@ -1045,6 +1122,15 @@ def plot_cond_pk(
                         color=_VIZ_TRUE_COLOR, lw=2.0,
                         label=f"True median  (N={len(pt)})",
                     )
+            _add_mode_uncertainty_band(
+                ax,
+                k_arr,
+                np.nanmedian(pt[:, c, :].astype(np.float64), axis=0),
+                w,
+                _VIZ_TRUE_COLOR,
+                n_modes,
+                alpha=0.08,
+            )
             # _viz_positive_loglog(ax, k_arr, pk_t_mean,
             #                      color=_VIZ_TRUE_COLOR, lw=2.0,
             #                      label=f"True mean  (N={len(pt)})")
@@ -1085,6 +1171,15 @@ def plot_cond_pk(
                         color=_VIZ_GEN_COLOR, lw=2.0, ls="--",
                         label="Gen median",
                     )
+            _add_mode_uncertainty_band(
+                ax,
+                k_arr,
+                np.nanmedian(pg[:, c, :].astype(np.float64), axis=0),
+                w,
+                _VIZ_GEN_COLOR,
+                n_modes,
+                alpha=0.12,
+            )
             # _viz_positive_loglog(ax, k_arr, pk_g_mean,
             #                      color=_VIZ_GEN_COLOR, lw=2.0, ls="--",
             #                      label="Gen mean")
@@ -1409,6 +1504,7 @@ def plot_cv_sigma_aggregate(
     for row_idx, fs in enumerate(field_spaces):
         base_row = row_idx * 3
         k_arr = np.asarray(k[fs], dtype=np.float64)
+        n_modes = _n_modes_for_k(k_arr)
         st_seed = sigma_true_seed[fs].astype(np.float64)  # (N_seed, 3, n_k)
         sg_seed = sigma_gen_seed[fs].astype(np.float64)
 
@@ -1453,7 +1549,9 @@ def plot_cv_sigma_aggregate(
             mr = (k_arr > 0) & np.isfinite(rr_lo) & np.isfinite(rr_hi)
             if mr.any():
                 rax.fill_between(k_arr[mr], rr_lo[mr], rr_hi[mr], color=_VIZ_GEN_COLOR, alpha=0.25, linewidth=0)
-                rax.plot(k_arr[mr], rr_med[mr], color=_VIZ_GEN_COLOR, lw=1.4)
+                ratio_line = np.full_like(k_arr, np.nan, dtype=np.float64)
+                ratio_line[mr] = rr_med[mr]
+                _plot_ratio_with_mode_info(rax, k_arr, ratio_line, n_modes)
             rax.axhline(1.0, color="0.5", lw=0.8)
             rax.set_xscale("log")
             rax.set_ylim(0.4, 1.8)
@@ -1465,6 +1563,8 @@ def plot_cv_sigma_aggregate(
                 rax.tick_params(axis="x", labelbottom=False)
             rax.grid(True, alpha=0.3, which="both")
             rax.tick_params(axis="both", labelsize=9)
+            if (mr & (n_modes < LOW_MODE_THRESHOLD)).any():
+                rax.legend(fontsize=7, loc="best", framealpha=0.85)
 
     fig.subplots_adjust(left=0.07, right=0.985, bottom=0.07, top=0.90)
     return fig
@@ -1510,6 +1610,7 @@ def plot_cond_sigma_with_ratio(
     for row_idx, fs in enumerate(field_spaces):
         base_row = row_idx * 3
         k_arr = np.asarray(k[fs], dtype=np.float64)
+        n_modes = _n_modes_for_k(k_arr)
         pt = pk_true[fs].astype(np.float64)
         pg = pk_gen[fs].astype(np.float64)
         sig_t = np.nanstd(pt, axis=0, ddof=1)
@@ -1539,7 +1640,9 @@ def plot_cond_sigma_with_ratio(
             ratio = sig_g[c] / np.clip(sig_t[c], 1e-30, None)
             mr = np.isfinite(k_arr) & np.isfinite(ratio) & (k_arr > 0)
             if mr.any():
-                rax.plot(k_arr[mr], ratio[mr], color=_VIZ_GEN_COLOR, lw=1.5)
+                ratio_line = np.full_like(k_arr, np.nan, dtype=np.float64)
+                ratio_line[mr] = ratio[mr]
+                _plot_ratio_with_mode_info(rax, k_arr, ratio_line, n_modes)
             rax.axhline(1.0, color="0.5", lw=0.8)
             rax.set_xscale("log")
             rax.set_ylim(0.0, 1.5)
@@ -1551,6 +1654,8 @@ def plot_cond_sigma_with_ratio(
                 rax.tick_params(axis="x", labelbottom=False)
             rax.grid(True, alpha=0.3, which="both")
             rax.tick_params(axis="both", labelsize=9)
+            if (mr & (n_modes < LOW_MODE_THRESHOLD)).any():
+                rax.legend(fontsize=7, loc="best", framealpha=0.85)
 
     fig.subplots_adjust(left=0.07, right=0.985, bottom=0.07, top=0.90)
     return fig

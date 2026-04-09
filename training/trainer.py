@@ -6,6 +6,7 @@ Diffusion (.loss) 과 Flow Matching (.loss) 모두 지원.
 """
 
 import math
+import random
 import sys
 import time
 from copy import deepcopy
@@ -68,6 +69,9 @@ class Trainer:
         epoch_callback: Optional[Callable] = None,
         # Data info (배너 표시용)
         data_fraction: float = 1.0,
+        # C²OT (Condition-Aware OT) — None이면 기존 학습 그대로
+        c2ot_sampler = None,   # Optional[C2OTPairSampler]
+        c2ot_loss_fn = None,   # Optional[Callable]  — paired_loss(model, x_data, x_noise, cond)
         # EMA
         ema_enabled: bool = False,
         ema_decay: float = 0.9999,
@@ -92,6 +96,9 @@ class Trainer:
         self.epoch_callback = epoch_callback
         self.data_fraction  = data_fraction
         self._global_step   = 0
+        # C²OT
+        self.c2ot_sampler   = c2ot_sampler
+        self.c2ot_loss_fn   = c2ot_loss_fn
 
         # Optimizer
         if optimizer == "adamw":
@@ -276,6 +283,64 @@ class Trainer:
             pbar.set_postfix(loss=f"{total/n:.4f}")
         return total / n
 
+    def _train_epoch_c2ot(self, pairs: list, batch_size: int, epoch: int) -> float:
+        """
+        C²OT 전용 train epoch.
+        OT로 미리 매칭된 pairs 리스트를 배치 단위로 순회.
+        AMP / grad_clip / EMA / progress bar 모두 _train_epoch와 동일.
+        """
+        self.model.train()
+        random.shuffle(pairs)
+
+        total, n = 0.0, 0
+        scaler   = GradScaler("cuda", enabled=self.use_amp)
+        is_warmup = epoch < self.warmup_epochs
+        desc      = "  [W] c2ot" if is_warmup else "      c2ot"
+        n_steps   = len(pairs) // batch_size
+        pbar      = tqdm(
+            range(n_steps), desc=desc, leave=False,
+            dynamic_ncols=True, disable=not sys.stdout.isatty(),
+        )
+
+        for step_idx in pbar:
+            batch   = pairs[step_idx * batch_size : (step_idx + 1) * batch_size]
+            x_data  = torch.stack([p["x_data"]  for p in batch]).to(self.device).float()
+            x_noise = torch.stack([p["x_noise"] for p in batch]).to(self.device).float()
+            theta   = torch.stack([p["theta"]   for p in batch]).to(self.device).float()
+
+            self.optimizer.zero_grad()
+            with autocast("cuda", enabled=self.use_amp):
+                loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta)
+
+            if not torch.isfinite(loss):
+                raise RuntimeError(
+                    f"[C²OT] Loss is {loss.item():.4f} at epoch {epoch+1}. Stopping training."
+                )
+
+            scaler.scale(loss).backward()
+            if self.grad_clip > 0:
+                scaler.unscale_(self.optimizer)
+                self._last_grad_norm = nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.grad_clip
+                ).item()
+            scaler.step(self.optimizer)
+            scaler.update()
+            self._global_step += 1
+
+            if self.ema_enabled and self.ema_model is not None:
+                if (
+                    self._global_step >= self.ema_update_after_step
+                    and (self._global_step % self.ema_update_every == 0)
+                ):
+                    self._ema_update()
+
+            b = len(batch)
+            total += loss.item() * b
+            n     += b
+            pbar.set_postfix(loss=f"{total/n:.4f}")
+
+        return total / n if n > 0 else 0.0
+
     @torch.no_grad()
     def _val_epoch(self, loader: DataLoader, eval_model: Optional[nn.Module] = None) -> float:
         model_for_eval = eval_model if eval_model is not None else self.model
@@ -439,7 +504,11 @@ class Trainer:
         n_train = len(train_loader.dataset)
         n_val   = len(val_loader.dataset)
         n_params = sum(p.numel() for p in self.model.parameters()) / 1e6
-        steps_per_epoch = len(train_loader)
+
+        # C²OT 모드에서는 배치 크기 = DataLoader batch_size, steps = n_train // batch_size
+        c2ot_mode       = self.c2ot_sampler is not None and self.c2ot_loss_fn is not None
+        c2ot_batch_size = train_loader.batch_size or 16
+        steps_per_epoch = (n_train // c2ot_batch_size) if c2ot_mode else len(train_loader)
 
         gpu_name = torch.cuda.get_device_name(self.device) if self.use_amp else "cpu"
         gpu_mem  = torch.cuda.get_device_properties(self.device).total_memory / 1e9 if self.use_amp else 0
@@ -460,7 +529,8 @@ class Trainer:
         print("=" * 60)
         print(f"  Device     : {self.device} ({gpu_name})" + (f"  [{gpu_mem:.1f}GB]" if self.use_amp else ""))
         print(f"  Model      : {self.model.__class__.__name__}  ({n_params:.1f}M params)")
-        print(f"  Data       : train={n_train}{frac_str}  val={n_val}  batches/ep={steps_per_epoch}")
+        c2ot_tag = f"  [C²OT batch={c2ot_batch_size}]" if c2ot_mode else ""
+        print(f"  Data       : train={n_train}{frac_str}  val={n_val}  batches/ep={steps_per_epoch}{c2ot_tag}")
         print(f"  Epochs     : {start_epoch} → {self.max_epochs}  (warmup={self.warmup_epochs})")
         print(f"  Optimizer  : {self.optimizer.__class__.__name__}  lr={self._base_lr:.1e}  wd={self.optimizer.param_groups[0].get('weight_decay', 0):.1e}")
         print(f"  Schedule   : {self._schedule_type}  grad_clip={self.grad_clip}")
@@ -502,7 +572,11 @@ class Trainer:
             if self.use_amp:
                 torch.cuda.reset_peak_memory_stats(self.device)
 
-            train_loss = self._train_epoch(train_loader, epoch)
+            if c2ot_mode:
+                pairs = self.c2ot_sampler.compute_pairs(train_loader.dataset)
+                train_loss = self._train_epoch_c2ot(pairs, c2ot_batch_size, epoch)
+            else:
+                train_loss = self._train_epoch(train_loader, epoch)
             eval_model = self._current_eval_model()
             self._last_val_source = "ema" if eval_model is self.ema_model else "raw"
             val_loss   = self._val_epoch(val_loader, eval_model=eval_model)

@@ -19,6 +19,7 @@ from pathlib import Path
 from dataloader import build_dataloaders
 from models import DiT, SwinUNet, UNet, build_dit, build_unet, build_swin
 from flow_matching.flows import build_flow
+from flow_matching.c2ot import C2OTPairSampler
 from flow_matching.samplers import build_sampler
 
 from diffusion.ddpm import GaussianDiffusion
@@ -411,9 +412,10 @@ def build_loss_fn(cfg: dict):
     framework = gcfg["framework"]
 
     if framework == "flow_matching":
-        fcfg = gcfg["flow_matching"]
-        flow = build_flow(
-            fcfg.get("method", "ot"),
+        fcfg   = gcfg["flow_matching"]
+        method = fcfg.get("method", "ot")
+        flow   = build_flow(
+            method,
             cfg_prob=fcfg.get("cfg_prob", 0.1),
             sigma_min=fcfg.get("sigma_min", 1e-4),
         )
@@ -491,6 +493,30 @@ def main():
     # Loss function
     framework = cfg["generative"]["framework"]
     loss_fn, diffusion = build_loss_fn(cfg)
+
+    # C²OT sampler (flow_matching + method=c2ot 일 때만 활성화)
+    c2ot_sampler  = None
+    c2ot_loss_fn  = None
+    if framework == "flow_matching":
+        fcfg   = cfg["generative"]["flow_matching"]
+        method = fcfg.get("method", "ot")
+        if method == "c2ot":
+            c2ot_cfg = fcfg.get("c2ot", {})
+            c2ot_sampler = C2OTPairSampler(
+                n_per_theta = c2ot_cfg.get("n_per_theta", 15),
+                eps         = c2ot_cfg.get("eps",         0.1),
+                n_iter      = c2ot_cfg.get("n_iter",      50),
+                device      = device,
+            )
+            # loss_fn은 validation용(independent noise), c2ot_loss_fn은 training용(OT-paired)
+            from flow_matching.flows import build_flow as _bf
+            _c2ot_flow   = _bf("c2ot", cfg_prob=fcfg.get("cfg_prob", 0.0), sigma_min=fcfg.get("sigma_min", 1e-4))
+            c2ot_loss_fn = _c2ot_flow.paired_loss
+            loss_fn      = _c2ot_flow.loss   # validation용 덮어쓰기
+            print(
+                f"[train] C²OT enabled  eps={c2ot_sampler.eps}  "
+                f"n_iter={c2ot_sampler.n_iter}  n_per_theta={c2ot_sampler.n_per_theta}"
+            )
 
     # EDM: model을 래핑해서 preconditioning 적용
     edm_obj = None
@@ -727,6 +753,8 @@ def main():
         ckpt_name=ckpt_cfg.get("ckpt_name", "best.pt"),
         epoch_callback=epoch_callback,
         data_fraction=cfg["data"].get("data_fraction", 1.0),
+        c2ot_sampler=c2ot_sampler,
+        c2ot_loss_fn=c2ot_loss_fn,
         **schedule_kwargs,
         **ema_kwargs,
     )

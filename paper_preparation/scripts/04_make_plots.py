@@ -177,10 +177,14 @@ def make_per_cond_plots(
 
 
 def _plot_auto_with_z(k, d: dict, title: str = "", weight_k2: bool = True) -> "plt.Figure":
-    """Auto P(k) overlay + z-score using stored averages and z_per_cond."""
+    """Auto P(k) overlay + z-score using stored averages.
+
+    Prefers z_mean (mean-comparison) when present, otherwise falls back to
+    z_single / z_per_cond for backward compatibility.
+    """
     mu_g = d["P_gen_avg"]; sd_g = d["P_gen_std"]
     mu_t = d["P_true_avg"]; sd_t = d["P_true_std"]
-    z    = d["z_per_cond"]
+    z = d.get("z_mean", d.get("z_single", d["z_per_cond"]))
     w    = (k ** 2) if weight_k2 else np.ones_like(k)
     ylabel = r"$k^2 P(k)$" if weight_k2 else r"$P(k)$"
     fig, axes = plt.subplots(2, 3, figsize=(13, 6),
@@ -325,21 +329,29 @@ def make_paper_plots(
             )
             savefig(fig, paper_dir / "fig_coh_lh.pdf")
 
-            cond_npzs = load_cond_npzs(eval_dir / "lh")
-            if cond_npzs:
-                pdf_gen_agg  = _aggregate_pdfs([pdf_dict_from_npz(d, "pdf_gen")  for d in cond_npzs])
-                pdf_true_agg = _aggregate_pdfs([pdf_dict_from_npz(d, "pdf_true") for d in cond_npzs])
+            # aggregate PDF — 03_evaluate.py 가 pooled 픽셀로 계산해 저장한 값 사용.
+            # (per-cond PDF를 평균하면 bin edge 불일치 문제 발생)
+            try:
+                pdf_gen_agg  = pdf_dict_from_npz(agg, "agg_pdf_gen")
+                pdf_true_agg = pdf_dict_from_npz(agg, "agg_pdf_true")
+            except KeyError:
+                print("  [warn] agg_pdf_gen not found in aggregate.npz — "
+                      "re-run 03_evaluate.py to regenerate.")
+                pdf_gen_agg = pdf_true_agg = None
+            if pdf_gen_agg is not None and pdf_gen_agg["centers"].size > 0:
                 fig = P.plot_pdf_aggregate(
                     pdf_gen_agg, pdf_true_agg,
-                    title="Pixel PDF — all LH conditions",
+                    title="Pixel PDF — all LH conditions (pooled)",
                 )
                 savefig(fig, paper_dir / "fig_pdf_lh.pdf")
 
             print(f"  LH paper figs → {paper_dir}")
 
-    # ── Variance ratio: all protocols ─────────────────────────────────────────
+    # ── Variance ratio: CV protocol only ─────────────────────────────────────
     var_ratios = {}
     for proto in protocols_present:
+        if proto != "cv":
+            continue
         vp = eval_dir / proto / "variance.npz"
         if vp.exists():
             vd = dict(np.load(vp, allow_pickle=True))
@@ -389,14 +401,18 @@ def make_paper_plots(
 
 
 def _aggregate_pdfs(pdf_list: list[dict]) -> dict:
-    """Average density across per-cond PDFs (assume same bin edges)."""
-    centers = pdf_list[0]["centers"]
-    density = np.stack([d["density"] for d in pdf_list]).mean(axis=0)
-    edges   = pdf_list[0]["edges"]
-    mu      = np.stack([d["mu"]    for d in pdf_list]).mean(axis=0)
-    sigma   = np.stack([d["sigma"] for d in pdf_list]).mean(axis=0)
-    return {"centers": centers, "density": density, "edges": edges,
-            "mu": mu, "sigma": sigma}
+    """[DEPRECATED — bin edge 불일치 버그 있음. 사용 금지]
+
+    조건마다 percentile 기반으로 bin edge 가 달라지는데,
+    density 값을 단순 평균하면 서로 다른 x 위치의 값을 더하게 됨.
+
+    대신 03_evaluate.py._compute_pooled_pdf() 가 계산한
+    aggregate.npz['agg_pdf_gen_*'] 를 사용할 것.
+    """
+    raise RuntimeError(
+        "_aggregate_pdfs 는 bin edge 불일치 버그로 인해 비활성화됐습니다. "
+        "aggregate.npz 의 agg_pdf_gen_* 키를 사용하세요."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -643,11 +659,17 @@ def make_global_pdf_plot(
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.4))
     any_data = False
     for proto in protocols_present:
-        cond_npzs = load_cond_npzs(eval_dir / proto)
-        if not cond_npzs:
+        # 03_evaluate.py 가 pooled 픽셀로 계산한 aggregate PDF 사용
+        agg = load_agg(eval_dir / proto)
+        if agg is None:
             continue
-        agg_gen  = _aggregate_pdfs([pdf_dict_from_npz(d, "pdf_gen")  for d in cond_npzs])
-        agg_true = _aggregate_pdfs([pdf_dict_from_npz(d, "pdf_true") for d in cond_npzs])
+        try:
+            agg_gen  = pdf_dict_from_npz(agg, "agg_pdf_gen")
+            agg_true = pdf_dict_from_npz(agg, "agg_pdf_true")
+        except KeyError:
+            # 구버전 aggregate.npz (pooled PDF 없음) → 건너뜀
+            print(f"  [warn] {proto}: agg_pdf not found in aggregate.npz, skipping")
+            continue
         c  = proto_colors.get(proto, "k")
         ls = proto_ls.get(proto, "-")
         for ci, ch in enumerate(P.CHANNELS):

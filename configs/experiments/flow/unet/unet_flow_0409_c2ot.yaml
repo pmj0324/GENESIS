@@ -1,0 +1,90 @@
+##############################################################################
+# unet_flow_0409_c2ot.yaml
+#
+# 목적:
+#   - unet_flow_0409_nocfg 기반
+#   - C²OT (Condition-Aware Optimal Transport) 활성화
+#     → 같은 theta 내에서만 noise-image OT 매칭
+#     → theta당 15×15 Sinkhorn → 직선 경로가 더 최적에 가까워짐
+#
+# C²OT 흐름:
+#   매 에폭 시작 → 800 theta × 15장 순회
+#     새 noise 15개 샘플링 → 15×15 L2 비용행렬
+#     → Sinkhorn (eps=0.1, n_iter=50) → hard assignment
+#     → 12,000쌍 CPU 저장 → shuffle → 배치 학습
+#
+# 사용:
+#   python train.py \
+#     --config configs/experiments/flow/unet/unet_flow_0409_c2ot.yaml
+#
+# 변경 포인트 vs unet_flow_0409_nocfg:
+#   - flow_matching.method: ot → c2ot
+#   - flow_matching.c2ot 섹션 추가
+##############################################################################
+
+data:
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100
+  data_fraction: 1.0
+
+model:
+  architecture: unet
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.05
+  unet:
+    preset: B
+    attention_resolution: 32
+    circular_conv: true
+    cross_attn_cond: true
+    per_scale_cond: true
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: c2ot
+    cfg_prob: 0.0
+    sigma_min: 1.0e-4
+    c2ot:
+      n_per_theta: 15      # theta당 이미지 수 (데이터셋 구조와 일치)
+      eps: 0.1             # Sinkhorn entropy regularization (0.05~0.1 권장)
+      n_iter: 50           # Sinkhorn 반복 횟수 (15×15면 50회로 충분)
+  sampler:
+    method: dopri5
+    steps: 25
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.0
+    viz:
+      sampler_a: dopri5
+      sampler_b: dopri5
+      samplers: [euler, heun, rk4, dopri5]
+      metrics_sampler: dopri5
+      eval_n: 15
+      every_epoch: true
+
+training:
+  batch_size: 16           # C²OT는 쌍이 미리 준비되므로 16까지 여유
+  num_workers: 400
+  max_epochs: 700
+  lr: 3.0e-5
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 10
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine_restarts
+  T_0: 50
+  T_mult: 2
+  eta_min: 3.0e-8
+  ema:
+    enabled: true
+    decay: 0.9999
+    update_every: 1
+    update_after_step: auto
+    min_update_after_step: 500
+    eval_with_ema: true
+  early_stop_patience: 25
+
+checkpoint:
+  ckpt_dir: runs/flow/unet/unet_flow_0409_c2ot/
+  ckpt_name: best.pt

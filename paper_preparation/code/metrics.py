@@ -98,10 +98,30 @@ def ensemble_mean_std(P_per_real: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return mean, std
 
 
-def fractional_residual(mean_gen: np.ndarray, mean_true: np.ndarray) -> np.ndarray:
-    """ΔP(k) = (<P_gen> - <P_true>) / <P_true> .  Same shape as inputs."""
-    denom = np.where(np.abs(mean_true) < 1e-60, 1e-60, mean_true)
-    return (mean_gen - mean_true) / denom
+def fractional_residual(
+    mean_gen: np.ndarray,
+    mean_true: np.ndarray,
+    min_rel_threshold: float = 0.0,
+) -> np.ndarray:
+    """ΔP(k) = (<P_gen> - <P_true>) / <P_true>.
+
+    For cross spectra near zero-crossings, pass `min_rel_threshold > 0` to mask
+    bins where |<P_true>| is too small relative to the channel/pair peak.
+    Masked bins are returned as NaN.
+    """
+    mean_gen = np.asarray(mean_gen, dtype=np.float64)
+    mean_true = np.asarray(mean_true, dtype=np.float64)
+
+    if min_rel_threshold <= 0:
+        denom = np.where(np.abs(mean_true) < 1e-60, 1e-60, mean_true)
+        return (mean_gen - mean_true) / denom
+
+    abs_true = np.abs(mean_true)
+    finite_pos = np.isfinite(abs_true) & (abs_true > 0)
+    peak = float(np.nanmax(abs_true[finite_pos])) if finite_pos.any() else 1.0
+    valid = abs_true > (peak * float(min_rel_threshold))
+    denom = np.where(valid, mean_true, np.nan)
+    return np.where(valid, (mean_gen - mean_true) / denom, np.nan)
 
 
 def zscore(mean_gen: np.ndarray, mean_true: np.ndarray, std_true: np.ndarray) -> np.ndarray:
@@ -145,10 +165,11 @@ def cross_scalar_summary(k: np.ndarray, dP_cross: dict) -> dict:
     out: dict = {}
     mask = (k > 0) & (k <= KMAX)
     for pair in PAIR_KEYS:
-        v = np.abs(dP_cross[pair])[mask]
-        m = float(v.mean()) if v.size else np.nan
+        v = np.asarray(dP_cross[pair], dtype=np.float64)
+        valid = mask & np.isfinite(v)
+        m = float(np.abs(v[valid]).mean()) if valid.any() else np.nan
         thr = THRESH_CROSS[pair]
-        out[pair] = {"mean": m, "thr": thr, "passed": bool(m < thr)}
+        out[pair] = {"mean": m, "thr": thr, "passed": bool(np.isfinite(m) and m < thr)}
     return out
 
 

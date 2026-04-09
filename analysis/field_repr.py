@@ -8,9 +8,9 @@ Proper field representations for cosmological power spectrum evaluation.
   T           → log-standardized:      δ̃(x) = (log10(X_phys(x)) - μ_T) / σ_T
   all channels for PDFs → log10(X_phys + ε)
 
-Note: with affine normalization z = (log10(X) - center) / scale, the
-log-standardized T field equals the normalized z field, so no denormalization
-needed for T. Mcdm/Mgas require denormalization to physical for overdensity.
+Note: with affine normalization z = (log10(X) - center) / (scale * scale_mult),
+the paper-standardized T field is z * scale_mult. Mcdm/Mgas require
+denormalization to physical for overdensity.
 """
 
 import numpy as np
@@ -32,17 +32,27 @@ class FieldRepresenter:
     phys       = repr.to_physical(z_maps)               # (B,3,H,W)
     """
 
-    def __init__(self, centers: np.ndarray, scales: np.ndarray):
+    def __init__(
+        self,
+        centers: np.ndarray,
+        scales: np.ndarray,
+        base_scales: np.ndarray | None = None,
+    ):
         """
         Args:
             centers: (3,) per-channel center values  [Mcdm, Mgas, T]
-            scales:  (3,) per-channel effective scale values (scale * scale_mult)
+            scales:      (3,) per-channel effective scale values (scale * scale_mult)
+            base_scales: (3,) per-channel base scale values (scale, without scale_mult)
         """
         self.centers = np.asarray(centers, dtype=np.float64)   # (3,)
         self.scales  = np.asarray(scales,  dtype=np.float64)   # (3,)
+        if base_scales is None:
+            self._base_scales = self.scales.copy()
+        else:
+            self._base_scales = np.asarray(base_scales, dtype=np.float64)
         # T log-space statistics = center/scale of affine normalization
         self.t_log_mean = float(self.centers[2])
-        self.t_log_std  = float(self.scales[2])
+        self.t_log_std  = float(self._base_scales[2])
 
     @classmethod
     def from_normalizer(cls, normalizer) -> "FieldRepresenter":
@@ -53,7 +63,11 @@ class FieldRepresenter:
         """
         centers = normalizer._centers.cpu().numpy().astype(np.float64)
         scales  = normalizer._scales.cpu().numpy().astype(np.float64)
-        return cls(centers, scales)
+        base_scales = np.array(
+            [normalizer.config[c]["scale"] for c in CHANNELS],
+            dtype=np.float64,
+        )
+        return cls(centers, scales, base_scales=base_scales)
 
     @classmethod
     def from_config(cls, config: dict) -> "FieldRepresenter":
@@ -67,7 +81,8 @@ class FieldRepresenter:
             [config[c]["scale"] * config[c].get("scale_mult", 1.0) for c in CHANNELS],
             dtype=np.float64,
         )
-        return cls(centers, scales)
+        base_scales = np.array([config[c]["scale"] for c in CHANNELS], dtype=np.float64)
+        return cls(centers, scales, base_scales=base_scales)
 
     # ── Low-level transforms ───────────────────────────────────────────────────
 
@@ -94,7 +109,7 @@ class FieldRepresenter:
         Mcdm [ch=0]: linear overdensity  δ = (X_phys - <X_phys>) / <X_phys>
                      spatial mean taken per map (scalar per 2D map)
         Mgas [ch=1]: same as Mcdm
-        T    [ch=2]: log-standardized    δ̃ = z_T  (affine norm ≡ log-standardization)
+        T    [ch=2]: log-standardized    δ̃ = z_T * scale_mult_T
 
         Args:
             z_maps: (B, 3, H, W) or (3, H, W) normalized maps.
@@ -118,9 +133,12 @@ class FieldRepresenter:
         mean_mgas = phys[:, 1].mean(axis=(-2, -1), keepdims=True)
         out[:, 1] = (phys[:, 1] - mean_mgas) / (mean_mgas + 1e-60)
 
-        # T: log-standardized = z_T for affine normalization
-        # δ̃_T = (log10(X_T) - center_T) / scale_T = z_T
-        out[:, 2] = z_maps[:, 2]
+        # T: convert from training-time z_T to paper standardization without scale_mult.
+        # z_T = (log10(T)-center)/(base_scale*scale_mult)
+        # δ̃_T = (log10(T)-center)/base_scale = z_T * scale_mult
+        base_scale_t = float(self._base_scales[2]) if self._base_scales[2] != 0 else 1.0
+        scale_mult_t = float(self.scales[2] / base_scale_t)
+        out[:, 2] = z_maps[:, 2] * scale_mult_t
 
         return out[0] if squeeze else out
 
