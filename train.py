@@ -48,6 +48,39 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 
+def _suppress_inductor_autotune_logs() -> list[str]:
+    """
+    torch.compile(mode='max-autotune')의 과도한 AUTOTUNE 로그를 가능한 범위에서 억제한다.
+    PyTorch 버전별 속성 유무가 달라질 수 있어, 존재하는 훅만 안전하게 적용한다.
+    """
+    applied: list[str] = []
+
+    try:
+        import torch._inductor.config as inductor_cfg
+
+        if hasattr(inductor_cfg, "verbose_progress"):
+            inductor_cfg.verbose_progress = False
+            applied.append("inductor.verbose_progress=False")
+
+        trace_cfg = getattr(inductor_cfg, "trace", None)
+        if trace_cfg is not None and hasattr(trace_cfg, "log_autotuning_results"):
+            trace_cfg.log_autotuning_results = False
+            applied.append("inductor.trace.log_autotuning_results=False")
+    except Exception:
+        pass
+
+    try:
+        import torch._inductor.select_algorithm as select_algorithm
+
+        if hasattr(select_algorithm, "PRINT_AUTOTUNE"):
+            select_algorithm.PRINT_AUTOTUNE = False
+            applied.append("inductor.select_algorithm.PRINT_AUTOTUNE=False")
+    except Exception:
+        pass
+
+    return applied
+
+
 # ── Model ─────────────────────────────────────────────────────────────────────
 
 def _copy_present(cfg: dict, keys: tuple[str, ...]) -> dict:
@@ -506,12 +539,13 @@ def main():
     compile_cfg = cfg.get("compile", {})
     if compile_cfg.get("enabled", False) and hasattr(torch, "compile"):
         mode = compile_cfg.get("mode", "default")   # default | reduce-overhead | max-autotune
-        # max-autotune verbose(AUTOTUNE 벤치마크 출력) 억제
-        try:
-            import torch._inductor.config as inductor_cfg
-            inductor_cfg.verbose_progress = False
-        except Exception:
-            pass
+        suppress_autotune_logs = bool(compile_cfg.get("suppress_autotune_logs", True))
+        if suppress_autotune_logs:
+            applied = _suppress_inductor_autotune_logs()
+            if applied:
+                print(f"[train] compile log_suppression=on ({', '.join(applied)})")
+            else:
+                print("[train] compile log_suppression=on (no inductor hooks found)")
         model = torch.compile(model, mode=mode)
         print(f"[train] torch.compile enabled  mode={mode}")
 
