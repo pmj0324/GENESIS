@@ -666,7 +666,16 @@ class Trainer:
                 print("[train] 첫 에폭: torch.compile 커널 컴파일 중 (배치마다 처음엔 느림, 이후 정상)")
 
             if c2ot_mode:
+                pair_t0 = time.time()
+                print(
+                    f"[train] ep{epoch+1:04d}: C2OT pair matching start "
+                    f"(dataset={len(train_loader.dataset)})"
+                )
                 pairs = self.c2ot_sampler.compute_pairs(train_loader.dataset)
+                print(
+                    f"[train] ep{epoch+1:04d}: C2OT pair matching done "
+                    f"(pairs={len(pairs)}, {time.time() - pair_t0:.1f}s)"
+                )
                 train_loss = self._train_epoch_c2ot(pairs, c2ot_batch_size, epoch)
             else:
                 train_loss = self._train_epoch(train_loader, epoch)

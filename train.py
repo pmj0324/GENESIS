@@ -8,6 +8,7 @@ GENESIS - Training Entry Point
 """
 
 import argparse
+import os
 import random
 import shutil
 from copy import deepcopy
@@ -78,6 +79,49 @@ def _suppress_inductor_autotune_logs() -> list[str]:
     except Exception:
         pass
 
+    return applied
+
+
+def _set_nested_attr_if_exists(obj, dotted_name: str, value) -> bool:
+    """'a.b.c' 형태의 속성이 존재할 때만 안전하게 설정한다."""
+    parts = dotted_name.split(".")
+    current = obj
+    for part in parts[:-1]:
+        if not hasattr(current, part):
+            return False
+        current = getattr(current, part)
+        if current is None:
+            return False
+    leaf = parts[-1]
+    if not hasattr(current, leaf):
+        return False
+    try:
+        setattr(current, leaf, value)
+        return True
+    except Exception:
+        return False
+
+
+def _disable_inductor_cudagraphs() -> list[str]:
+    """
+    torch.compile + cudagraph allocator 충돌을 피하기 위해 cudagraph 관련 플래그를 비활성화한다.
+    PyTorch 버전마다 키가 달라질 수 있어, 존재하는 설정만 적용한다.
+    """
+    applied: list[str] = []
+    try:
+        import torch._inductor.config as inductor_cfg
+    except Exception:
+        return applied
+
+    candidates = [
+        "triton.cudagraphs",
+        "triton.cudagraph_trees",
+        "cudagraphs",
+        "cudagraph_trees",
+    ]
+    for key in candidates:
+        if _set_nested_attr_if_exists(inductor_cfg, key, False):
+            applied.append(f"inductor.{key}=False")
     return applied
 
 
@@ -546,8 +590,39 @@ def main():
                 print(f"[train] compile log_suppression=on ({', '.join(applied)})")
             else:
                 print("[train] compile log_suppression=on (no inductor hooks found)")
-        model = torch.compile(model, mode=mode)
-        print(f"[train] torch.compile enabled  mode={mode}")
+
+        alloc_conf = os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
+        auto_disable_cudagraphs = "expandable_segments" in alloc_conf.lower()
+        disable_cudagraphs = bool(
+            compile_cfg.get("disable_cudagraphs", auto_disable_cudagraphs)
+        )
+
+        compile_mode = mode
+        if disable_cudagraphs and mode == "max-autotune":
+            # 지원 버전에서는 cudagraph 비활성화 모드가 가장 안전하다.
+            compile_mode = "max-autotune-no-cudagraphs"
+
+        if disable_cudagraphs:
+            applied = _disable_inductor_cudagraphs()
+            if applied:
+                print(f"[train] compile cudagraph=off ({', '.join(applied)})")
+            else:
+                print("[train] compile cudagraph=off requested (no inductor hooks found)")
+
+        try:
+            model = torch.compile(model, mode=compile_mode)
+            print(f"[train] torch.compile enabled  mode={compile_mode}")
+        except Exception as compile_exc:
+            if compile_mode != mode:
+                retry_mode = "default" if disable_cudagraphs else mode
+                print(
+                    "[train] compile mode fallback: "
+                    f"{compile_mode!r} unsupported ({compile_exc}); retry {retry_mode!r}"
+                )
+                model = torch.compile(model, mode=retry_mode)
+                print(f"[train] torch.compile enabled  mode={retry_mode}")
+            else:
+                raise
 
     # Loss function
     framework = cfg["generative"]["framework"]

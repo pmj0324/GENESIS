@@ -109,6 +109,7 @@ compile:
   enabled: true
   mode: max-autotune      # default | reduce-overhead | max-autotune
   suppress_autotune_logs: true
+  disable_cudagraphs: true
 
 checkpoint:
   ckpt_dir: runs/flow/unet/0410_c2ot_nocfg/
