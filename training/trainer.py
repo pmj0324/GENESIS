@@ -24,6 +24,52 @@ from typing import Callable, Optional, Union
 LossFn = Callable[[nn.Module, torch.Tensor, torch.Tensor], torch.Tensor]
 
 
+class _C2OTPrefetcher:
+    """
+    C²OT 배치를 백그라운드 CUDA 스트림으로 미리 GPU에 올려놓는 prefetcher.
+    GPU가 현재 배치를 계산하는 동안 다음 배치를 CPU→GPU 전송.
+    """
+    def __init__(self, pairs: list, batch_size: int, device: torch.device):
+        self.pairs      = pairs
+        self.batch_size = batch_size
+        self.device     = device
+        self.stream     = torch.cuda.Stream(device=device)
+        self.n_steps    = len(pairs) // batch_size
+        self._next      = None
+        self._idx       = 0
+
+    def _load(self, idx: int):
+        batch   = self.pairs[idx * self.batch_size : (idx + 1) * self.batch_size]
+        x_data  = torch.stack([p["x_data"]  for p in batch])
+        x_noise = torch.stack([p["x_noise"] for p in batch])
+        theta   = torch.stack([p["theta"]   for p in batch])
+        with torch.cuda.stream(self.stream):
+            x_data  = x_data.to(self.device, non_blocking=True,
+                                 memory_format=torch.channels_last).float()
+            x_noise = x_noise.to(self.device, non_blocking=True,
+                                  memory_format=torch.channels_last).float()
+            theta   = theta.to(self.device, non_blocking=True).float()
+        return x_data, x_noise, theta
+
+    def __iter__(self):
+        self._idx  = 0
+        self._next = self._load(0)          # 첫 배치 prefetch
+        return self
+
+    def __next__(self):
+        if self._idx >= self.n_steps:
+            raise StopIteration
+        torch.cuda.current_stream(self.device).wait_stream(self.stream)
+        x_data, x_noise, theta = self._next
+        self._idx += 1
+        if self._idx < self.n_steps:        # 다음 배치 미리 올리기
+            self._next = self._load(self._idx)
+        return x_data, x_noise, theta
+
+    def __len__(self):
+        return self.n_steps
+
+
 class Trainer:
     """
     범용 Trainer. Diffusion / Flow Matching 공용.
@@ -267,6 +313,7 @@ class Trainer:
         pbar = tqdm(loader, desc=desc, leave=False, dynamic_ncols=True, disable=not sys.stdout.isatty())
 
         self.optimizer.zero_grad()
+        t_batch = time.time()
         for step_idx, (maps, params) in enumerate(pbar):
             maps   = maps.to(self.device, memory_format=torch.channels_last).float()
             params = params.to(self.device).float()
@@ -297,7 +344,9 @@ class Trainer:
 
             total += loss.item() * accum * maps.size(0)
             n     += maps.size(0)
-            pbar.set_postfix(loss=f"{total/n:.4f}")
+            batch_sec = time.time() - t_batch
+            t_batch = time.time()
+            pbar.set_postfix(loss=f"{total/n:.4f}", batch=f"{batch_sec:.1f}s")
         return total / n
 
     def _train_epoch_c2ot(self, pairs: list, batch_size: int, epoch: int) -> float:
@@ -314,18 +363,29 @@ class Trainer:
         scaler    = self.scaler
         is_warmup = epoch < self.warmup_epochs
         desc      = "  [W] c2ot" if is_warmup else "      c2ot"
-        n_steps   = len(pairs) // batch_size
-        pbar      = tqdm(
-            range(n_steps), desc=desc, leave=False,
-            dynamic_ncols=True, disable=not sys.stdout.isatty(),
-        )
+
+        use_prefetch = self.device.type == "cuda"
+        if use_prefetch:
+            loader = _C2OTPrefetcher(pairs, batch_size, self.device)
+        else:
+            loader = None
+        n_steps = len(pairs) // batch_size
+        pbar    = tqdm(range(n_steps), desc=desc, leave=False,
+                       dynamic_ncols=True, disable=not sys.stdout.isatty())
 
         self.optimizer.zero_grad()
+        t_batch  = time.time()
+        prefetch_iter = iter(loader) if use_prefetch else None
         for step_idx in pbar:
-            batch   = pairs[step_idx * batch_size : (step_idx + 1) * batch_size]
-            x_data  = torch.stack([p["x_data"]  for p in batch]).to(self.device, memory_format=torch.channels_last).float()
-            x_noise = torch.stack([p["x_noise"] for p in batch]).to(self.device, memory_format=torch.channels_last).float()
-            theta   = torch.stack([p["theta"]   for p in batch]).to(self.device).float()
+            if use_prefetch:
+                x_data, x_noise, theta = next(prefetch_iter)
+                b = x_data.size(0)
+            else:
+                batch   = pairs[step_idx * batch_size : (step_idx + 1) * batch_size]
+                x_data  = torch.stack([p["x_data"]  for p in batch]).to(self.device, memory_format=torch.channels_last).float()
+                x_noise = torch.stack([p["x_noise"] for p in batch]).to(self.device, memory_format=torch.channels_last).float()
+                theta   = torch.stack([p["theta"]   for p in batch]).to(self.device).float()
+                b       = len(batch)
 
             with autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
                 loss = self.c2ot_loss_fn(self.model, x_data, x_noise, theta) / accum
@@ -355,10 +415,11 @@ class Trainer:
                     ):
                         self._ema_update()
 
-            b = len(batch)
             total += loss.item() * accum * b
             n     += b
-            pbar.set_postfix(loss=f"{total/n:.4f}")
+            batch_sec = time.time() - t_batch
+            t_batch = time.time()
+            pbar.set_postfix(loss=f"{total/n:.4f}", batch=f"{batch_sec:.1f}s")
 
         return total / n if n > 0 else 0.0
 
@@ -587,6 +648,10 @@ class Trainer:
 
         epoch_times = []
 
+        _compiled = getattr(self.model, "_is_compiled", False) or (
+            type(self.model).__name__ == "OptimizedModule"
+        )
+
         for epoch in range(start_epoch, self.max_epochs):
             t0 = time.time()
 
@@ -596,6 +661,9 @@ class Trainer:
 
             if self.use_amp:
                 torch.cuda.reset_peak_memory_stats(self.device)
+
+            if _compiled and epoch == start_epoch:
+                print("[train] 첫 에폭: torch.compile 커널 컴파일 중 (배치마다 처음엔 느림, 이후 정상)")
 
             if c2ot_mode:
                 pairs = self.c2ot_sampler.compute_pairs(train_loader.dataset)

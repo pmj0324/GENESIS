@@ -506,6 +506,12 @@ def main():
     compile_cfg = cfg.get("compile", {})
     if compile_cfg.get("enabled", False) and hasattr(torch, "compile"):
         mode = compile_cfg.get("mode", "default")   # default | reduce-overhead | max-autotune
+        # max-autotune verbose(AUTOTUNE 벤치마크 출력) 억제
+        try:
+            import torch._inductor.config as inductor_cfg
+            inductor_cfg.verbose_progress = False
+        except Exception:
+            pass
         model = torch.compile(model, mode=mode)
         print(f"[train] torch.compile enabled  mode={mode}")
 
