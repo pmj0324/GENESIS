@@ -83,7 +83,7 @@ generative:
 training:
   batch_size: 16        # GPU에 올라가는 실제 배치 (메모리 한계)
   grad_accum_steps: 2   # 유효 배치 = 16 × 2 = 32
-  num_workers: 400
+  num_workers: 40
   max_epochs: 700
   lr: 1.0e-4
   weight_decay: 1.0e-2
