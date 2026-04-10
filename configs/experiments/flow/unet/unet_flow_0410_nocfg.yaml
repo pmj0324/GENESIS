@@ -2,113 +2,133 @@
 # unet_flow_0410_nocfg.yaml
 #
 # 목적:
-#   - unet_flow_0330 (B preset) 기반
-#   - CFG 완전 제거 (cfg_prob=0, cfg_scale=1.0)
-#     → 학습된 모델을 likelihood 기반 θ 추정에 직접 사용하기 위함
-#   - cosine_restarts 스케줄 (T_0=10, T_mult=1)
-#   - C²OT 옵션 내장 (method 한 줄로 전환)
+#   - UNet B preset 기반 Flow Matching (CFG 없음)
+#   - C²OT(Condition-Aware Optimal Transport) 활성화
+#     → 같은 theta 내에서 noise-image 최적 매칭 → 더 직선적인 flow
+#   - GPU 최대 가속 옵션 모두 활성화
 #
-# ── C²OT 전환 방법 ─────────────────────────────────────────────────────────
-#   C²OT 끄기 (독립 샘플링):  method: ot   batch_size: 8
-#   C²OT 켜기:               method: c2ot  batch_size: 16
-#   → c2ot 섹션 파라미터는 method: c2ot 일 때만 사용됨
-#
-# ── C²OT 동작 방식 ─────────────────────────────────────────────────────────
-#   에폭 시작 시 compute_pairs() 호출:
-#     theta 800개 × 15장 순회
-#     → 새 noise 15개 샘플링  ← 매 에폭마다 새로 뽑음
-#     → 15×15 L2 비용행렬 → Sinkhorn → hard assignment
-#     → 12,000쌍 CPU 저장 → shuffle → 배치 학습
-#   (x0 noise는 에폭마다 새로 샘플링되므로 overfitting 없음)
-#
-# 사용:
+# ── 실행 명령어 ────────────────────────────────────────────────────────────
 #   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 #   python train.py \
 #     --config configs/experiments/flow/unet/unet_flow_0410_nocfg.yaml
 #
-# 변경 포인트 vs unet_flow_0330:
-#   - cfg_prob: 0.1 → 0.0
-#   - cfg_scale: 1.2 → 1.0
-#   - schedule: cosine → cosine_restarts (T_0=10, T_mult=1)
-#   - warmup_epochs: 5 → 10
-#   - max_epochs: 500 → 700
-#   - early_stop_patience: 15 → 25
-#   - dropout: 0.05 유지
-#   - cross_attn_cond / per_scale_cond: True 명시
-#   - compile.enabled: true (max-autotune)
+# ── GPU 가속 항목 (코드에서 자동 처리) ────────────────────────────────────
+#   cudnn.benchmark=True   : 고정 입력 크기(256²) → 최적 cuDNN 알고리즘 자동 선택
+#   TF32=True              : Ampere(A100) matmul/conv에서 ~8× 가속 (정밀도 영향 미미)
+#   bfloat16 AMP           : float16보다 수치 안정, GradScaler 오버헤드 없음
+#   channels_last          : conv 연산 NHWC 레이아웃 → L1 캐시 히트율 향상
+#   torch.compile          : Triton 커널 퓨전 (아래 compile 섹션 참고)
+#   C²OT prefetcher        : GPU 계산 중 다음 배치를 CUDA 스트림으로 비동기 전송
 ##############################################################################
 
 data:
+  # 학습 데이터 경로 (서버 로컬 경로)
   data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100
+  # 전체 데이터 사용 (0.0~1.0). 빠른 smoke test 시 0.1로 줄이면 됨
   data_fraction: 1.0
+  augment: true  # train split에 D4 대칭(회전/반사) augmentation 적용
 
 model:
   architecture: unet
-  in_channels: 3
-  cond_dim: 6
-  dropout: 0.05
+  in_channels: 3          # Mcdm / Mgas / T 채널
+  cond_dim: 6             # θ = [Ω_m, σ_8, A_SN1, A_SN2, A_AGN1, A_AGN2]
+  dropout: 0.05           # 과적합 방지. CFG 없으므로 낮게 유지
   unet:
-    preset: B
-    attention_resolution: 32
-    circular_conv: true
-    cross_attn_cond: true
-    per_scale_cond: true
+    preset: B             # base_ch=128, ch_mult=[1,2,4,4], num_res=2 (표준 설정)
+    attention_resolution: 32   # 32×32 이하 해상도에서만 self-attention (속도/메모리 절충)
+    circular_conv: true        # 주기적 경계 조건 (우주론 시뮬레이션 특성)
+    cross_attn_cond: true      # θ → 각 해상도에서 cross-attention으로 conditioning
+    per_scale_cond: true       # 스케일별 독립 conditioning MLP (표현력 향상)
 
 generative:
   framework: flow_matching
   flow_matching:
-    # ── 전환 포인트 ──────────────────────────────────────────────
-    method: c2ot      # ot: 독립 샘플링 / c2ot: condition-aware OT
-    # ─────────────────────────────────────────────────────────────
-    cfg_prob: 0.0
-    sigma_min: 1.0e-4
-    c2ot:             # method: c2ot 일 때만 사용
-      n_per_theta: 15   # theta당 이미지 수 (데이터셋 구조와 일치)
-      eps: 0.1          # Sinkhorn entropy reg (0.05~0.1)
-      n_iter: 50        # Sinkhorn 반복 (15×15면 50회 충분)
+    # ── method 전환 포인트 ──────────────────────────────────────
+    method: c2ot    # ot: 독립 샘플링 (빠름) / c2ot: 최적 매칭 (더 직선적 flow)
+    # ────────────────────────────────────────────────────────────
+    cfg_prob: 0.0   # CFG 학습 비율. 0=완전 제거 → likelihood 추정에 직접 사용 가능
+    sigma_min: 1.0e-4   # noise floor. 너무 작으면 수치 불안정, 너무 크면 생성 품질↓
+
+    c2ot:   # method: c2ot 일 때만 사용 (ot이면 무시됨)
+      n_per_theta: 15   # theta당 이미지 수 (데이터셋의 maps_per_sim과 반드시 일치)
+      eps: 0.1          # Sinkhorn entropy reg. 작을수록 하드 매칭에 가까움 (0.05~0.1)
+      n_iter: 50        # Sinkhorn 반복. 15×15 크기면 50회로 수렴 충분
+
   sampler:
-    method: dopri5
-    steps: 25
-    rtol: 1.0e-4
-    atol: 1.0e-4
-    cfg_scale: 1.0
+    method: dopri5      # 적응형 ODE solver. 고품질 샘플 생성용
+    steps: 25           # 최대 함수 평가 횟수 (dopri5는 적응적이므로 실제 step 수는 변동)
+    rtol: 1.0e-4        # 상대 허용 오차. 낮출수록 정확하지만 느림
+    atol: 1.0e-4        # 절대 허용 오차
+    cfg_scale: 1.0      # CFG 없으므로 1.0 고정 (변경 불필요)
     viz:
       sampler_a: dopri5
       sampler_b: dopri5
-      samplers: [euler, heun, rk4, dopri5]
-      metrics_sampler: dopri5
-      eval_n: 15
-      every_epoch: true
+      samplers: [euler, heun, rk4, dopri5]   # 에폭별 시각화에 사용할 sampler 목록
+      metrics_sampler: dopri5                 # val 메트릭 계산용 sampler
+      eval_n: 15          # 시각화/메트릭에 사용할 val 샘플 수 (maps_per_sim 이하)
+      every_epoch: true   # 매 에폭 시각화 (false로 하면 best 갱신시에만)
 
 training:
-  batch_size: 16        # GPU에 올라가는 실제 배치 (메모리 한계)
-  grad_accum_steps: 2   # 유효 배치 = 16 × 2 = 32
+  # ── 배치 설정 ─────────────────────────────────────────────────────────────
+  # A100 80GB 기준: bs=16에서 ~32GB 사용 → bs=32 시도 권장 (OOM 시 24로)
+  # C²OT는 pairs를 미리 CPU에 쌓아두므로 bs를 올려도 Sinkhorn 비용 무관
+  batch_size: 16          # 실제 GPU 배치 크기
+  grad_accum_steps: 2     # 유효 배치 = 16 × 2 = 32 (메모리 추가 없이 큰 배치 효과)
+
+  # ── DataLoader ─────────────────────────────────────────────────────────────
+  # C²OT 학습 중엔 DataLoader는 compute_pairs()와 val에만 사용
+  # CPU 코어 수(60)의 절반~2/3 수준이 적정. 너무 많으면 컨텍스트 스위칭 오버헤드
   num_workers: 40
+
+  # ── 학습 길이 ──────────────────────────────────────────────────────────────
   max_epochs: 700
-  lr: 1.0e-4
-  weight_decay: 1.0e-2
-  betas: [0.9, 0.999]
-  warmup_epochs: 10
-  warmup_scale: 1
-  grad_clip: 1.0
+  early_stop_patience: 30   # val loss 개선 없으면 30 에폭 후 조기 종료
+
+  # ── Optimizer ──────────────────────────────────────────────────────────────
   optimizer: adamw
-  schedule: cosine_restarts
-  T_0: 10
-  T_mult: 1
-  eta_min: 1.0e-6
+  lr: 1.0e-4              # 피크 학습률. warmup 후 cosine_restarts로 감쇠
+  weight_decay: 1.0e-2    # AdamW L2 정규화
+  betas: [0.9, 0.999]     # AdamW 모멘텀 (기본값)
+  grad_clip: 1.0          # gradient norm clipping. 발산 방지
+
+  # ── LR 스케줄 ──────────────────────────────────────────────────────────────
+  schedule: cosine_restarts   # CosineAnnealingWarmRestarts
+  warmup_epochs: 10           # 처음 10 에폭은 lr을 선형으로 warm up
+  warmup_scale: 1             # warmup lr = base_lr * (epoch+1) / (warmup_epochs * scale)
+  T_0: 10                     # 첫 번째 restart 주기 (에폭). 이후 T_mult배씩 늘어남
+  T_mult: 1                   # restart마다 주기 배율. 1=항상 10에폭 주기로 반복
+  eta_min: 1.0e-6             # cosine 최솟값. lr이 이 아래로 내려가지 않음
+
+  # ── EMA (Exponential Moving Average) ───────────────────────────────────────
+  # val 평가와 시각화를 EMA 가중치로 수행 → 더 안정적인 성능 측정
   ema:
     enabled: true
-    decay: 0.9999
-    update_every: 1
-    update_after_step: auto
-    min_update_after_step: 500
-    eval_with_ema: true
-  early_stop_patience: 30
+    decay: 0.9999           # EMA 감쇠율. 클수록 느리게 업데이트 (0.999~0.9999)
+    update_every: 1         # 매 optimizer step마다 EMA 업데이트
+    update_after_step: auto # warmup_epochs × steps_per_epoch 이후부터 EMA 시작
+    min_update_after_step: 500   # EMA 시작 최소 step (auto 계산값과 max 적용)
+    eval_with_ema: true     # val loss / 시각화를 EMA 모델로 계산
 
+# ── torch.compile 설정 ────────────────────────────────────────────────────────
+# 첫 에폭에서 각 연산 shape별로 최적 커널을 탐색 → 이후 에폭부터 빠름
+# 700 에폭 학습 기준 초기 컴파일 비용은 전체의 1% 미만
 compile:
   enabled: true
-  mode: max-autotune      # default | reduce-overhead | max-autotune
+
+  # max-autotune          : 모든 연산 shape별 Triton 커널 벤치마킹 후 최적 선택
+  #                         → 가장 빠르지만 첫 에폭이 오래 걸림 (convolution 수백 개)
+  # max-autotune-no-cudagraphs : cudagraph 없이 max-autotune (expandable_segments와 호환)
+  #                         → PYTORCH_CUDA_ALLOC_CONF=expandable_segments 사용 시 자동 전환
+  # reduce-overhead       : cudagraph만 적용. 컴파일 빠름, 효과는 조금 작음
+  # default               : 기본 컴파일. 가장 빠르게 시작
+  mode: max-autotune      # expandable_segments 환경이면 코드가 자동으로 no-cudagraphs로 전환
+
+  # AUTOTUNE 로그(triton kernel 벤치마크 결과) 출력 억제
+  # false로 하면 "AUTOTUNE addmm(...) bias_addmm 0.69ms 100% ..." 줄들이 출력됨
   suppress_autotune_logs: true
+
+  # expandable_segments 메모리 할당자와 cudagraph는 충돌 가능
+  # PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True 사용 중이므로 true 권장
   disable_cudagraphs: true
 
 checkpoint:

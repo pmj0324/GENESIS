@@ -54,8 +54,23 @@ def _suppress_inductor_autotune_logs() -> list[str]:
     torch.compile(mode='max-autotune')의 과도한 AUTOTUNE 로그를 가능한 범위에서 억제한다.
     PyTorch 버전별 속성 유무가 달라질 수 있어, 존재하는 훅만 안전하게 적용한다.
     """
+    import logging
     applied: list[str] = []
 
+    # 1) 로거 레벨 직접 설정 (가장 확실한 방법)
+    _autotune_loggers = [
+        "torch._inductor.select_algorithm",
+        "torch._inductor.autotune_process",
+        "torch._inductor.kernel.mm_common",
+        "torch._inductor",
+    ]
+    for name in _autotune_loggers:
+        logger = logging.getLogger(name)
+        if logger.level == logging.NOTSET or logger.level < logging.WARNING:
+            logger.setLevel(logging.WARNING)
+            applied.append(f"logger({name})=WARNING")
+
+    # 2) inductor config 플래그
     try:
         import torch._inductor.config as inductor_cfg
 
@@ -70,6 +85,7 @@ def _suppress_inductor_autotune_logs() -> list[str]:
     except Exception:
         pass
 
+    # 3) select_algorithm 모듈 플래그
     try:
         import torch._inductor.select_algorithm as select_algorithm
 
