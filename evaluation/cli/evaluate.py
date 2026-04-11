@@ -151,6 +151,43 @@ def build_model(cfg: dict) -> torch.nn.Module:
     return model
 
 
+def _maybe_strip_state_dict_prefix(state_dict: dict, prefix: str) -> tuple[dict, bool]:
+    """Strip a common key prefix from a checkpoint state_dict when present.
+
+    Handles checkpoints saved from wrapped models such as torch.compile
+    OptimizedModule (`_orig_mod.` prefix) or DataParallel (`module.` prefix).
+    """
+    if not isinstance(state_dict, dict) or not state_dict:
+        return state_dict, False
+
+    keys = [k for k in state_dict.keys() if isinstance(k, str)]
+    if not keys or not any(k.startswith(prefix) for k in keys):
+        return state_dict, False
+
+    stripped = {}
+    for k, v in state_dict.items():
+        if isinstance(k, str) and k.startswith(prefix):
+            nk = k[len(prefix):]
+        else:
+            nk = k
+        if nk in stripped:
+            # Key collision after stripping: keep original to avoid corruption.
+            return state_dict, False
+        stripped[nk] = v
+    return stripped, True
+
+
+def _normalize_state_dict_for_load(state_dict: dict) -> tuple[dict, list[str]]:
+    """Normalize known wrapper prefixes for robust model.load_state_dict()."""
+    normalized = state_dict
+    applied: list[str] = []
+    for prefix in ("_orig_mod.", "module."):
+        normalized, changed = _maybe_strip_state_dict_prefix(normalized, prefix)
+        if changed:
+            applied.append(prefix)
+    return normalized, applied
+
+
 def select_checkpoint_state_dict(ckpt: dict, model_source: str = "auto") -> tuple[dict, str]:
     """
     Resolve which model weights to use from a checkpoint.
@@ -168,16 +205,32 @@ def select_checkpoint_state_dict(ckpt: dict, model_source: str = "auto") -> tupl
     raw_state = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
 
     if source == "raw":
-        return raw_state, "raw"
+        state, normalized = _normalize_state_dict_for_load(raw_state)
+        src = "raw"
+        if normalized:
+            src += f"+normalized({','.join(normalized)})"
+        return state, src
     if source == "ema":
         if not has_ema:
             raise ValueError("Requested model_source='ema' but checkpoint has no 'model_ema'.")
-        return ckpt["model_ema"], "ema"
+        state, normalized = _normalize_state_dict_for_load(ckpt["model_ema"])
+        src = "ema"
+        if normalized:
+            src += f"+normalized({','.join(normalized)})"
+        return state, src
 
     # auto
     if has_ema:
-        return ckpt["model_ema"], "ema"
-    return raw_state, "raw"
+        state, normalized = _normalize_state_dict_for_load(ckpt["model_ema"])
+        src = "ema"
+        if normalized:
+            src += f"+normalized({','.join(normalized)})"
+        return state, src
+    state, normalized = _normalize_state_dict_for_load(raw_state)
+    src = "raw"
+    if normalized:
+        src += f"+normalized({','.join(normalized)})"
+    return state, src
 
 
 # ── Sampler builder ────────────────────────────────────────────────────────────
