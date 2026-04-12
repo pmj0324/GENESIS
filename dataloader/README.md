@@ -117,6 +117,7 @@ clip 없음. 역변환: `10^(x * scale + center)`
 | method | 수식 | 파라미터 |
 |---|---|---|
 | `affine` | `(log10(x) - center) / scale` | center, scale |
+| `minmax_center` | `((log10(x) - min_log) / (max_log - min_log)) - post_mean` | min_log, max_log, post_mean |
 | `softclip` | affine 후 `c * tanh(z/c)` | center, scale, clip_c |
 
 `scale_mult` 옵션으로 scale 배율 조정 가능 (예: `scale_mult: 1.25`).

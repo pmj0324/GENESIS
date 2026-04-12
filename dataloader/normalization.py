@@ -56,10 +56,11 @@ class Normalizer:
 
     지원 method:
       affine   : (log10(x) - center) / (scale * scale_mult)
+      minmax_center : log10(x) 후 min-max, then subtract post_mean
       softclip : affine 후 c * tanh(z / c)   →   역변환: c * atanh(z / c)
 
     config 형식 (dict 또는 YAML 로드 결과):
-      {"Mcdm": {"method": ..., "center": ..., "scale": ..., [clip_c, scale_mult]}, ...}
+      {"Mcdm": {"method": ..., "center": ..., "scale": ..., [min_log, max_log, post_mean, clip_c, scale_mult]}, ...}
     """
 
     def __init__(self, config: dict = None):
@@ -74,6 +75,9 @@ class Normalizer:
         self._clip_cs = [cfg[c].get("clip_c", None) for c in CHANNELS]
         self._min_zs  = [cfg[c].get("min_z", None)  for c in CHANNELS]
         self._max_zs  = [cfg[c].get("max_z", None)  for c in CHANNELS]
+        self._min_logs = [cfg[c].get("min_log", cfg[c].get("min_z", None)) for c in CHANNELS]
+        self._max_logs = [cfg[c].get("max_log", cfg[c].get("max_z", None)) for c in CHANNELS]
+        self._post_means = [cfg[c].get("post_mean", 0.0) for c in CHANNELS]
 
     @classmethod
     def from_yaml(cls, path: str, key: str = "normalization") -> "Normalizer":
@@ -113,13 +117,33 @@ class Normalizer:
         max_z = torch.tensor(self._max_zs[ch_idx], dtype=z.dtype, device=z.device)
         return z * (max_z - min_z) + min_z
 
+    def _apply_log_minmax_center(self, log_x: torch.Tensor, ch_idx: int) -> torch.Tensor:
+        min_log = torch.tensor(self._min_logs[ch_idx], dtype=log_x.dtype, device=log_x.device)
+        max_log = torch.tensor(self._max_logs[ch_idx], dtype=log_x.dtype, device=log_x.device)
+        mean = torch.tensor(self._post_means[ch_idx], dtype=log_x.dtype, device=log_x.device)
+        z = (log_x - min_log) / (max_log - min_log)
+        return z - mean
+
+    def _invert_log_minmax_center(self, z: torch.Tensor, ch_idx: int) -> torch.Tensor:
+        min_log = torch.tensor(self._min_logs[ch_idx], dtype=z.dtype, device=z.device)
+        max_log = torch.tensor(self._max_logs[ch_idx], dtype=z.dtype, device=z.device)
+        mean = torch.tensor(self._post_means[ch_idx], dtype=z.dtype, device=z.device)
+        return (z + mean) * (max_log - min_log) + min_log
+
     # ── public: torch ─────────────────────────────────────────────────────────
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        log_x = torch.log10(x)
         centers = self._bcast(self._centers.to(x.device), x.dim())
         scales  = self._bcast(self._scales.to(x.device),  x.dim())
-        z = (torch.log10(x) - centers) / scales
+        z = (log_x - centers) / scales
         for i, method in enumerate(self._methods):
+            if method == "minmax_center":
+                if z.dim() == 4:
+                    z[:, i] = self._apply_log_minmax_center(log_x[:, i], i)
+                else:
+                    z[i] = self._apply_log_minmax_center(log_x[i], i)
+                continue
             if method == "softclip":
                 z = self._apply_softclip(z, i)
             elif method == "minmax":
@@ -129,6 +153,12 @@ class Normalizer:
     def denormalize(self, z: torch.Tensor) -> torch.Tensor:
         z = z.clone()
         for i, method in enumerate(self._methods):
+            if method == "minmax_center":
+                if z.dim() == 4:
+                    z[:, i] = self._invert_log_minmax_center(z[:, i], i)
+                else:
+                    z[i] = self._invert_log_minmax_center(z[i], i)
+                continue
             if method == "softclip":
                 z = self._invert_softclip(z, i)
             elif method == "minmax":
@@ -159,6 +189,13 @@ class Normalizer:
 
         for i, method in enumerate(self._methods):
             sl = (slice(None), i) if x.ndim == 4 else (i,)
+            if method == "minmax_center":
+                min_log = np.float32(self._min_logs[i])
+                max_log = np.float32(self._max_logs[i])
+                post_mean = np.float32(self._post_means[i])
+                z[sl] = (np.log10(x[sl]) - min_log) / (max_log - min_log)
+                z[sl] = z[sl] - post_mean
+                continue
             if method == "softclip":
                 clip_c = np.float32(self._clip_cs[i])  # avoid float64 upcasting
                 z[sl] = clip_c * np.tanh(z[sl] / clip_c)
@@ -175,6 +212,12 @@ class Normalizer:
         # 역변환: 메서드 역순 적용
         for i, method in enumerate(self._methods):
             sl = (slice(None), i) if z.ndim == 4 else (i,)
+            if method == "minmax_center":
+                min_log = np.float32(self._min_logs[i])
+                max_log = np.float32(self._max_logs[i])
+                post_mean = np.float32(self._post_means[i])
+                z[sl] = (z[sl] + post_mean) * (max_log - min_log) + min_log
+                continue
             if method == "softclip":
                 clip_c = np.float32(self._clip_cs[i])
                 z[sl] = clip_c * np.arctanh(np.clip(z[sl] / clip_c, -1 + 1e-6, 1 - 1e-6))

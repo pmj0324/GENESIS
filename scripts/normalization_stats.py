@@ -82,6 +82,12 @@ def normalize_channel(raw: np.ndarray, cfg: dict) -> np.ndarray:
     if method == "softclip":
         clip_c = np.float32(cfg.get("clip_c", 4.5))
         z = clip_c * np.tanh(z / clip_c)
+    elif method == "minmax_center":
+        min_log = np.float32(cfg.get("min_log", cfg.get("min_z")))
+        max_log = np.float32(cfg.get("max_log", cfg.get("max_z")))
+        post_mean = np.float32(cfg.get("post_mean", 0.0))
+        z = (np.log10(raw) - min_log) / (max_log - min_log)
+        z = z - post_mean
     elif method == "minmax":
         min_z = np.float32(cfg["min_z"])
         max_z = np.float32(cfg["max_z"])
