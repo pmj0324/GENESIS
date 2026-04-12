@@ -464,7 +464,7 @@ class Normalizer:
                 min_log = np.float32(self._min_logs[i])
                 max_log = np.float32(self._max_logs[i])
                 log_x = ((z[sl] + 1.0) * 0.5) * (max_log - min_log) + min_log
-            if method == "softclip":
+            elif method == "softclip":
                 clip_c = np.float32(self._clip_cs[i])
                 affine_z = clip_c * np.arctanh(np.clip(z[sl] / clip_c, -1 + 1e-6, 1 - 1e-6))
                 log_x = affine_z * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
@@ -473,6 +473,8 @@ class Normalizer:
                 max_z = np.float32(self._max_zs[i])
                 affine_z = z[sl] * (max_z - min_z) + min_z
                 log_x = affine_z * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
+            elif method == "affine":
+                log_x = z[sl] * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
             else:
                 log_x = z[sl] * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
 

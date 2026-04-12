@@ -1,0 +1,840 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,longtable,array}
+\usepackage{hyperref}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+\title{GENESIS Conditional UNet: Detailed Architecture and Conditioning Notes}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Purpose of this document}
+This note is a code-aligned description of the conditional UNet used in GENESIS for
+flow matching and diffusion-style training. The goal is to document \emph{exactly}
+how a single input tensor flows through the network, where conditioning enters,
+what each configurable option does, and how the normalization / attention / residual
+blocks are implemented.
+
+The description follows the implementation in \texttt{models/unet.py},
+\texttt{models/embeddings.py}, \texttt{flow\_matching/flows.py}, and
+\texttt{flow\_matching/samplers.py}.
+
+\section{High-level overview}
+The model is a ResNet-style UNet for 3-channel cosmology maps of size
+\[
+x \in \mathbb{R}^{3 \times 256 \times 256}.
+\]
+It predicts a vector field
+\[
+v(x_t, t, c) \in \mathbb{R}^{3 \times 256 \times 256},
+\]
+where:
+\begin{itemize}
+  \item $t \in [0,1]$ is the flow time.
+  \item $c \in \mathbb{R}^6$ is the cosmology conditioning vector.
+  \item $x_t$ is the intermediate state along the flow / interpolation path.
+\end{itemize}
+
+The forward path is:
+\[
+x \to \text{input stem} \to \text{encoder} \to \text{bottleneck} \to \text{decoder} \to \text{output head}.
+\]
+
+The conditioning path is:
+\[
+t \to t_{\mathrm{emb}}, \qquad c \to c_{\mathrm{emb}}, \qquad
+(t_{\mathrm{emb}}, c_{\mathrm{emb}}) \to \text{joint embedding}.
+\]
+
+\section{Constructor options}
+The UNet constructor exposes the following main options.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.20\textwidth}
+                  >{\raggedright\arraybackslash}p{0.22\textwidth}
+                  >{\raggedright\arraybackslash}p{0.18\textwidth}
+                  >{\raggedright\arraybackslash}p{0.34\textwidth}}
+\toprule
+\textbf{Option} & \textbf{Default / values} & \textbf{Type} & \textbf{Meaning} \\
+\midrule
+\endhead
+\texttt{preset} & \texttt{S}, \texttt{B}, \texttt{L} & string & Overrides the width / attention / block depth preset. \\
+\texttt{img\_size} & 256 & int & Input spatial resolution. Used to build the stage bookkeeping. \\
+\texttt{in\_channels} & 3 & int & Number of input map channels. \\
+\texttt{cond\_dim} & 6 & int & Dimension of the raw conditioning vector. \\
+\texttt{base\_channels} & 128 (if no preset) & int & Base width of the UNet. \\
+\texttt{channel\_mult} & \texttt{(1,2,4,4)} if no preset; preset B uses \texttt{[1,2,3,4]} & list[int] & Channel multipliers per encoder / decoder stage. \\
+\texttt{num\_res\_blocks} & 2 (preset B) & int & Number of ResBlocks per encoder stage. Decoder has one extra ResBlock per stage. \\
+\texttt{num\_heads} & 8 (preset B) & int & Number of attention heads. Must divide the channel width of attention stages. \\
+\texttt{attention\_resolution} & 32 & int & Attention is inserted only when the bookkeeping resolution is at or below this value. \\
+\texttt{channel\_se} & True & bool & Enables bottleneck ChannelSE. \\
+\texttt{dropout} & 0.0 & float & Dropout probability inside ResBlocks. \\
+\texttt{circular\_conv} & False & bool & Uses circular padding / periodic convolution. \\
+\texttt{upsample\_mode} & \texttt{nearest} & string & Decoder upsampling mode: \texttt{nearest} or \texttt{bilinear}. \\
+\texttt{cond\_context\_mode} & \texttt{cond} & string & Auxiliary conditioning context for cross-attention / per-scale projection: \texttt{cond} or \texttt{joint}. \\
+\texttt{cross\_attn\_cond} & True & bool & Enables cross-attention blocks at attention-enabled resolutions. \\
+\texttt{per\_scale\_cond} & True & bool & Enables stage-specific condition projections. \\
+\texttt{cond\_depth} & 4 & int & Depth of the condition MLP. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Presets}
+The presets are defined as:
+\begin{itemize}
+  \item \texttt{S}: \texttt{base\_channels=64}, \texttt{channel\_mult=[1,2,3,4]}, \texttt{num\_heads=4}, \texttt{num\_res\_blocks=2}
+  \item \texttt{B}: \texttt{base\_channels=128}, \texttt{channel\_mult=[1,2,3,4]}, \texttt{num\_heads=8}, \texttt{num\_res\_blocks=2}
+  \item \texttt{L}: \texttt{base\_channels=256}, \texttt{channel\_mult=[1,2,3,4]}, \texttt{num\_heads=16}, \texttt{num\_res\_blocks=3}
+\end{itemize}
+If a preset is provided, it overrides the corresponding explicit constructor defaults.
+
+\section{Embeddings}
+\subsection{Timestep embedding}
+The scalar time $t$ is mapped to a sinusoidal embedding and then passed through a two-layer MLP:
+\[
+t \mapsto t_{\mathrm{emb}} \in \mathbb{R}^{D}, \qquad D = 4 \times \texttt{base\_channels}.
+\]
+The sinusoidal sub-embedding uses dimension 256 in the implementation, and the MLP output dimension is the main embedding width.
+
+\subsection{Condition embedding}
+The 6-dimensional cosmology parameter vector is mapped through a deeper MLP:
+\[
+c \mapsto c_{\mathrm{emb}} \in \mathbb{R}^{D}.
+\]
+The default depth is four linear layers (\texttt{cond\_depth=4}) with SiLU activations between hidden layers.
+
+\subsection{Joint embedding}
+The model does \emph{not} simply add the time and condition embeddings.
+Instead, it concatenates them and projects them with an MLP:
+\[
+\mathrm{joint} = \mathrm{JointEmbedding}(t_{\mathrm{emb}}, c_{\mathrm{emb}}) \in \mathbb{R}^{D}.
+\]
+This preserves the two signals separately until the final projection and reduces information loss.
+
+\subsection{Alternative token embedding}
+The codebase also contains \texttt{ConditionTokenEmbedding}, which can convert the scalar condition vector into a small sequence of tokens. This module is currently not used by the main UNet forward pass, but it is useful for token-based conditioning experiments.
+
+\section{Normalization layers}
+\subsection{GroupNorm}
+The basic normalization primitive is:
+\[
+\mathrm{GroupNorm}(32, C, \epsilon=10^{-6}).
+\]
+This means:
+\begin{itemize}
+  \item the channel dimension is split into 32 groups,
+  \item each group is normalized independently per sample,
+  \item the operation does \emph{not} mix samples in the batch,
+  \item affine parameters $\gamma_c$ and $\beta_c$ are learnable by default (PyTorch default behavior).
+\end{itemize}
+
+For an input tensor $x \in \mathbb{R}^{B \times C \times H \times W}$, GroupNorm normalizes each channel group by the mean and variance computed over channels in the group and over spatial positions $(H,W)$, for each sample separately. The small epsilon stabilizes the division.
+
+\subsection{LayerNorm in cross-attention}
+The conditioning vector used by cross-attention is normalized with \texttt{LayerNorm}. This is applied to the context vector, not to the spatial feature map.
+
+\section{Residual block with AdaGN}
+The core building block is the ResBlock:
+\[
+\text{ResBlock}(x, e).
+\]
+It uses AdaGN-style conditioning:
+\[
+\tilde{x} = \mathrm{GN}(x), \qquad
+(\gamma, \beta) = f_{\mathrm{emb}}(e),
+\qquad
+\mathrm{AdaGN}(x, e) = \tilde{x} \odot (1+\gamma) + \beta.
+\]
+
+\subsection{Internal structure of a ResBlock}
+For input feature map $x$ and embedding $e$:
+\begin{enumerate}
+  \item Normalize and activate:
+  \[
+  h \leftarrow \mathrm{SiLU}(\mathrm{GN}_1(x)).
+  \]
+  \item Apply a $3 \times 3$ convolution:
+  \[
+  h \leftarrow \mathrm{Conv}_{3 \times 3}(h).
+  \]
+  \item Project the embedding:
+  \[
+  (\gamma, \beta) = \mathrm{Linear}(\mathrm{SiLU}(e)).
+  \]
+  The linear layer outputs $2 \cdot C_{\mathrm{out}}$ values, which are split into scale and shift.
+  \item Apply AdaGN:
+  \[
+  h \leftarrow \mathrm{GN}_2(h) \odot (1+\gamma) + \beta.
+  \]
+  \item Apply dropout and SiLU:
+  \[
+  h \leftarrow \mathrm{Dropout}(\mathrm{SiLU}(h)).
+  \]
+  \item Apply a second $3 \times 3$ convolution.
+  \item Add the residual skip connection:
+  \[
+  y = h + \mathrm{Skip}(x).
+  \]
+\end{enumerate}
+
+\subsection{Residual skip path}
+If $C_{\mathrm{in}} \neq C_{\mathrm{out}}$, the skip path is a $1 \times 1$ convolution.
+Otherwise it is the identity.
+
+\subsection{Initialization}
+The second convolution in each ResBlock is zero-initialized, so the block starts close to an identity mapping.
+The output convolution is also zero-initialized. This helps stabilize early training.
+
+\section{Self-attention block}
+The self-attention block is applied to spatial feature maps. It uses:
+\begin{itemize}
+  \item \texttt{GroupNorm(32, C, eps=1e-6)} on the feature map,
+  \item a $1 \times 1$ convolution to produce $Q,K,V$,
+  \item PyTorch's \texttt{scaled\_dot\_product\_attention},
+  \item a final $1 \times 1$ output projection.
+\end{itemize}
+
+\subsection{Shape logic}
+For $x \in \mathbb{R}^{B \times C \times H \times W}$:
+\[
+Q,K,V \in \mathbb{R}^{B \times C \times H \times W}
+\]
+are reshaped into head format:
+\[
+\mathbb{R}^{B \times N_h \times (HW) \times d_h},
+\qquad d_h = \frac{C}{N_h}.
+\]
+The attention is then computed across spatial positions. The output is reshaped back to
+\[
+\mathbb{R}^{B \times C \times H \times W}
+\]
+and added residually to the input.
+
+\section{Cross-attention block}
+Cross-attention injects the conditioning vector directly into a spatial feature map.
+
+\subsection{Roles of query, key, and value}
+\begin{itemize}
+  \item Query $Q$: comes from the spatial feature map.
+  \item Key $K$: comes from the conditioning context.
+  \item Value $V$: comes from the conditioning context.
+\end{itemize}
+
+The context is either:
+\[
+\text{context} = c_{\mathrm{emb}}
+\quad \text{or} \quad
+\text{context} = \mathrm{joint},
+\]
+depending on \texttt{cond\_context\_mode}.
+
+\subsection{Implementation details}
+For a feature map $x$:
+\begin{enumerate}
+  \item Normalize the feature map with GroupNorm.
+  \item Normalize the context with LayerNorm.
+  \item Project $x$ to queries with a $1 \times 1$ convolution.
+  \item Project the context to keys and values with linear layers.
+  \item Run multi-head scaled dot-product attention.
+  \item Apply a $1 \times 1$ output projection and add the residual.
+\end{enumerate}
+
+The output projection is zero-initialized, so the block starts as a near-identity module.
+
+\section{Channel Squeeze-and-Excitation}
+The ChannelSE module is a bottleneck-only channel recalibration block. It does \emph{not} take the condition vector as an input.
+
+\subsection{Mechanism}
+Given a bottleneck feature map $x \in \mathbb{R}^{B \times C \times H \times W}$:
+\begin{enumerate}
+  \item Global average pool each channel:
+  \[
+  x \mapsto \mathrm{GAP}(x) \in \mathbb{R}^{B \times C}.
+  \]
+  \item Pass through a small MLP:
+  \[
+  C \to \max(C/r, 4) \to C,
+  \]
+  where $r=16$ by default.
+  \item Apply sigmoid gating:
+  \[
+  g \in (0,1)^C.
+  \]
+  \item Reweight the channels:
+  \[
+  y = x \odot g.
+  \]
+\end{enumerate}
+
+\subsection{Interpretation}
+ChannelSE does not move spatial information. It only says which feature channels should be emphasized or suppressed after the bottleneck has already compressed the spatial structure.
+
+\section{Up-sampling and down-sampling}
+\subsection{Down-sampling}
+Down-sampling is implemented as a $3 \times 3$ convolution with stride 2:
+\[
+H \times W \to \frac{H}{2} \times \frac{W}{2}.
+\]
+The channel count stays the same in the down-sample layer itself.
+
+\subsection{Up-sampling}
+Up-sampling uses:
+\begin{itemize}
+  \item \texttt{nearest}: nearest-neighbor interpolation by factor 2,
+  \item \texttt{bilinear}: bilinear interpolation by factor 2 with \texttt{align\_corners=False},
+\end{itemize}
+followed by a $3 \times 3$ convolution.
+
+\subsection{Interpretation}
+The interpolation step only enlarges the spatial grid. The following convolution then reworks the feature content.
+This separation makes the decoder behavior easier to control and stabilizes training.
+
+\section{Encoder forward pass in detail}
+The encoder starts from:
+\[
+h_0 = \mathrm{InputConv}(x) \in \mathbb{R}^{128 \times 256 \times 256}
+\]
+for preset B.
+
+The stage widths under preset B are:
+\[
+128,\;256,\;384,\;512.
+\]
+
+\subsection{Stage 0: $256 \times 256$}
+\begin{itemize}
+  \item Input width: 128.
+  \item Output width: 128.
+  \item Two ResBlocks.
+  \item No attention if threshold is 32 or 64, because this stage is at full resolution.
+  \item Downsample to $128 \times 128$.
+\end{itemize}
+
+\subsection{Stage 1: $128 \times 128$}
+\begin{itemize}
+  \item The first ResBlock expands channels from 128 to 256.
+  \item The second ResBlock keeps 256 channels.
+  \item No attention under thresholds 32 or 64.
+  \item Downsample to $64 \times 64$.
+\end{itemize}
+
+\subsection{Stage 2: $64 \times 64$}
+\begin{itemize}
+  \item The first ResBlock expands channels from 256 to 384.
+  \item The second ResBlock keeps 384 channels.
+  \item Attention appears here only when the threshold is at least 64.
+  \item Downsample to $32 \times 32$.
+\end{itemize}
+
+\subsection{Stage 3: $32 \times 32$}
+\begin{itemize}
+  \item The first ResBlock expands channels from 384 to 512.
+  \item The second ResBlock keeps 512 channels.
+  \item Attention appears here for thresholds 32 and 64.
+  \item Downsample to the bottleneck at $16 \times 16$.
+\end{itemize}
+
+\section{Bottleneck in detail}
+The bottleneck is the most compressed feature representation:
+\[
+512 \times 16 \times 16.
+\]
+
+The sequence is:
+\begin{enumerate}
+  \item ResBlock with bottleneck embedding.
+  \item Self-attention.
+  \item Cross-attention, if enabled.
+  \item ChannelSE, if enabled.
+  \item Second ResBlock with the same bottleneck embedding.
+\end{enumerate}
+
+This is the global reasoning center of the UNet. The spatial grid is small enough that attention can capture broad dependencies efficiently.
+
+\section{Decoder forward pass in detail}
+The decoder mirrors the encoder in reverse order. For each decoder stage:
+\begin{enumerate}
+  \item Upsample the current feature map by factor 2.
+  \item Concatenate the corresponding encoder skip connection along channels.
+  \item Apply \texttt{num\_res\_blocks + 1} ResBlocks.
+  \item Apply attention blocks at the stages whose bookkeeping resolution is below the attention threshold.
+\end{enumerate}
+
+For preset B, \texttt{num\_res\_blocks = 2}, so each decoder stage has 3 ResBlocks.
+
+\subsection{Decoder stage 0: $16 \times 16 \to 32 \times 32$}
+\begin{itemize}
+  \item Upsample: $512 \times 16 \times 16 \to 512 \times 32 \times 32$.
+  \item Skip: encoder stage 3 output, also $512 \times 32 \times 32$.
+  \item Concatenate to $1024 \times 32 \times 32$.
+  \item First ResBlock reduces width back to 512.
+  \item Remaining ResBlocks refine the 512-channel representation.
+  \item Attention is active at this stage for thresholds 32 and above.
+\end{itemize}
+
+\subsection{Decoder stage 1: $32 \times 32 \to 64 \times 64$}
+\begin{itemize}
+  \item Upsample to $512 \times 64 \times 64$.
+  \item Skip: encoder stage 2 output, $384 \times 64 \times 64$.
+  \item Concatenate to $896 \times 64 \times 64$.
+  \item First ResBlock reduces width back to 384.
+  \item Remaining ResBlocks refine the 384-channel representation.
+  \item Attention is active already for threshold 32, because this stage is inserted when the bookkeeping resolution has reached 32.
+\end{itemize}
+
+\subsection{Decoder stage 2: $64 \times 64 \to 128 \times 128$}
+\begin{itemize}
+  \item Upsample to $384 \times 128 \times 128$.
+  \item Skip: encoder stage 1 output, $256 \times 128 \times 128$.
+  \item Concatenate to $640 \times 128 \times 128$.
+  \item First ResBlock reduces width back to 256.
+  \item Remaining ResBlocks keep 256 channels.
+  \item Attention is active only when the threshold reaches 64 or higher.
+\end{itemize}
+
+\subsection{Decoder stage 3: $128 \times 128 \to 256 \times 256$}
+\begin{itemize}
+  \item Upsample to $256 \times 256 \times 256$.
+  \item Skip: encoder stage 0 output, $128 \times 256 \times 256$.
+  \item Concatenate to $384 \times 256 \times 256$.
+  \item First ResBlock reduces width back to 128.
+  \item Remaining ResBlocks keep 128 channels.
+  \item No attention at this resolution.
+\end{itemize}
+
+\section{Output head}
+After the decoder, the tensor has shape
+\[
+128 \times 256 \times 256.
+\]
+The output head is:
+\[
+\mathrm{out} = \mathrm{Conv}_{3 \times 3}(\mathrm{SiLU}(\mathrm{GN}(h))).
+\]
+This returns the final 3-channel tensor:
+\[
+3 \times 256 \times 256.
+\]
+
+The output convolution is zero-initialized, again to make the network start close to a simple baseline mapping.
+
+\section{How conditioning is routed}
+There are three distinct conditioning routes.
+
+\subsection{Route 1: Root joint embedding}
+The base conditioning signal is:
+\[
+\mathrm{joint} = \mathrm{JointEmbedding}(t_{\mathrm{emb}}, c_{\mathrm{emb}}).
+\]
+This always exists and always feeds the ResBlocks through AdaGN.
+
+\subsection{Route 2: Stage-specific projections}
+If \texttt{per\_scale\_cond = true}, each stage uses:
+\[
+\ell_i = \mathrm{joint} + W_i(\text{context}),
+\]
+where:
+\begin{itemize}
+  \item \texttt{context = c\_emb} if \texttt{cond\_context\_mode = cond},
+  \item \texttt{context = joint} if \texttt{cond\_context\_mode = joint}.
+\end{itemize}
+
+This is the stage-specific adapter path.
+
+\subsection{Route 3: Cross-attention}
+If \texttt{cross\_attn\_cond = true}, attention-enabled blocks can additionally query the same context vector directly.
+
+\subsection{Condition-context mode}
+The option \texttt{cond\_context\_mode} controls \emph{which vector is used as auxiliary context} in routes 2 and 3:
+\begin{itemize}
+  \item \texttt{cond}: use the pure condition embedding $c_{\mathrm{emb}}$.
+  \item \texttt{joint}: use the combined time-condition embedding \texttt{joint}.
+\end{itemize}
+
+This option does \emph{not} remove the root joint embedding. It only changes the auxiliary context path.
+
+\section{Attention placement logic}
+Attention blocks are inserted according to a bookkeeping resolution variable \texttt{res}. The model adds attention when:
+\[
+\texttt{res} \leq \texttt{attention\_resolution}.
+\]
+This means:
+\begin{itemize}
+  \item higher attention threshold \(\Rightarrow\) attention starts earlier at larger spatial sizes,
+  \item lower threshold \(\Rightarrow\) attention is restricted to smaller spatial sizes.
+\end{itemize}
+
+This keeps the computation manageable while still allowing the model to reason globally at low resolution.
+
+\section{Flow matching usage}
+The UNet is trained as the velocity / vector-field predictor inside a flow matching objective.
+
+\subsection{OT flow matching}
+The default OT-style flow matching objective samples:
+\[
+t \sim \mathcal{U}(0,1), \qquad x_1 \sim \mathcal{N}(0, I),
+\]
+and forms
+\[
+x_t = (1-t)x_0 + t x_1.
+\]
+The target vector field is:
+\[
+v^\star = x_1 - x_0.
+\]
+The model is trained to minimize:
+\[
+\mathcal{L} = \mathbb{E}\big[\|v_\theta(x_t, t, c) - (x_1 - x_0)\|^2\big].
+\]
+
+\subsection{Classifier-free guidance during training}
+With probability \texttt{cfg\_prob}, the conditioning vector is zeroed before being passed to the model. This teaches the model both conditional and unconditional behavior.
+
+\subsection{Sampling}
+At inference, the samplers integrate the learned vector field from noise to data, typically from $t=1$ down to $t=0$. If classifier-free guidance is used, the sampler evaluates both:
+\[
+v_{\mathrm{cond}} = f_\theta(x,t,c), \qquad v_{\mathrm{uncond}} = f_\theta(x,t,0),
+\]
+and combines them with a guidance scale.
+
+\section{What each option actually changes}
+\begin{itemize}
+  \item \texttt{preset}: changes the width and attention budget of the whole network.
+  \item \texttt{attention\_resolution}: changes where attention begins.
+  \item \texttt{circular\_conv}: changes the boundary condition of convolutions.
+  \item \texttt{upsample\_mode}: changes how decoder resolution is increased.
+  \item \texttt{cond\_context\_mode}: changes whether auxiliary conditioning uses $c_{\mathrm{emb}}$ or \texttt{joint}.
+  \item \texttt{cross\_attn\_cond}: toggles explicit condition injection via cross-attention.
+  \item \texttt{per\_scale\_cond}: toggles stage-wise adapters for the condition.
+  \item \texttt{channel\_se}: toggles bottleneck channel reweighting.
+  \item \texttt{cond\_depth}: changes the depth of the condition MLP.
+  \item \texttt{num\_heads}: changes the number of attention heads.
+  \item \texttt{dropout}: changes the internal ResBlock dropout.
+\end{itemize}
+
+\section{Short conceptual summary}
+The model can be summarized as follows:
+\begin{enumerate}
+  \item Encode time and cosmology parameters separately.
+  \item Fuse them into a root joint embedding.
+  \item Inject that signal into every residual block via AdaGN.
+  \item Optionally inject the condition again through cross-attention.
+  \item Optionally modulate each spatial scale with its own projection.
+  \item Compress the map to a small bottleneck, apply attention / SE, and decode with skip connections.
+  \item Predict a vector field with the same spatial shape as the input map.
+\end{enumerate}
+
+\section{Worked forward walkthrough: preset B, full conditioning}
+This section traces the exact forward pass in the style of a code execution log.
+The assumed configuration is:
+\begin{itemize}
+  \item \texttt{preset = B}
+  \item \texttt{attention\_resolution = 32}
+  \item \texttt{circular\_conv = true}
+  \item \texttt{upsample\_mode = nearest}
+  \item \texttt{cond\_context\_mode = cond}
+  \item \texttt{cross\_attn\_cond = true}
+  \item \texttt{per\_scale\_cond = true}
+  \item \texttt{channel\_se = true}
+  \item \texttt{dropout = 0.0}
+  \item \texttt{cond\_depth = 4}
+\end{itemize}
+
+\subsection{Input and embeddings}
+The model receives:
+\[
+x \in \mathbb{R}^{3 \times 256 \times 256}, \qquad t \in [0,1], \qquad c \in \mathbb{R}^6.
+\]
+The embeddings are created in the following order:
+\begin{enumerate}
+  \item \texttt{t\_emb = TimestepEmbedding(t)}.
+  \item \texttt{c\_emb = ConditionEmbedding(c)}.
+  \item \texttt{joint = JointEmbedding(t\_emb, c\_emb)}.
+\end{enumerate}
+For this walkthrough the auxiliary context used by cross-attention is
+\[
+\text{cross\_ctx} = c_{\mathrm{emb}},
+\]
+because \texttt{cond\_context\_mode = cond}.
+
+\subsection{Stem}
+The stem convolution maps
+\[
+3 \times 256 \times 256 \to 128 \times 256 \times 256.
+\]
+This is a pure feature lift. No attention is used at the stem.
+
+\subsection{Encoder stage 0: $256 \times 256$}
+The first encoder stage operates at full resolution.
+\paragraph{Conditioning.}
+Because \texttt{per\_scale\_cond = true}, the stage-specific embedding is
+\[
+\ell_0 = \mathrm{joint} + W_0(c_{\mathrm{emb}}).
+\]
+\paragraph{Block 1.}
+The first ResBlock keeps the width:
+\[
+128 \times 256 \times 256 \to 128 \times 256 \times 256.
+\]
+Inside the block:
+\begin{itemize}
+  \item \texttt{GroupNorm(32, 128, eps=1e-6)} normalizes channels in 32 groups.
+  \item SiLU introduces nonlinearity.
+  \item A $3 \times 3$ convolution mixes local spatial context.
+  \item \texttt{emb\_proj} converts $\ell_0$ into scale and shift.
+  \item AdaGN applies $\mathrm{GN}(h)\odot (1+\gamma) + \beta$.
+  \item A second convolution and a residual skip finish the block.
+\end{itemize}
+At this high resolution, attention is not yet active.
+
+\paragraph{Block 2.}
+The second ResBlock also keeps the width:
+\[
+128 \times 256 \times 256 \to 128 \times 256 \times 256.
+\]
+
+\paragraph{Downsample.}
+The stage ends with
+\[
+128 \times 256 \times 256 \to 128 \times 128 \times 128.
+\]
+
+\subsection{Encoder stage 1: $128 \times 128$}
+The next stage receives
+\[
+128 \times 128 \times 128,
+\]
+with embedding
+\[
+\ell_1 = \mathrm{joint} + W_1(c_{\mathrm{emb}}).
+\]
+\paragraph{Block 1.}
+The first ResBlock expands channels:
+\[
+128 \times 128 \times 128 \to 256 \times 128 \times 128.
+\]
+\paragraph{Block 2.}
+The second ResBlock keeps the width:
+\[
+256 \times 128 \times 128 \to 256 \times 128 \times 128.
+\]
+\paragraph{Downsample.}
+The stage ends with
+\[
+256 \times 128 \times 128 \to 256 \times 64 \times 64.
+\]
+
+\subsection{Encoder stage 2: $64 \times 64$}
+The third stage receives
+\[
+256 \times 64 \times 64,
+\]
+with embedding
+\[
+\ell_2 = \mathrm{joint} + W_2(c_{\mathrm{emb}}).
+\]
+\paragraph{Block 1.}
+The first ResBlock expands channels:
+\[
+256 \times 64 \times 64 \to 384 \times 64 \times 64.
+\]
+Under the default \texttt{attention\_resolution = 32}, this stage still does not receive attention.
+\paragraph{Block 2.}
+The second ResBlock keeps the width:
+\[
+384 \times 64 \times 64 \to 384 \times 64 \times 64.
+\]
+\paragraph{Downsample.}
+The stage ends with
+\[
+384 \times 64 \times 64 \to 384 \times 32 \times 32.
+\]
+
+\subsection{Encoder stage 3: $32 \times 32$}
+This is the first encoder stage where attention is active for the default threshold.
+The incoming feature map is
+\[
+384 \times 32 \times 32.
+\]
+The stage embedding is
+\[
+\ell_3 = \mathrm{joint} + W_3(c_{\mathrm{emb}}).
+\]
+\paragraph{Block 1.}
+The first ResBlock expands channels:
+\[
+384 \times 32 \times 32 \to 512 \times 32 \times 32.
+\]
+Immediately after the block, the model inserts:
+\begin{itemize}
+  \item a self-attention block, and
+  \item a cross-attention block because \texttt{cross\_attn\_cond = true}.
+\end{itemize}
+The cross-attention uses
+\[
+\text{query} = \text{feature map}, \qquad \text{context} = c_{\mathrm{emb}}.
+\]
+\paragraph{Block 2.}
+The second ResBlock keeps the width:
+\[
+512 \times 32 \times 32 \to 512 \times 32 \times 32.
+\]
+Self-attention and cross-attention are appended again.
+\paragraph{Downsample.}
+The stage ends with
+\[
+512 \times 32 \times 32 \to 512 \times 16 \times 16.
+\]
+
+\subsection{Bottleneck: $16 \times 16$}
+The bottleneck is the most compressed representation:
+\[
+512 \times 16 \times 16.
+\]
+The bottleneck embedding is
+\[
+\ell_{\mathrm{bot}} = \mathrm{joint} + W_{\mathrm{bot}}(c_{\mathrm{emb}}).
+\]
+\paragraph{Block 1.}
+The first bottleneck ResBlock keeps the width:
+\[
+512 \times 16 \times 16 \to 512 \times 16 \times 16.
+\]
+\paragraph{Attention and ChannelSE.}
+The bottleneck then applies:
+\begin{itemize}
+  \item self-attention,
+  \item cross-attention with \texttt{cross\_ctx = c\_emb},
+  \item ChannelSE, which reweights channels but does not directly consume the condition,
+\end{itemize}
+followed by one more ResBlock:
+\[
+512 \times 16 \times 16 \to 512 \times 16 \times 16.
+\]
+
+\subsection{Decoder stage 0: $16 \times 16 \to 32 \times 32$}
+The decoder starts by upsampling the bottleneck feature:
+\[
+512 \times 16 \times 16 \to 512 \times 32 \times 32.
+\]
+The corresponding encoder skip from stage 3 is also
+\[
+512 \times 32 \times 32.
+\]
+These are concatenated to obtain
+\[
+1024 \times 32 \times 32.
+\]
+The stage embedding is
+\[
+\ell^{\mathrm{dec}}_0 = \mathrm{joint} + W^{\mathrm{dec}}_0(c_{\mathrm{emb}}).
+\]
+The decoder stage contains \texttt{num\_res\_blocks + 1 = 3} ResBlocks:
+\begin{itemize}
+  \item the first block reduces width from 1024 to 512,
+  \item the second and third blocks keep 512 channels.
+\end{itemize}
+Because this stage is at the smallest decoder resolution, attention is active here for the default threshold.
+
+\subsection{Decoder stage 1: $32 \times 32 \to 64 \times 64$}
+The next decoder stage upsamples:
+\[
+512 \times 32 \times 32 \to 512 \times 64 \times 64.
+\]
+It then concatenates the encoder skip
+\[
+384 \times 64 \times 64
+\]
+to form
+\[
+896 \times 64 \times 64.
+\]
+The stage embedding is
+\[
+\ell^{\mathrm{dec}}_1 = \mathrm{joint} + W^{\mathrm{dec}}_1(c_{\mathrm{emb}}).
+\]
+The first ResBlock reduces width to 384, and the next two blocks keep 384 channels.
+Under the default bookkeeping threshold, this decoder stage still receives attention.
+
+\subsection{Decoder stage 2: $64 \times 64 \to 128 \times 128$}
+The feature map is now
+\[
+384 \times 64 \times 64.
+\]
+It is upsampled to
+\[
+384 \times 128 \times 128,
+\]
+then concatenated with the encoder skip
+\[
+256 \times 128 \times 128,
+\]
+giving
+\[
+640 \times 128 \times 128.
+\]
+The stage embedding is
+\[
+\ell^{\mathrm{dec}}_2 = \mathrm{joint} + W^{\mathrm{dec}}_2(c_{\mathrm{emb}}).
+\]
+The first ResBlock reduces width to 256 and the next two keep 256.
+At this resolution, attention is no longer active for the default threshold of 32.
+
+\subsection{Decoder stage 3: $128 \times 128 \to 256 \times 256$}
+The final decoder stage upsamples
+\[
+256 \times 128 \times 128 \to 256 \times 256 \times 256,
+\]
+then concatenates the first encoder skip
+\[
+128 \times 256 \times 256,
+\]
+to obtain
+\[
+384 \times 256 \times 256.
+\]
+The stage embedding is
+\[
+\ell^{\mathrm{dec}}_3 = \mathrm{joint} + W^{\mathrm{dec}}_3(c_{\mathrm{emb}}).
+\]
+The first ResBlock reduces the width to 128, and the next two keep 128.
+No attention is used at this resolution.
+
+\subsection{Output head}
+The final decoder feature is
+\[
+128 \times 256 \times 256.
+\]
+It is passed through
+\[
+\mathrm{out} = \mathrm{Conv}_{3 \times 3}(\mathrm{SiLU}(\mathrm{GN}(h))),
+\]
+which returns the final 3-channel tensor
+\[
+3 \times 256 \times 256.
+\]
+
+\subsection{Why this walkthrough matters}
+This is the exact route the tensor follows in the code:
+\begin{enumerate}
+  \item encode local structure at full resolution,
+  \item compress toward a global bottleneck,
+  \item apply attention and conditioning at low resolution,
+  \item decode back using skip connections,
+  \item reconstruct the original 3-channel map.
+\end{enumerate}
+
+The key conditioning design points are:
+\begin{itemize}
+  \item the root \texttt{joint} embedding always feeds AdaGN,
+  \item stage-specific projections let each scale interpret the same physics differently,
+  \item cross-attention injects the condition again at low resolution,
+  \item ChannelSE reweights channels but does not consume the condition directly.
+\end{itemize}
+
+\end{document}

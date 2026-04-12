@@ -13,7 +13,7 @@ Examples:
       --upper-percentile 99 \
       --center-stat mean \
       --param-mode astro_mixed \
-      --out GENESIS-data/recipes/log_p1_p99_m1p1_channelwise_astro_mixed.yaml
+      --out configs/normalization/log_p1_p99_m1p1_channelwise_astro_mixed.yaml
 
   # symmetric [-1, 1] range using true min/max
   python GENESIS-data/make_normalization_recipe.py \
@@ -22,12 +22,12 @@ Examples:
       --upper-percentile 100 \
       --range-mode symmetric \
       --param-mode astro_mixed \
-      --out GENESIS-data/log_minmax_sym_channelwise_astro_mixed.yaml
+      --out configs/normalization/log_minmax_sym_channelwise_astro_mixed.yaml
 
   # map-only recipe
   python GENESIS-data/make_normalization_recipe.py \
       --maps-path /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
-      --out GENESIS-data/recipes/log_minmax_center.yaml
+      --out configs/normalization/log_minmax_center.yaml
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def main() -> None:
         "--out",
         type=Path,
         default=None,
-        help="Output YAML path. Defaults to GENESIS-data/<maps-stem>_<mode>.yaml",
+        help="Output YAML path. Defaults to configs/normalization/<maps-stem>_<mode>.yaml",
     )
     args = parser.parse_args()
 
@@ -100,7 +100,7 @@ def main() -> None:
             suffix = f"{suffix}_{args.center_stat}"
         if args.param_mode:
             suffix = f"{suffix}_{args.param_mode}"
-        out = Path("GENESIS-data") / f"{args.maps_path.stem}_{suffix}.yaml"
+        out = Path("configs/normalization") / f"{args.maps_path.stem}_{suffix}.yaml"
     else:
         out = args.out
 

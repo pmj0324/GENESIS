@@ -32,8 +32,13 @@ def fit_map_normalization_recipe(
             x = np.asarray(maps[:, ch], dtype=np.float64)
 
         log_x = np.log10(np.clip(x, 1e-30, None))
-        min_log = float(np.percentile(log_x, lower_percentile))
-        max_log = float(np.percentile(log_x, upper_percentile))
+        use_true_minmax = lower_percentile <= 0.0 and upper_percentile >= 100.0
+        if use_true_minmax:
+            min_log = float(np.min(log_x))
+            max_log = float(np.max(log_x))
+        else:
+            min_log = float(np.percentile(log_x, lower_percentile))
+            max_log = float(np.percentile(log_x, upper_percentile))
         if range_mode == "symmetric":
             stats[name] = {
                 "method": "minmax_sym",
