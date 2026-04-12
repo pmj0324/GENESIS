@@ -203,13 +203,20 @@ def _validate_dit_kwargs(common: dict, kwargs: dict) -> None:
     depth = int(kwargs.get("depth", 12))
     num_heads = int(kwargs.get("num_heads", 12))
     mlp_ratio = float(kwargs.get("mlp_ratio", 4.0))
+    cond_depth = int(kwargs.get("cond_depth", 4))
+    cond_fusion = kwargs.get("cond_fusion", "add")
 
     _require_positive_int("model.dit.img_size", img_size)
     _require_positive_int("model.dit.patch_size", patch_size)
     _require_positive_int("model.dit.hidden_size", hidden_size)
     _require_positive_int("model.dit.depth", depth)
     _require_positive_int("model.dit.num_heads", num_heads)
+    _require_positive_int("model.dit.cond_depth", cond_depth)
     _require_positive_number("model.dit.mlp_ratio", mlp_ratio)
+    if cond_fusion not in {"add", "concat"}:
+        raise ValueError(
+            f"model.dit.cond_fusion must be 'add' or 'concat', got {cond_fusion!r}"
+        )
 
     if img_size % patch_size != 0:
         raise ValueError(
@@ -368,7 +375,8 @@ def _format_model_details(info: dict) -> str:
         return (
             f"patch={info.get('patch_size', 8)} hidden={info.get('hidden_size', 768)} "
             f"depth={info.get('depth', 12)} heads={info.get('num_heads', 12)} "
-            f"mlp={info.get('mlp_ratio', 4.0)} dropout={info['dropout']}"
+            f"mlp={info.get('mlp_ratio', 4.0)} cond_fusion={info.get('cond_fusion', 'add')} "
+            f"cond_depth={info.get('cond_depth', 4)} dropout={info['dropout']}"
         )
     if arch == "unet":
         return (
@@ -410,7 +418,16 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
             "dit",
             dcfg,
             DiT.PRESETS,
-            ("img_size", "patch_size", "hidden_size", "depth", "num_heads", "mlp_ratio"),
+            (
+                "img_size",
+                "patch_size",
+                "hidden_size",
+                "depth",
+                "num_heads",
+                "mlp_ratio",
+                "cond_depth",
+                "cond_fusion",
+            ),
         )
         _validate_dit_kwargs(common, resolved)
         model = build_dit(

@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 from typing import Optional
 
-from .embeddings import TimestepEmbedding, ConditionEmbedding
+from .embeddings import TimestepEmbedding, ConditionEmbedding, JointEmbedding
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────
@@ -185,6 +185,8 @@ class DiT(nn.Module):
         num_heads:   int  = 12,
         mlp_ratio:   float = 4.0,
         dropout:     float = 0.0,
+        cond_depth:  int  = 4,
+        cond_fusion: str  = "add",
         preset:      Optional[str] = None,
     ):
         super().__init__()
@@ -194,13 +196,26 @@ class DiT(nn.Module):
             depth       = cfg["depth"]
             num_heads   = cfg["num_heads"]
 
+        if cond_fusion not in {"add", "concat"}:
+            raise ValueError(f"cond_fusion must be 'add' or 'concat', got {cond_fusion!r}")
+
         self.in_channels = in_channels
         self.patch_size  = patch_size
+        self.cond_fusion  = cond_fusion
 
         # Embeddings
         self.patch_embed = PatchEmbed(img_size, patch_size, in_channels, hidden_size)
         self.t_embed     = TimestepEmbedding(sin_dim=256, out_dim=hidden_size)
-        self.c_embed     = ConditionEmbedding(cond_dim=cond_dim, out_dim=hidden_size)
+        self.c_embed     = ConditionEmbedding(
+            cond_dim=cond_dim,
+            out_dim=hidden_size,
+            depth=cond_depth,
+        )
+        self.joint       = JointEmbedding(
+            t_dim=hidden_size,
+            c_dim=hidden_size,
+            out_dim=hidden_size,
+        ) if cond_fusion == "concat" else None
 
         # Transformer blocks
         self.blocks = nn.ModuleList([
@@ -246,7 +261,12 @@ class DiT(nn.Module):
         tokens = self.patch_embed(x)                    # [B, N, hidden]
 
         # Conditioning: time + cond → single vector
-        c = self.t_embed(t) + self.c_embed(cond)        # [B, hidden]
+        t_emb = self.t_embed(t)                        # [B, hidden]
+        c_emb = self.c_embed(cond)                     # [B, hidden]
+        if self.cond_fusion == "concat":
+            c = self.joint(t_emb, c_emb)               # [B, hidden]
+        else:
+            c = t_emb + c_emb                          # [B, hidden]
 
         # Transformer
         for block in self.blocks:
