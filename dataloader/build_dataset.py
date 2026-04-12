@@ -295,12 +295,28 @@ def build_splits(
     for i in tqdm(range(0, len(maps_raw), chunk), desc="normalizing"):
         maps_raw[i:i+chunk] = normalizer.normalize_numpy(maps_raw[i:i+chunk])
 
-    # ── parameter normalization (fit on full prior, apply everywhere) ───────
+    # ── parameter normalization ───────────────────────────────────────────────
     param_cfg = dict(param_norm_cfg or {})
     if param_norm_mode is not None:
         param_cfg["method"] = param_norm_mode
-    param_mode = str(param_cfg.get("method", "legacy_zscore")).strip().lower()
-    param_norm_recipe = fit_param_normalization(params_raw, mode=param_mode)
+
+    # Priority:
+    # 1) CLI override (--param-norm-mode): always fit from params_raw
+    # 2) YAML has fitted stats: reuse them as-is for exact reproducibility
+    # 3) Otherwise: fit from params_raw using YAML/default method
+    if param_norm_mode is not None:
+        param_mode = str(param_cfg.get("method", "legacy_zscore")).strip().lower()
+        print(f"[build_splits] param normalization: fit mode={param_mode} (CLI override)")
+        param_norm_recipe = fit_param_normalization(params_raw, mode=param_mode)
+    elif param_cfg.get("stats"):
+        param_norm_recipe = param_cfg
+        recipe_mode = str(param_norm_recipe.get("method", "custom")).strip().lower()
+        print(f"[build_splits] param normalization: using provided YAML stats (method={recipe_mode})")
+    else:
+        param_mode = str(param_cfg.get("method", "legacy_zscore")).strip().lower()
+        print(f"[build_splits] param normalization: fit mode={param_mode}")
+        param_norm_recipe = fit_param_normalization(params_raw, mode=param_mode)
+
     params_norm_sim = normalize_params_numpy(params_raw, param_norm_recipe)
     params_exp = np.repeat(params_norm_sim, MAPS_PER_SIM, axis=0)   # [15000, 6]
 

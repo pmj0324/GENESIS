@@ -9,6 +9,7 @@ This is the "one-stop" helper for the normalization setup we discussed:
 Examples:
   python GENESIS-data/make_normalization_recipe.py \
       --maps-path /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+      --params-path /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt \
       --lower-percentile 1 \
       --upper-percentile 99 \
       --center-stat mean \
@@ -18,6 +19,7 @@ Examples:
   # symmetric [-1, 1] range using true min/max
   python GENESIS-data/make_normalization_recipe.py \
       --maps-path /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+      --params-path /home/work/cosmology/CAMELS/IllustrisTNG/params_LH_IllustrisTNG.txt \
       --lower-percentile 0 \
       --upper-percentile 100 \
       --range-mode symmetric \
@@ -33,16 +35,31 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from dataloader.recipe import build_normalization_recipe, save_normalization_recipe
+from dataloader.normalization import fit_param_normalization
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build a combined normalization YAML recipe")
     parser.add_argument("--maps-path", required=True, type=Path, help="Raw positive-valued map .npy file")
+    parser.add_argument(
+        "--params-path",
+        type=Path,
+        default=None,
+        help=(
+            "Optional params txt/npy path for fitting and embedding parameter "
+            "normalization stats into YAML."
+        ),
+    )
     parser.add_argument(
         "--lower-percentile",
         type=float,
@@ -93,6 +110,15 @@ def main() -> None:
         range_mode=str(args.range_mode),
         param_mode=args.param_mode,
     )
+
+    # Optional: bake fitted parameter stats into recipe for full reproducibility.
+    if args.param_mode is not None and args.params_path is not None:
+        if args.params_path.suffix.lower() == ".npy":
+            params = np.load(args.params_path).astype(np.float32, copy=False)
+        else:
+            params = np.loadtxt(args.params_path, dtype=np.float32)
+        param_recipe = fit_param_normalization(params, mode=str(args.param_mode))
+        payload.setdefault("normalization", {})["params"] = param_recipe
 
     if args.out is None:
         suffix = f"{args.lower_percentile:g}_{args.upper_percentile:g}_{args.range_mode}"
