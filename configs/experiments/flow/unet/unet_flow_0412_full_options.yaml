@@ -1,0 +1,82 @@
+##############################################################################
+# unet_flow_0412_full_options.yaml
+#
+# 목적:
+#   - UNet B preset 기반 Flow Matching
+#   - 새로 추가한 옵션들을 한 파일에 모두 드러낸 "풀옵션" 예시
+#   - 업샘플 방식, condition context, attention / SE / per-scale 여부를
+#     모두 명시적으로 선택
+#
+# 권장 해석:
+#   - t는 항상 유지
+#   - cond는 joint root를 만들고
+#   - cross-attn / per-scale은 joint 기반 context로도 실험 가능
+#   - attention_resolution=64로 중간 스케일에서 attention을 더 일찍 켬
+##############################################################################
+
+data:
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/log_p1_p99_m1p1_channelwise
+  data_fraction: 1.0
+  augment: true  # train split에 D4 대칭(회전/반사) augmentation 적용
+
+model:
+  architecture: unet
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+  unet:
+    preset: B
+    attention_resolution: 64   # 64×64부터 self-attn / cross-attn 활성화
+    circular_conv: true
+    upsample_mode: bilinear     # nearest / bilinear
+    cond_context_mode: joint     # cond / joint
+    cross_attn_cond: true        # true면 cross-attn 경로 사용
+    per_scale_cond: true        # stage별 cond projection 사용
+    channel_se: true            # bottleneck에서 channel squeeze-excitation 사용
+    num_heads: 4                # self-attn / cross-attn 헤드 수
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.05
+    sigma_min: 1.0e-4
+  sampler:
+    method: dopri5
+    steps: 25
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.0
+    viz:
+      sampler_a: dopri5
+      sampler_b: dopri5
+      samplers: [euler, heun, rk4, dopri5]
+      metrics_sampler: dopri5
+      eval_n: 15
+      every_epoch: true
+
+training:
+  batch_size: 16
+  num_workers: 40
+  max_epochs: 150
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 5
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: cosine
+  T_max: 5
+  eta_min: 3.0e-6
+  ema:
+    enabled: true
+    decay: 0.9995
+    update_every: 1
+    update_after_step: auto
+    min_update_after_step: 500
+    eval_with_ema: true
+  early_stop_patience: 20
+
+checkpoint:
+  ckpt_dir: runs/flow/unet/0412_unet_flow_full_options/
+  ckpt_name: best.pt

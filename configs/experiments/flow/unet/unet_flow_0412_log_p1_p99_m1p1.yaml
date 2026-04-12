@@ -11,6 +11,7 @@ model:
     preset: B
     attention_resolution: 32
     circular_conv: true
+    upsample_mode: nearest
 generative:
   framework: flow_matching
   flow_matching:

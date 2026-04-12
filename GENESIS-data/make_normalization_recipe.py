@@ -3,6 +3,7 @@ Create a combined GENESIS normalization recipe YAML and save it under GENESIS-da
 
 This is the "one-stop" helper for the normalization setup we discussed:
   - map normalization: log -> p1/p99 min-max -> center shift
+    or log -> min/max min-max -> [-1, 1]
   - parameter normalization mode: legacy_zscore or astro_mixed
 
 Examples:
@@ -13,6 +14,15 @@ Examples:
       --center-stat mean \
       --param-mode astro_mixed \
       --out GENESIS-data/recipes/log_p1_p99_m1p1_channelwise_astro_mixed.yaml
+
+  # symmetric [-1, 1] range using true min/max
+  python GENESIS-data/make_normalization_recipe.py \
+      --maps-path /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+      --lower-percentile 0 \
+      --upper-percentile 100 \
+      --range-mode symmetric \
+      --param-mode astro_mixed \
+      --out GENESIS-data/log_minmax_sym_channelwise_astro_mixed.yaml
 
   # map-only recipe
   python GENESIS-data/make_normalization_recipe.py \
@@ -52,6 +62,15 @@ def main() -> None:
         help="Statistic to subtract after min-max scaling.",
     )
     parser.add_argument(
+        "--range-mode",
+        choices=["centered", "symmetric"],
+        default="centered",
+        help=(
+            "Range mapping after log min-max. "
+            "'centered' subtracts mean/median; 'symmetric' maps to [-1, 1]."
+        ),
+    )
+    parser.add_argument(
         "--param-mode",
         choices=["legacy_zscore", "astro_mixed"],
         default=None,
@@ -71,11 +90,14 @@ def main() -> None:
         lower_percentile=float(args.lower_percentile),
         upper_percentile=float(args.upper_percentile),
         center_stat=str(args.center_stat),
+        range_mode=str(args.range_mode),
         param_mode=args.param_mode,
     )
 
     if args.out is None:
-        suffix = f"{args.lower_percentile:g}_{args.upper_percentile:g}_{args.center_stat}"
+        suffix = f"{args.lower_percentile:g}_{args.upper_percentile:g}_{args.range_mode}"
+        if args.range_mode == "centered":
+            suffix = f"{suffix}_{args.center_stat}"
         if args.param_mode:
             suffix = f"{suffix}_{args.param_mode}"
         out = Path("GENESIS-data") / f"{args.maps_path.stem}_{suffix}.yaml"

@@ -171,12 +171,20 @@ class Downsample(nn.Module):
 
 
 class Upsample(nn.Module):
-    def __init__(self, channels, circular=False):
+    def __init__(self, channels, circular=False, mode: str = "nearest"):
         super().__init__()
+        mode = str(mode).strip().lower()
+        if mode not in {"nearest", "bilinear"}:
+            raise ValueError(f"Unsupported upsample mode: {mode!r}. Options: nearest / bilinear")
+        self.mode = mode
         self.conv = _conv(channels, channels, 3, circular=circular)
 
     def forward(self, x):
-        return self.conv(F.interpolate(x, scale_factor=2, mode="nearest"))
+        if self.mode == "bilinear":
+            x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+        else:
+            x = F.interpolate(x, scale_factor=2, mode="nearest")
+        return self.conv(x)
 
 
 # ── UNet ──────────────────────────────────────────────────────────────────────
@@ -210,6 +218,8 @@ class UNet(nn.Module):
         channel_se:           bool        = True,
         dropout:              float       = 0.0,
         circular_conv:        bool        = False,
+        upsample_mode:        str         = "nearest",
+        cond_context_mode:    str         = "cond",
         # v2 conditioning
         cross_attn_cond:      bool        = True,   # θ cross-attention
         per_scale_cond:       bool        = True,   # 레벨별 θ projection
@@ -225,6 +235,14 @@ class UNet(nn.Module):
             num_res_blocks = cfg["num_res_blocks"]
 
         self.circular_conv    = circular_conv
+        self.upsample_mode    = str(upsample_mode).strip().lower()
+        self.cond_context_mode = str(cond_context_mode).strip().lower()
+        if self.cond_context_mode == "c_emb":
+            self.cond_context_mode = "cond"
+        if self.cond_context_mode not in {"cond", "joint"}:
+            raise ValueError(
+                f"Unsupported cond_context_mode: {cond_context_mode!r}. Options: cond / joint"
+            )
         self.cross_attn_cond  = cross_attn_cond
         self.per_scale_cond   = per_scale_cond
 
@@ -281,7 +299,7 @@ class UNet(nn.Module):
         self.upsamples  = nn.ModuleList()
 
         for ch in reversed(ch_list):
-            self.upsamples.append(Upsample(in_ch, circular=circular_conv))
+            self.upsamples.append(Upsample(in_ch, circular=circular_conv, mode=self.upsample_mode))
             level_blocks = nn.ModuleList()
             for i in range(num_res_blocks + 1):
                 skip_ch = ch if i == 0 else 0
@@ -305,7 +323,8 @@ class UNet(nn.Module):
     def _level_emb(self, joint_emb, c_emb, proj):
         """per_scale_cond: joint_emb + proj(c_emb), 아니면 joint_emb."""
         if self.per_scale_cond:
-            return joint_emb + proj(c_emb)
+            ctx = joint_emb if self.cond_context_mode == "joint" else c_emb
+            return joint_emb + proj(ctx)
         return joint_emb
 
     def forward(self, x, t, cond):
@@ -315,6 +334,7 @@ class UNet(nn.Module):
         joint    = self.joint(t_emb, c_emb)  # [B, emb_dim]  t+θ 융합
 
         h = self.input_conv(x)
+        cross_ctx = joint if self.cond_context_mode == "joint" else c_emb
 
         # ── Encoder ───────────────────────────────────────────────────────────
         skips = []
@@ -324,7 +344,7 @@ class UNet(nn.Module):
                 if isinstance(block, ResBlock):
                     h = block(h, lev_emb)
                 elif isinstance(block, CrossAttentionBlock):
-                    h = block(h, c_emb)
+                    h = block(h, cross_ctx)
                 else:   # AttentionBlock
                     h = block(h)
             skips.append(h)
@@ -335,7 +355,7 @@ class UNet(nn.Module):
         h = self.mid_res1(h, bot_emb)
         h = self.mid_attn(h)
         if self.mid_cross is not None:
-            h = self.mid_cross(h, c_emb)
+            h = self.mid_cross(h, cross_ctx)
         h = self.mid_se(h)
         h = self.mid_res2(h, bot_emb)
 
@@ -349,7 +369,7 @@ class UNet(nn.Module):
                     h = block(torch.cat([h, skip], dim=1) if first else h, lev_emb)
                     first = False
                 elif isinstance(block, CrossAttentionBlock):
-                    h = block(h, c_emb)
+                    h = block(h, cross_ctx)
                 else:
                     h = block(h)
 

@@ -19,6 +19,15 @@ Usage:
       --param-mode astro_mixed \
       --out configs/normalization/log_p1_p99_center.yaml
 
+  # symmetric [-1, 1] range using true min/max
+  python scripts/fit_log_minmax_center.py \
+      --maps-path /path/to/train_maps.npy \
+      --lower-percentile 0 \
+      --upper-percentile 100 \
+      --range-mode symmetric \
+      --param-mode astro_mixed \
+      --out GENESIS-data/log_minmax_sym_channelwise_astro_mixed.yaml
+
   # same p1-p99 range, but subtract median instead of mean
   python scripts/fit_log_minmax_center.py \
       --maps-path /path/to/train_maps.npy \
@@ -60,8 +69,12 @@ def fit_stats(
     lower_percentile: float = 0.0,
     upper_percentile: float = 100.0,
     center_stat: str = "mean",
+    range_mode: str = "centered",
 ) -> dict[str, dict[str, float]]:
     stats: dict[str, dict[str, float]] = {}
+    range_mode = str(range_mode).strip().lower()
+    if range_mode not in {"centered", "symmetric"}:
+        raise ValueError(f"Unsupported range_mode: {range_mode!r}")
     for ch, name in enumerate(CHANNELS):
         x = None
         for idx, chunk in _iter_channel_arrays(maps):
@@ -75,6 +88,13 @@ def fit_stats(
         log_x = np.log10(np.clip(x, 1e-30, None))
         min_log = float(np.percentile(log_x, lower_percentile))
         max_log = float(np.percentile(log_x, upper_percentile))
+        if range_mode == "symmetric":
+            stats[name] = {
+                "method": "minmax_sym",
+                "min_log": min_log,
+                "max_log": max_log,
+            }
+            continue
         scaled = (log_x - min_log) / (max_log - min_log)
         if center_stat == "mean":
             post_center = float(np.mean(scaled))
@@ -114,6 +134,12 @@ def main() -> None:
         help="Statistic to subtract after scaling.",
     )
     parser.add_argument(
+        "--range-mode",
+        choices=["centered", "symmetric"],
+        default="centered",
+        help="How to map the log-space min/max range: centered or symmetric [-1, 1].",
+    )
+    parser.add_argument(
         "--param-mode",
         choices=["legacy_zscore", "astro_mixed"],
         default=None,
@@ -128,6 +154,7 @@ def main() -> None:
         lower_percentile=float(args.lower_percentile),
         upper_percentile=float(args.upper_percentile),
         center_stat=str(args.center_stat),
+        range_mode=str(args.range_mode),
     )
     if args.param_mode is None:
         payload = {"normalization": stats}

@@ -259,6 +259,7 @@ class Normalizer:
     지원 method:
       affine   : (log10(x) - center) / (scale * scale_mult)
       minmax_center : log10(x) 후 min-max, then subtract post_mean
+      minmax_sym    : log10(x) 후 min-max를 [-1, 1]로 스케일
       softclip : affine 후 c * tanh(z / c)   →   역변환: c * atanh(z / c)
 
     config 형식 (dict 또는 YAML 로드 결과):
@@ -336,6 +337,17 @@ class Normalizer:
         mean = torch.tensor(self._post_means[ch_idx], dtype=z.dtype, device=z.device)
         return (z + mean) * (max_log - min_log) + min_log
 
+    def _apply_log_minmax_sym(self, log_x: torch.Tensor, ch_idx: int) -> torch.Tensor:
+        min_log = torch.tensor(self._min_logs[ch_idx], dtype=log_x.dtype, device=log_x.device)
+        max_log = torch.tensor(self._max_logs[ch_idx], dtype=log_x.dtype, device=log_x.device)
+        z = (log_x - min_log) / (max_log - min_log)
+        return 2.0 * z - 1.0
+
+    def _invert_log_minmax_sym(self, z: torch.Tensor, ch_idx: int) -> torch.Tensor:
+        min_log = torch.tensor(self._min_logs[ch_idx], dtype=z.dtype, device=z.device)
+        max_log = torch.tensor(self._max_logs[ch_idx], dtype=z.dtype, device=z.device)
+        return ((z + 1.0) * 0.5) * (max_log - min_log) + min_log
+
     # ── public: torch ─────────────────────────────────────────────────────────
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
@@ -350,6 +362,12 @@ class Normalizer:
                 else:
                     z[i] = self._apply_log_minmax_center(log_x[i], i)
                 continue
+            if method == "minmax_sym":
+                if z.dim() == 4:
+                    z[:, i] = self._apply_log_minmax_sym(log_x[:, i], i)
+                else:
+                    z[i] = self._apply_log_minmax_sym(log_x[i], i)
+                continue
             if method == "softclip":
                 z = self._apply_softclip(z, i)
             elif method == "minmax":
@@ -357,21 +375,33 @@ class Normalizer:
         return z
 
     def denormalize(self, z: torch.Tensor) -> torch.Tensor:
-        z = z.clone()
+        out = torch.empty_like(z)
         for i, method in enumerate(self._methods):
-            if method == "minmax_center":
-                if z.dim() == 4:
-                    z[:, i] = self._invert_log_minmax_center(z[:, i], i)
-                else:
-                    z[i] = self._invert_log_minmax_center(z[i], i)
-                continue
-            if method == "softclip":
-                z = self._invert_softclip(z, i)
+            if z.dim() == 4:
+                zi = z[:, i]
+            else:
+                zi = z[i]
+
+            if method == "affine":
+                log_x = zi * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+            elif method == "minmax_center":
+                log_x = self._invert_log_minmax_center(zi, i)
+            elif method == "minmax_sym":
+                log_x = self._invert_log_minmax_sym(zi, i)
+            elif method == "softclip":
+                affine_z = self._invert_softclip(zi.clone(), i)
+                log_x = affine_z * self._scales[i].to(z.device) + self._centers[i].to(z.device)
             elif method == "minmax":
-                z = self._invert_minmax(z, i)
-        centers = self._bcast(self._centers.to(z.device), z.dim())
-        scales  = self._bcast(self._scales.to(z.device),  z.dim())
-        return 10 ** (z * scales + centers)
+                affine_z = self._invert_minmax(zi.clone(), i)
+                log_x = affine_z * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+            else:
+                log_x = zi * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+
+            if z.dim() == 4:
+                out[:, i] = 10 ** log_x
+            else:
+                out[i] = 10 ** log_x
+        return out
 
     # ── public: numpy ─────────────────────────────────────────────────────────
 
@@ -402,6 +432,12 @@ class Normalizer:
                 z[sl] = (np.log10(x[sl]) - min_log) / (max_log - min_log)
                 z[sl] = z[sl] - post_mean
                 continue
+            if method == "minmax_sym":
+                min_log = np.float32(self._min_logs[i])
+                max_log = np.float32(self._max_logs[i])
+                z[sl] = (np.log10(x[sl]) - min_log) / (max_log - min_log)
+                z[sl] = 2.0 * z[sl] - 1.0
+                continue
             if method == "softclip":
                 clip_c = np.float32(self._clip_cs[i])  # avoid float64 upcasting
                 z[sl] = clip_c * np.tanh(z[sl] / clip_c)
@@ -414,38 +450,35 @@ class Normalizer:
     def denormalize_numpy(self, z: np.ndarray) -> np.ndarray:
         """z: [N, 3, 256, 256] or [3, 256, 256]  normalized → raw"""
         z = z.astype(np.float32, copy=True)
-        
-        # 역변환: 메서드 역순 적용
+        out = np.empty_like(z, dtype=np.float32)
         for i, method in enumerate(self._methods):
             sl = (slice(None), i) if z.ndim == 4 else (i,)
-            if method == "minmax_center":
+            if method == "affine":
+                log_x = z[sl] * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
+            elif method == "minmax_center":
                 min_log = np.float32(self._min_logs[i])
                 max_log = np.float32(self._max_logs[i])
                 post_mean = np.float32(self._post_means[i])
-                z[sl] = (z[sl] + post_mean) * (max_log - min_log) + min_log
-                continue
+                log_x = (z[sl] + post_mean) * (max_log - min_log) + min_log
+            elif method == "minmax_sym":
+                min_log = np.float32(self._min_logs[i])
+                max_log = np.float32(self._max_logs[i])
+                log_x = ((z[sl] + 1.0) * 0.5) * (max_log - min_log) + min_log
             if method == "softclip":
                 clip_c = np.float32(self._clip_cs[i])
-                z[sl] = clip_c * np.arctanh(np.clip(z[sl] / clip_c, -1 + 1e-6, 1 - 1e-6))
+                affine_z = clip_c * np.arctanh(np.clip(z[sl] / clip_c, -1 + 1e-6, 1 - 1e-6))
+                log_x = affine_z * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
             elif method == "minmax":
                 min_z = np.float32(self._min_zs[i])
                 max_z = np.float32(self._max_zs[i])
-                z[sl] = z[sl] * (max_z - min_z) + min_z
-        
-        # affine 역변환
-        centers = np.array([self.config[c].get("center", 0.0) for c in CHANNELS], dtype=np.float32)
-        scales  = np.array(
-            [self.config[c].get("scale", 1.0) * self.config[c].get("scale_mult", 1.0) for c in CHANNELS],
-            dtype=np.float32,
-        )
-        if z.ndim == 4:
-            centers = centers[None, :, None, None]
-            scales  = scales[None,  :, None, None]
-        else:
-            centers = centers[:, None, None]
-            scales  = scales[:,  None, None]
-        
-        return 10 ** (z * scales + centers).astype(np.float32)
+                affine_z = z[sl] * (max_z - min_z) + min_z
+                log_x = affine_z * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
+            else:
+                log_x = z[sl] * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
+
+            out[sl] = 10 ** log_x
+
+        return out.astype(np.float32, copy=False)
 
 
 # ── module-level default (기존 코드 호환) ────────────────────────────────────

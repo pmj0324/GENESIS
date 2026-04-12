@@ -118,6 +118,7 @@ clip 없음. 역변환: `10^(x * scale + center)`
 |---|---|---|
 | `affine` | `(log10(x) - center) / scale` | center, scale |
 | `minmax_center` | `((log10(x) - min_log) / (max_log - min_log)) - post_mean` | min_log, max_log, post_mean |
+| `minmax_sym` | `2 * ((log10(x) - min_log) / (max_log - min_log)) - 1` | min_log, max_log |
 | `softclip` | affine 후 `c * tanh(z/c)` | center, scale, clip_c |
 
 `scale_mult` 옵션으로 scale 배율 조정 가능 (예: `scale_mult: 1.25`).
@@ -161,6 +162,18 @@ python GENESIS-data/make_normalization_recipe.py \
   --center-stat mean \
   --param-mode astro_mixed \
   --out GENESIS-data/recipes/log_p1_p99_m1p1_channelwise_astro_mixed.yaml
+```
+
+진짜 `min/max`를 써서 `[-1, 1]`로 보내고 싶으면:
+
+```bash
+python GENESIS-data/make_normalization_recipe.py \
+  --maps-path /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+  --lower-percentile 0 \
+  --upper-percentile 100 \
+  --range-mode symmetric \
+  --param-mode astro_mixed \
+  --out GENESIS-data/log_minmax_sym_channelwise_astro_mixed.yaml
 ```
 
 이 레시피를 `python -m dataloader.build_dataset splits --norm-config ...` 에 그대로 넣으면 됩니다.

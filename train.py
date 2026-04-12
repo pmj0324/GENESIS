@@ -238,6 +238,8 @@ def _validate_unet_kwargs(common: dict, kwargs: dict) -> None:
     num_heads = int(kwargs.get("num_heads", 8))
     attention_resolution = int(kwargs.get("attention_resolution", 32))
     cond_depth = int(kwargs.get("cond_depth", 4))
+    upsample_mode = kwargs.get("upsample_mode", "nearest")
+    cond_context_mode = kwargs.get("cond_context_mode", "cond")
 
     _require_positive_int("model.unet.img_size", img_size)
     _require_positive_int("model.unet.base_channels", base_channels)
@@ -245,6 +247,15 @@ def _validate_unet_kwargs(common: dict, kwargs: dict) -> None:
     _require_positive_int("model.unet.num_heads", num_heads)
     _require_positive_int("model.unet.attention_resolution", attention_resolution)
     _require_positive_int("model.unet.cond_depth", cond_depth)
+    if str(upsample_mode).strip().lower() not in {"nearest", "bilinear"}:
+        raise ValueError(
+            f"model.unet.upsample_mode must be 'nearest' or 'bilinear', got {upsample_mode!r}"
+        )
+    if str(cond_context_mode).strip().lower() not in {"cond", "c_emb", "joint"}:
+        raise ValueError(
+            "model.unet.cond_context_mode must be 'cond', 'c_emb', or 'joint', "
+            f"got {cond_context_mode!r}"
+        )
 
     if img_size % (2 ** len(channel_mult)) != 0:
         raise ValueError(
@@ -383,6 +394,8 @@ def _format_model_details(info: dict) -> str:
             f"base={info.get('base_channels', 128)} mult={info.get('channel_mult', [1, 2, 4, 4])} "
             f"res_blocks={info.get('num_res_blocks', 2)} heads={info.get('num_heads', 8)} "
             f"attn_res={info.get('attention_resolution', 32)} cond_depth={info.get('cond_depth', 4)} "
+            f"upsample={info.get('upsample_mode', 'nearest')} "
+            f"cond_ctx={info.get('cond_context_mode', 'cond')} "
             f"cross_attn={info.get('cross_attn_cond', True)} per_scale={info.get('per_scale_cond', True)} "
             f"dropout={info['dropout']}"
         )
@@ -454,8 +467,8 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
             UNet.PRESETS,
             (
                 "img_size", "base_channels", "channel_mult", "num_res_blocks", "num_heads",
-                "attention_resolution", "channel_se", "circular_conv",
-                "cross_attn_cond", "per_scale_cond", "cond_depth",
+                "attention_resolution", "channel_se", "circular_conv", "upsample_mode",
+                "cond_context_mode", "cross_attn_cond", "per_scale_cond", "cond_depth",
             ),
         )
         _validate_unet_kwargs(common, resolved)
