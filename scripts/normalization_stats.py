@@ -84,7 +84,7 @@ def normalize_channel(raw: np.ndarray, cfg: dict) -> np.ndarray:
     elif method == "minmax_center":
         min_log = np.float32(cfg.get("min_log", cfg.get("min_z")))
         max_log = np.float32(cfg.get("max_log", cfg.get("max_z")))
-        post_mean = np.float32(cfg.get("post_mean", 0.0))
+        post_mean = np.float32(cfg.get("post_mean", cfg.get("post_median", cfg.get("post_shift", 0.0))))
         z = (np.log10(raw) - min_log) / (max_log - min_log)
         z = z - post_mean
     elif method == "minmax":

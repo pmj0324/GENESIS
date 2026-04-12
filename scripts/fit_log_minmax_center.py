@@ -4,7 +4,7 @@ Fit per-channel log-minmax-centering stats from a positive-valued map tensor.
 This computes, for each channel c:
   min_log[c]   = percentile_q(log10(x_c))
   max_log[c]   = percentile_p(log10(x_c))
-  post_mean[c] = mean((log10(x_c) - min_log[c]) / (max_log[c] - min_log[c]))
+  post_center[c] = center statistic of the scaled log data
 
 Usage:
   python scripts/fit_log_minmax_center.py \
@@ -17,6 +17,14 @@ Usage:
       --lower-percentile 1 \
       --upper-percentile 99 \
       --out configs/normalization/log_p1_p99_center.yaml
+
+  # same p1-p99 range, but subtract median instead of mean
+  python scripts/fit_log_minmax_center.py \
+      --maps-path /path/to/train_maps.npy \
+      --lower-percentile 1 \
+      --upper-percentile 99 \
+      --center-stat median \
+      --out configs/normalization/log_p1_p99_median.yaml
 
 The input is assumed to be raw positive physical maps with shape
 `[N, 3, H, W]` or `[3, H, W]`.
@@ -49,6 +57,7 @@ def fit_stats(
     maps: np.ndarray,
     lower_percentile: float = 0.0,
     upper_percentile: float = 100.0,
+    center_stat: str = "mean",
 ) -> dict[str, dict[str, float]]:
     stats: dict[str, dict[str, float]] = {}
     for ch, name in enumerate(CHANNELS):
@@ -64,14 +73,19 @@ def fit_stats(
         log_x = np.log10(np.clip(x, 1e-30, None))
         min_log = float(np.percentile(log_x, lower_percentile))
         max_log = float(np.percentile(log_x, upper_percentile))
-        mean_log = float(np.mean(log_x))
-        post_mean = (mean_log - min_log) / (max_log - min_log)
+        scaled = (log_x - min_log) / (max_log - min_log)
+        if center_stat == "mean":
+            post_center = float(np.mean(scaled))
+        elif center_stat == "median":
+            post_center = float(np.median(scaled))
+        else:
+            raise ValueError(f"Unsupported center_stat: {center_stat!r}")
 
         stats[name] = {
             "method": "minmax_center",
             "min_log": min_log,
             "max_log": max_log,
-            "post_mean": post_mean,
+            "post_mean" if center_stat == "mean" else "post_median": post_center,
         }
     return stats
 
@@ -91,6 +105,12 @@ def main() -> None:
         default=100.0,
         help="Upper percentile for the max bound in log space (100 means true max, 99 means p99).",
     )
+    parser.add_argument(
+        "--center-stat",
+        choices=["mean", "median"],
+        default="mean",
+        help="Statistic to subtract after scaling.",
+    )
     parser.add_argument("--out", type=Path, default=None, help="Optional YAML output path")
     args = parser.parse_args()
 
@@ -99,6 +119,7 @@ def main() -> None:
         maps,
         lower_percentile=float(args.lower_percentile),
         upper_percentile=float(args.upper_percentile),
+        center_stat=str(args.center_stat),
     )
     payload = {"normalization": stats}
 

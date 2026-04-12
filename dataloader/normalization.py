@@ -77,7 +77,10 @@ class Normalizer:
         self._max_zs  = [cfg[c].get("max_z", None)  for c in CHANNELS]
         self._min_logs = [cfg[c].get("min_log", cfg[c].get("min_z", None)) for c in CHANNELS]
         self._max_logs = [cfg[c].get("max_log", cfg[c].get("max_z", None)) for c in CHANNELS]
-        self._post_means = [cfg[c].get("post_mean", 0.0) for c in CHANNELS]
+        self._post_means = [
+            cfg[c].get("post_mean", cfg[c].get("post_median", cfg[c].get("post_shift", 0.0)))
+            for c in CHANNELS
+        ]
 
     @classmethod
     def from_yaml(cls, path: str, key: str = "normalization") -> "Normalizer":
