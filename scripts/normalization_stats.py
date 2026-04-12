@@ -74,12 +74,11 @@ def load_configs(specs: list[str] | None) -> dict[str, dict]:
 
 def normalize_channel(raw: np.ndarray, cfg: dict) -> np.ndarray:
     raw = raw.astype(np.float32, copy=False)
-    center = np.float32(cfg["center"])
-    scale = np.float32(cfg["scale"] * cfg.get("scale_mult", 1.0))
-    z = (np.log10(raw) - center) / scale
-
     method = cfg["method"]
     if method == "softclip":
+        center = np.float32(cfg["center"])
+        scale = np.float32(cfg["scale"] * cfg.get("scale_mult", 1.0))
+        z = (np.log10(raw) - center) / scale
         clip_c = np.float32(cfg.get("clip_c", 4.5))
         z = clip_c * np.tanh(z / clip_c)
     elif method == "minmax_center":
@@ -89,10 +88,17 @@ def normalize_channel(raw: np.ndarray, cfg: dict) -> np.ndarray:
         z = (np.log10(raw) - min_log) / (max_log - min_log)
         z = z - post_mean
     elif method == "minmax":
+        center = np.float32(cfg["center"])
+        scale = np.float32(cfg["scale"] * cfg.get("scale_mult", 1.0))
+        z = (np.log10(raw) - center) / scale
         min_z = np.float32(cfg["min_z"])
         max_z = np.float32(cfg["max_z"])
         z = (z - min_z) / (max_z - min_z)
-    elif method not in {"affine", "robust"}:
+    elif method in {"affine", "robust"}:
+        center = np.float32(cfg["center"])
+        scale = np.float32(cfg["scale"] * cfg.get("scale_mult", 1.0))
+        z = (np.log10(raw) - center) / scale
+    else:
         raise ValueError(f"Unsupported normalization method: {method}")
 
     return z.astype(np.float32, copy=False)

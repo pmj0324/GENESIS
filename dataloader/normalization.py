@@ -66,9 +66,9 @@ class Normalizer:
     def __init__(self, config: dict = None):
         cfg = config or DEFAULT_CONFIG
         self.config   = cfg
-        self._centers = torch.tensor([cfg[c]["center"] for c in CHANNELS], dtype=torch.float32)
+        self._centers = torch.tensor([cfg[c].get("center", 0.0) for c in CHANNELS], dtype=torch.float32)
         self._scales  = torch.tensor(
-            [cfg[c]["scale"] * cfg[c].get("scale_mult", 1.0) for c in CHANNELS],
+            [cfg[c].get("scale", 1.0) * cfg[c].get("scale_mult", 1.0) for c in CHANNELS],
             dtype=torch.float32,
         )
         self._methods = [cfg[c]["method"]            for c in CHANNELS]
@@ -173,9 +173,9 @@ class Normalizer:
         # Keep numpy outputs as float32 so downstream torch tensors
         # match model weights (conv bias float32).
         x = x.astype(np.float32, copy=False)
-        centers = np.array([self.config[c]["center"] for c in CHANNELS], dtype=np.float32)
+        centers = np.array([self.config[c].get("center", 0.0) for c in CHANNELS], dtype=np.float32)
         scales  = np.array(
-            [self.config[c]["scale"] * self.config[c].get("scale_mult", 1.0) for c in CHANNELS],
+            [self.config[c].get("scale", 1.0) * self.config[c].get("scale_mult", 1.0) for c in CHANNELS],
             dtype=np.float32,
         )
         if x.ndim == 4:
@@ -227,9 +227,9 @@ class Normalizer:
                 z[sl] = z[sl] * (max_z - min_z) + min_z
         
         # affine 역변환
-        centers = np.array([self.config[c]["center"] for c in CHANNELS], dtype=np.float32)
+        centers = np.array([self.config[c].get("center", 0.0) for c in CHANNELS], dtype=np.float32)
         scales  = np.array(
-            [self.config[c]["scale"] * self.config[c].get("scale_mult", 1.0) for c in CHANNELS],
+            [self.config[c].get("scale", 1.0) * self.config[c].get("scale_mult", 1.0) for c in CHANNELS],
             dtype=np.float32,
         )
         if z.ndim == 4:
