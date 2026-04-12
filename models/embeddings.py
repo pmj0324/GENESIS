@@ -3,7 +3,7 @@ GENESIS - Embedding modules
 
 TimestepEmbedding:      t [B] float     → [B, out_dim]
 ConditionEmbedding:     cond [B, 6]     → [B, out_dim]
-ConditionTokenEmbedding cond [B, 6]     → [B, 6, out_dim]
+ConditionTokenEmbedding cond [B, 6]     → [B, N_tokens, out_dim]
 JointEmbedding:         cat(t_emb, c_emb) → MLP → [B, out_dim]
                         → t와 θ 정보를 분리된 채로 유지하다가 마지막에 projection
 """
@@ -67,26 +67,47 @@ class ConditionEmbedding(nn.Module):
 
 class ConditionTokenEmbedding(nn.Module):
     """
-    우주론 파라미터 [B, 6] → [B, 6, out_dim].
-    각 scalar parameter를 개별 token으로 임베딩하고,
-    learned type embedding으로 parameter identity를 유지한다.
+    우주론 파라미터 [B, cond_dim] → [B, N_tokens, out_dim].
+    group_size=1이면 각 scalar parameter를 개별 token으로 임베딩한다.
+    group_size>1이면 연속된 파라미터를 순서대로 묶어 token을 만든다.
+    예: cond_dim=6, group_size=2 -> [(0,1), (2,3), (4,5)] -> 3 tokens.
     """
 
-    def __init__(self, cond_dim: int = 6, out_dim: int = 512, depth: int = 2):
+    def __init__(
+        self,
+        cond_dim: int = 6,
+        out_dim: int = 512,
+        depth: int = 2,
+        group_size: int = 1,
+    ):
         super().__init__()
+        if group_size <= 0:
+            raise ValueError(f"group_size must be positive, got {group_size}")
+        if cond_dim % group_size != 0:
+            raise ValueError(
+                f"cond_dim={cond_dim} must be divisible by group_size={group_size}"
+            )
+        self.cond_dim = cond_dim
+        self.group_size = group_size
+        self.num_tokens = cond_dim // group_size
         layers: list[nn.Module] = []
-        in_d = 1
+        in_d = group_size
         for i in range(depth):
             layers.append(nn.Linear(in_d, out_dim))
             if i < depth - 1:
                 layers.append(nn.SiLU())
             in_d = out_dim
         self.token_mlp = nn.Sequential(*layers)
-        self.type_embed = nn.Parameter(torch.zeros(cond_dim, out_dim))
+        self.type_embed = nn.Parameter(torch.zeros(self.num_tokens, out_dim))
         nn.init.trunc_normal_(self.type_embed, std=0.02)
 
     def forward(self, cond: torch.Tensor) -> torch.Tensor:
-        x = self.token_mlp(cond.unsqueeze(-1))
+        if cond.shape[-1] != self.cond_dim:
+            raise ValueError(
+                f"Expected cond with last dim {self.cond_dim}, got {cond.shape[-1]}"
+            )
+        x = cond.reshape(cond.shape[0], self.num_tokens, self.group_size)
+        x = self.token_mlp(x)
         return x + self.type_embed.unsqueeze(0)
 
 

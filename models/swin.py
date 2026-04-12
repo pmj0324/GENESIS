@@ -511,6 +511,7 @@ class SwinUNet(nn.Module):
         cross_attn_cond: bool     = False,
         cross_attn_stages: Optional[List[str]] = None,
         cond_token_depth: int     = 2,
+        cond_token_group_size: int = 1,
         stem_type: str            = "patch",
         stem_channels: int        = 32,
         output_head: str          = "linear",
@@ -559,6 +560,7 @@ class SwinUNet(nn.Module):
         self.channel_se = channel_se
         self.cross_attn_cond = cross_attn_cond
         self.cross_attn_stages = sorted(cross_attn_stage_set)
+        self.cond_token_group_size = cond_token_group_size
         self.stem_type = stem_type
         self.stem_channels = stem_channels
         self.output_head = output_head
@@ -574,7 +576,12 @@ class SwinUNet(nn.Module):
         self.t_embed = TimestepEmbedding(sin_dim=256, out_dim=emb_dim)
         self.c_embed = ConditionEmbedding(cond_dim=cond_dim, out_dim=emb_dim)
         self.c_token_embed = (
-            ConditionTokenEmbedding(cond_dim=cond_dim, out_dim=emb_dim, depth=cond_token_depth)
+            ConditionTokenEmbedding(
+                cond_dim=cond_dim,
+                out_dim=emb_dim,
+                depth=cond_token_depth,
+                group_size=cond_token_group_size,
+            )
             if cross_attn_cond else None
         )
         self.joint   = JointEmbedding(t_dim=emb_dim, c_dim=emb_dim, out_dim=emb_dim) \

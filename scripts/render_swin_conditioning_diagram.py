@@ -106,6 +106,7 @@ def _resolve_swin_config(cfg: Dict) -> Dict:
         "cross_attn_cond": bool(resolved.get("cross_attn_cond", False)),
         "cross_attn_stages": list(resolved.get("cross_attn_stages", [])),
         "cond_token_depth": int(resolved.get("cond_token_depth", 2)),
+        "cond_token_group_size": int(resolved.get("cond_token_group_size", 1)),
         "stem_type": str(resolved.get("stem_type", "patch")),
         "stem_channels": stem_channels,
         "output_head": str(resolved.get("output_head", "linear")),
@@ -312,7 +313,8 @@ def _draw_diagram(resolved: Dict, out_prefix: Path) -> None:
     heads = resolved["num_heads"]
     token_hw = resolved["token_hw"]
     cond_dim = resolved["conditioning_dim"]
-    cond_tokens = resolved["cond_dim"]
+    cond_token_group = resolved["cond_token_group_size"]
+    cond_tokens = resolved["cond_dim"] // cond_token_group
     linear_head_dim = c // 4
 
     nodes = {}
@@ -563,7 +565,10 @@ def _draw_diagram(resolved: Dict, out_prefix: Path) -> None:
         0.140,
         h_cond,
         "ConditionTokenEmbedding",
-        [f"{cond_tokens} scalar tokens, depth={resolved['cond_token_depth']}", f"B x {cond_tokens} x {cond_dim}"],
+        [
+            f"{cond_tokens} grouped tokens (size={cond_token_group}), depth={resolved['cond_token_depth']}",
+            f"B x {cond_tokens} x {cond_dim}",
+        ],
         facecolor=COLORS["token"],
         edgecolor=COLORS["cross"],
         title_face="#F3CDB8",

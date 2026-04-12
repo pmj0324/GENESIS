@@ -268,6 +268,7 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
     cross_attn_cond = kwargs.get("cross_attn_cond", False)
     cross_attn_stages = kwargs.get("cross_attn_stages", None)
     cond_token_depth = int(kwargs.get("cond_token_depth", 2))
+    cond_token_group_size = int(kwargs.get("cond_token_group_size", 1))
     stem_type = kwargs.get("stem_type", "patch")
     stem_channels = int(kwargs.get("stem_channels", 32))
     output_head = kwargs.get("output_head", "linear")
@@ -282,6 +283,7 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
     _require_positive_int("model.swin.channel_se_reduction", channel_se_reduction)
     _require_bool("model.swin.cross_attn_cond", cross_attn_cond)
     _require_positive_int("model.swin.cond_token_depth", cond_token_depth)
+    _require_positive_int("model.swin.cond_token_group_size", cond_token_group_size)
     _require_positive_int("model.swin.stem_channels", stem_channels)
     if cond_fusion not in {"add", "concat"}:
         raise ValueError(
@@ -307,6 +309,11 @@ def _validate_swin_kwargs(common: dict, kwargs: dict) -> None:
         unknown = set(cross_attn_stages).difference(valid_stages)
         if unknown:
             raise ValueError(f"Unknown model.swin.cross_attn_stages: {sorted(unknown)}")
+    if common["cond_dim"] % cond_token_group_size != 0:
+        raise ValueError(
+            f"model.cond_dim={common['cond_dim']} must be divisible by "
+            f"model.swin.cond_token_group_size={cond_token_group_size}"
+        )
 
     if img_size % patch_size != 0:
         raise ValueError(
@@ -379,6 +386,7 @@ def _format_model_details(info: dict) -> str:
             f"periodic={info.get('periodic_boundary', False)} "
             f"channel_se={info.get('channel_se', False)} "
             f"cross_attn={info.get('cross_attn_cond', False)} "
+            f"token_group={info.get('cond_token_group_size', 1)} "
             f"stem={info.get('stem_type', 'patch')} head={info.get('output_head', 'linear')} "
             f"expand={info.get('expand_type', 'patch')} "
             f"dropout={info['dropout']}"
@@ -470,6 +478,7 @@ def build_model(cfg: dict) -> tuple[torch.nn.Module, dict]:
                 "cross_attn_cond",
                 "cross_attn_stages",
                 "cond_token_depth",
+                "cond_token_group_size",
                 "stem_type",
                 "stem_channels",
                 "output_head",
