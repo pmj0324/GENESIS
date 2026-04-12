@@ -12,7 +12,7 @@ model:
     preset: B
     attention_resolution: 64
     circular_conv: true
-    upsample_mode: bilinear
+    upsample_mode: nearest
     cond_context_mode: cond
     cross_attn_cond: false      # off
     per_scale_cond: true        # on (recommended first)
