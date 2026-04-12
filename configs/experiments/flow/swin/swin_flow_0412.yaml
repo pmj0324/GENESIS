@@ -3,14 +3,13 @@ data:
   data_fraction: 1.0
   augment: true  # train split에 D4 대칭(회전/반사) augmentation 적용
 model:
-  architecture: unet
+  architecture: swin
   in_channels: 3
   cond_dim: 6
   dropout: 0.0
-  unet:
+  swin:
     preset: B
-    attention_resolution: 32
-    circular_conv: true
+    window_size: 8
 generative:
   framework: flow_matching
   flow_matching:
@@ -52,5 +51,5 @@ training:
     eval_with_ema: true
   early_stop_patience: 20 
 checkpoint:
-  ckpt_dir: runs/flow/unet/0412_unet_flow/
+  ckpt_dir: runs/flow/swin/0412_swin_flow/
   ckpt_name: best.pt
