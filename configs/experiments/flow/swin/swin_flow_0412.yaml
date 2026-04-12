@@ -30,7 +30,7 @@ generative:
       eval_n: 15
       every_epoch: true
 training:
-  batch_size: 16
+  batch_size: 32
   num_workers: 40
   max_epochs: 150
   lr: 1.0e-4
