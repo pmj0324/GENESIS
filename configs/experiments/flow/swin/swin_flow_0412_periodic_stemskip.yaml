@@ -1,5 +1,5 @@
 data:
-  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/affine_mean_mix_m130_m125_m100
+  data_dir: /home/work/cosmology/GENESIS/GENESIS-data/log_p1_p99_m1p1_channelwise
   data_fraction: 1.0
   augment: true  # train split에 D4 대칭(회전/반사) augmentation 적용
 model:
@@ -59,5 +59,5 @@ training:
     eval_with_ema: true
   early_stop_patience: 20
 checkpoint:
-  ckpt_dir: runs/flow/swin/0412_swin_flow_periodic_stemskip/
+  ckpt_dir: runs/flow/swin/0412_swin_flow_periodic_stemskip_log_p1_p99_m1p1/
   ckpt_name: best.pt
