@@ -915,6 +915,7 @@ def main():
         ref_maps   = ref_maps,
         ref_cond   = ref_cond,
         norm_cfg   = norm_cfg,
+        param_norm_cfg = _meta.get("param_normalization", {}),
         device     = device,
         eval_conds = eval_conds,
         eval_n     = eval_n,

@@ -54,7 +54,12 @@ from analysis.power_spectrum import compute_power_spectrum_2d
 from analysis.cross_spectrum import compute_spectrum_errors
 from analysis.correlation import compute_correlation_errors
 from analysis.pixel_distribution import compare_pixel_distributions
-from dataloader.normalization import Normalizer, denormalize_params, PARAM_NAMES
+from dataloader.normalization import (
+    Normalizer,
+    ParamNormalizer,
+    denormalize_params,
+    PARAM_NAMES,
+)
 
 CHANNEL_NAMES = ["Mcdm", "Mgas", "T"]
 CHANNEL_LABELS = ["log₁₀(Mcdm)", "log₁₀(Mgas)", "log₁₀(T)"]
@@ -89,6 +94,7 @@ class EpochVisualizer:
         ref_cond,
         norm_cfg:   Dict,
         device,
+        param_norm_cfg: Optional[Dict] = None,
         eval_conds: Optional[torch.Tensor] = None,   # [N, 6] — 에폭 메트릭용 N개 조건
         eval_n:     int = 15,                         # 메트릭 평가에 사용할 샘플 수
         viz_cfg:    Optional[Dict] = None,
@@ -111,6 +117,7 @@ class EpochVisualizer:
 
         # normalizer (maps denormalize 용)
         self.normalizer = Normalizer(norm_cfg) if norm_cfg else None
+        self.param_normalizer = ParamNormalizer(param_norm_cfg) if param_norm_cfg else None
 
         samples_cfg = self.viz_cfg.get("samples", {})
         power_cfg = self.viz_cfg.get("power", {})
@@ -171,7 +178,7 @@ class EpochVisualizer:
         if hasattr(ref_cond, "cpu"):
             ref_cond = ref_cond.cpu()
         self.ref_cond_norm = ref_cond.numpy().flatten()          # [6] 정규화값
-        self.ref_cond_raw  = denormalize_params(ref_cond).numpy().flatten()  # [6] 실제값
+        self.ref_cond_raw  = self._denorm_params(ref_cond).numpy().flatten()  # [6] 실제값
         self.ref_cond      = ref_cond.view(1, -1).float().to(device)
 
         # 에폭 메트릭용: N개의 (맵, 조건) 쌍
@@ -211,6 +218,14 @@ class EpochVisualizer:
             t = t.unsqueeze(0)
         out = self.normalizer.denormalize(t).numpy()
         return out[0] if squeezed else out
+
+    def _denorm_params(self, params_norm: torch.Tensor) -> torch.Tensor:
+        """[6] or [B, 6] normalized params → raw physical params."""
+        if self.param_normalizer is not None:
+            arr = params_norm.detach().cpu().numpy() if hasattr(params_norm, "detach") else np.asarray(params_norm)
+            out = self.param_normalizer.denormalize_numpy(arr)
+            return torch.as_tensor(out, dtype=torch.float32)
+        return denormalize_params(params_norm)
 
     def _to_field_space(self, maps_linear: np.ndarray, field_space: str) -> np.ndarray:
         maps_linear = np.asarray(maps_linear, dtype=np.float32)

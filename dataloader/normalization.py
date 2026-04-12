@@ -115,9 +115,16 @@ def _resolve_param_stats(config: dict | None) -> dict:
     if "stats" in config and config["stats"]:
         return config
     if "method" in config and config["method"] in PARAM_DEFAULT_MODES:
+        mode = str(config["method"]).strip().lower()
+        if mode == "astro_mixed":
+            raise ValueError(
+                "param normalization config with method='astro_mixed' requires fitted "
+                "'stats'. Fit with fit_param_normalization(params_phys, mode='astro_mixed') "
+                "and pass/save the returned recipe."
+            )
         return fit_param_normalization(
             np.zeros((1, len(PARAM_NAMES)), dtype=np.float32),
-            mode=str(config["method"]).strip().lower(),
+            mode=mode,
         )
     # Backward-compatible flat dict: assume stats already keyed by param name.
     return {"method": "custom", "stats": config}
@@ -142,10 +149,19 @@ class ParamNormalizer:
     def _spec(self, idx: int) -> dict:
         name = PARAM_NAMES[idx]
         if self.method == "custom" and name in self.stats:
-            return self.stats[name]
-        if name not in self.stats:
-            raise KeyError(f"Missing normalization stats for parameter {name}")
-        return self.stats[name]
+            spec = self.stats[name]
+        else:
+            if name not in self.stats:
+                raise KeyError(f"Missing normalization stats for parameter {name}")
+            spec = self.stats[name]
+
+        std = float(spec.get("std", 0.0))
+        if not np.isfinite(std) or std <= 0.0:
+            raise ValueError(
+                f"Invalid normalization std for parameter {name}: {std}. "
+                "Expected a positive finite value."
+            )
+        return spec
 
     def _normalize_one(self, x: np.ndarray, idx: int) -> np.ndarray:
         spec = self._spec(idx)
