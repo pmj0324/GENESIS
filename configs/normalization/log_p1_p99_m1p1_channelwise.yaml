@@ -1,0 +1,19 @@
+normalization:
+  Mcdm:
+    method: affine
+    center: 11.36719469
+    scale: 1.24523405
+    p01: 10.12196064
+    p99: 12.61242873
+  Mgas:
+    method: affine
+    center: 10.68773427
+    scale: 1.15809664
+    p01: 9.52963763
+    p99: 11.84583092
+  T:
+    method: affine
+    center: 4.75359981
+    scale: 1.43281142
+    p01: 3.32078838
+    p99: 6.18641123
