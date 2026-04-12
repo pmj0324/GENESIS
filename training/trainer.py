@@ -101,6 +101,7 @@ class Trainer:
         # Plateau
         plateau_patience: int   = 5,
         plateau_factor:   float = 0.5,
+        plateau_min_lr: Optional[float] = None,
         # cosine_restarts 전용
         T_0:          int    = 50,
         T_mult:       int    = 2,
@@ -146,6 +147,11 @@ class Trainer:
         self.warmup_epochs = warmup_epochs
         self.warmup_scale  = max(warmup_scale, 1e-8)
         self._schedule_type = schedule
+        self._plateau_patience = int(plateau_patience)
+        self._plateau_factor = float(plateau_factor)
+        self._plateau_min_lr = None if plateau_min_lr is None else float(plateau_min_lr)
+        if self._plateau_min_lr is not None and self._plateau_min_lr < 0.0:
+            raise ValueError(f"plateau_min_lr must be >= 0, got {self._plateau_min_lr!r}")
         self.ckpt_dir       = Path(ckpt_dir) if ckpt_dir else None
         self.ckpt_name      = ckpt_name
         self.last_name      = "last.pt"
@@ -195,10 +201,14 @@ class Trainer:
                 self.optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min,
             )
         elif schedule == "plateau":
-            self.scheduler = ReduceLROnPlateau(
-                self.optimizer, mode="min",
-                patience=plateau_patience, factor=plateau_factor,
+            plateau_kwargs = dict(
+                mode="min",
+                patience=self._plateau_patience,
+                factor=self._plateau_factor,
             )
+            if self._plateau_min_lr is not None:
+                plateau_kwargs["min_lr"] = self._plateau_min_lr
+            self.scheduler = ReduceLROnPlateau(self.optimizer, **plateau_kwargs)
         else:
             raise ValueError(f"Unknown schedule: {schedule!r}")
 
@@ -669,6 +679,15 @@ class Trainer:
             )
         else:
             print("  Warmup     : disabled")
+        if self._schedule_type == "plateau":
+            floor_str = (
+                "none" if self._plateau_min_lr is None else f"{self._plateau_min_lr:.1e}"
+            )
+            print(
+                f"  Plateau    : patience={self._plateau_patience}  "
+                f"factor={self._plateau_factor:.3g}  min_lr={floor_str}  "
+                f"(applies after warmup)"
+            )
         if self.ema_enabled:
             epoch_cfg = (
                 "none" if self.ema_update_after_epoch is None else str(self.ema_update_after_epoch)
@@ -735,14 +754,16 @@ class Trainer:
             self._history["lr"].append(epoch_lr)
 
             # Scheduler step
-            if epoch >= self.warmup_epochs or self._schedule_type in ("cosine_warmup", "cosine_restarts"):
+            if self._schedule_type == "plateau":
+                # Warmup 구간에서는 plateau 스케줄러를 적용하지 않는다.
+                if epoch >= self.warmup_epochs:
+                    # NOTE: val_loss source(raw vs ema)는 self._last_val_source로 추적된다.
+                    self.scheduler.step(val_loss)
+            elif epoch >= self.warmup_epochs or self._schedule_type in ("cosine_warmup", "cosine_restarts"):
                 if self._schedule_type == "cosine":
                     self.scheduler.step()
                 elif self._schedule_type in ("cosine_warmup", "cosine_restarts"):
                     self.scheduler.step()
-                elif self._schedule_type == "plateau":
-                    # NOTE: val_loss source(raw vs ema)는 self._last_val_source로 추적된다.
-                    self.scheduler.step(val_loss)
 
             # Best checkpoint
             improved = val_loss < self._best_val

@@ -52,7 +52,7 @@ training:
   schedule: plateau
   plateau_patience: 5
   plateau_factor: 0.8
-  eta_min: 3.0e-6
+  min_lr: 3.0e-6
   ema:
     enabled: true
     decay: 0.9995
@@ -60,7 +60,7 @@ training:
     update_after_step: auto
     min_update_after_step: 500
     eval_with_ema: true
-  early_stop_patience: 20
+  early_stop_patience: 25
 
 checkpoint:
   ckpt_dir: runs/flow/unet/0414_unet_flow_minmaxsym_cross_perscale_on/

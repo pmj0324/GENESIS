@@ -755,9 +755,11 @@ def main():
             T_mult=tcfg.get("T_mult", 2),
         )
     elif schedule == "plateau":
+        plateau_min_lr = tcfg.get("plateau_min_lr", tcfg.get("min_lr", None))
         schedule_kwargs = dict(
             plateau_patience=tcfg.get("plateau_patience", 5),
             plateau_factor=tcfg.get("plateau_factor", 0.5),
+            plateau_min_lr=plateau_min_lr,
         )
 
     ema_cfg_raw = tcfg.get("ema", {})
