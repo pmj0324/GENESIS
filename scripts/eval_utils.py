@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from dataloader.normalization import (
-    Normalizer, PARAM_MEAN, PARAM_STD, PARAM_NAMES,
+    Normalizer, ParamNormalizer, PARAM_MEAN, PARAM_STD, PARAM_NAMES,
 )
 from sample import load_model_and_normalizer
 from analysis.camels_evaluator import CAMELSEvaluator
@@ -127,11 +127,16 @@ def normalize_maps(maps_phys: np.ndarray, normalizer: Normalizer) -> np.ndarray:
     return normalizer.normalize(t).numpy()
 
 
-def normalize_params(params_phys: np.ndarray) -> np.ndarray:
-    """(N, 6) or (6,) physical params → z-score normalized."""
-    mean = PARAM_MEAN.numpy()
-    std  = PARAM_STD.numpy()
-    return ((params_phys - mean) / std).astype(np.float32)
+def normalize_params(
+    params_phys: np.ndarray,
+    param_normalizer: ParamNormalizer | None = None,
+) -> np.ndarray:
+    """(N, 6) or (6,) physical params → normalized."""
+    if param_normalizer is None:
+        mean = PARAM_MEAN.numpy()
+        std  = PARAM_STD.numpy()
+        return ((np.asarray(params_phys, dtype=np.float32) - mean) / std).astype(np.float32)
+    return param_normalizer.normalize_numpy(np.asarray(params_phys, dtype=np.float32)).astype(np.float32)
 
 
 def maps_per_sim_from_suite(suite: str) -> int:
@@ -232,6 +237,7 @@ def expand_1p_to_maps(
     groups: dict,
     maps_per_sim: int = 15,
     normalizer: Optional[Normalizer] = None,
+    param_normalizer: Optional[ParamNormalizer] = None,
     normalize: bool = True,
 ) -> tuple[dict, dict, np.ndarray, np.ndarray]:
     """1P 데이터를 evaluate_1p() 형식으로 변환.
@@ -248,7 +254,7 @@ def expand_1p_to_maps(
     # 1P fiducial: Om block의 Om=0.3 행 (index 2)  → 1P base params
     fid_sim_idx  = groups["Om"]["fiducial_idx"]
     fid_p_phys   = params_1p[fid_sim_idx]   # (6,) physical
-    fid_p_norm   = normalize_params(fid_p_phys[np.newaxis])[0]
+    fid_p_norm   = normalize_params(fid_p_phys[np.newaxis], param_normalizer=param_normalizer)[0]
 
     s = fid_sim_idx * maps_per_sim
     e = s + maps_per_sim
@@ -264,7 +270,7 @@ def expand_1p_to_maps(
 
         # (n_sims*mps, 3, H, W): each sim has maps_per_sim maps → pick 1 representative per sim
         p_phys = params_1p[idxs]   # (n_sims, 6)
-        p_norm = normalize_params(p_phys)   # (n_sims, 6)
+        p_norm = normalize_params(p_phys, param_normalizer=param_normalizer)   # (n_sims, 6)
 
         # Use first map of each sim as representative (or all 15?)
         maps_list = []

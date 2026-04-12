@@ -16,6 +16,7 @@ Usage:
       --maps-path /path/to/train_maps.npy \
       --lower-percentile 1 \
       --upper-percentile 99 \
+      --param-mode astro_mixed \
       --out configs/normalization/log_p1_p99_center.yaml
 
   # same p1-p99 range, but subtract median instead of mean
@@ -24,6 +25,7 @@ Usage:
       --lower-percentile 1 \
       --upper-percentile 99 \
       --center-stat median \
+      --param-mode astro_mixed \
       --out configs/normalization/log_p1_p99_median.yaml
 
 The input is assumed to be raw positive physical maps with shape
@@ -111,6 +113,12 @@ def main() -> None:
         default="mean",
         help="Statistic to subtract after scaling.",
     )
+    parser.add_argument(
+        "--param-mode",
+        choices=["legacy_zscore", "astro_mixed"],
+        default=None,
+        help="If set, write a combined YAML recipe with params normalization mode.",
+    )
     parser.add_argument("--out", type=Path, default=None, help="Optional YAML output path")
     args = parser.parse_args()
 
@@ -121,7 +129,15 @@ def main() -> None:
         upper_percentile=float(args.upper_percentile),
         center_stat=str(args.center_stat),
     )
-    payload = {"normalization": stats}
+    if args.param_mode is None:
+        payload = {"normalization": stats}
+    else:
+        payload = {
+            "normalization": {
+                "maps": stats,
+                "params": {"method": str(args.param_mode)},
+            }
+        }
 
     text = yaml.safe_dump(payload, sort_keys=False)
     if args.out is None:

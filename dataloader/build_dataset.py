@@ -53,7 +53,12 @@ from tqdm import tqdm
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from dataloader.normalization import Normalizer, normalize_params_numpy
+from dataloader.normalization import (
+    Normalizer,
+    fit_param_normalization,
+    normalize_params_numpy,
+    split_normalization_config,
+)
 
 SUITE        = "IllustrisTNG"
 REDSHIFT     = "z=0.00"
@@ -252,7 +257,9 @@ def build_splits(
     maps_path:   Path,
     params_path: Path,
     out_dir:     Path,
-    norm_config: dict,
+    map_norm_config: dict,
+    param_norm_cfg: dict | None = None,
+    param_norm_mode: str | None = None,
     train_ratio: float = 0.8,
     val_ratio:   float = 0.1,
     seed:        int   = 42,
@@ -283,13 +290,19 @@ def build_splits(
 
     # ── 정규화 ────────────────────────────────────────────────────────────────
     print("normalizing maps ...", flush=True)
-    normalizer = Normalizer(norm_config)
+    normalizer = Normalizer(map_norm_config)
     chunk = 500
     for i in tqdm(range(0, len(maps_raw), chunk), desc="normalizing"):
         maps_raw[i:i+chunk] = normalizer.normalize_numpy(maps_raw[i:i+chunk])
 
-    params_exp = np.repeat(params_raw, MAPS_PER_SIM, axis=0)   # [15000, 6]
-    params_norm = normalize_params_numpy(params_exp)             # zscore
+    # ── parameter normalization (fit on full prior, apply everywhere) ───────
+    param_cfg = dict(param_norm_cfg or {})
+    if param_norm_mode is not None:
+        param_cfg["method"] = param_norm_mode
+    param_mode = str(param_cfg.get("method", "legacy_zscore")).strip().lower()
+    param_norm_recipe = fit_param_normalization(params_raw, mode=param_mode)
+    params_norm_sim = normalize_params_numpy(params_raw, param_norm_recipe)
+    params_exp = np.repeat(params_norm_sim, MAPS_PER_SIM, axis=0)   # [15000, 6]
 
     # ── split ─────────────────────────────────────────────────────────────────
     n_sims = len(params_raw)
@@ -346,7 +359,7 @@ def build_splits(
             np.arange(s * MAPS_PER_SIM, (s + 1) * MAPS_PER_SIM) for s in sims
         ])
         m = maps_raw[map_idx]
-        p = params_norm[map_idx]
+        p = params_exp[map_idx]
         sizes[split_name] = len(m)
 
         maps_out   = out_dir / f"{split_name}_maps.npy"
@@ -365,7 +378,8 @@ def build_splits(
         "created":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "source_maps":  str(maps_path.resolve()),
         "source_params": str(params_path.resolve()),
-        "normalization": norm_config,
+        "normalization": map_norm_config,
+        "param_normalization": param_norm_recipe,
         "split": {
             "train_ratio": train_ratio,
             "val_ratio":   val_ratio,
@@ -522,6 +536,13 @@ if __name__ == "__main__":
     p_splits.add_argument("--out-dir",     type=Path, required=True)
     p_splits.add_argument("--norm-config", type=Path, required=True,
                           help="normalization 섹션이 포함된 YAML (예: configs/base.yaml)")
+    p_splits.add_argument(
+        "--param-norm-mode",
+        type=str,
+        choices=["legacy_zscore", "astro_mixed"],
+        default=None,
+        help="Optional override for the params normalization mode from YAML.",
+    )
     p_splits.add_argument("--train-ratio", type=float, default=0.8)
     p_splits.add_argument("--val-ratio",   type=float, default=0.1)
     p_splits.add_argument("--seed",        type=int,   default=42)
@@ -568,11 +589,14 @@ if __name__ == "__main__":
     elif args.cmd == "splits":
         with open(args.norm_config) as f:
             cfg = yaml.safe_load(f)
+        map_norm_config, param_norm_config = split_normalization_config(cfg.get("normalization", {}))
         build_splits(
             maps_path=args.maps_path,
             params_path=args.params_path,
             out_dir=args.out_dir,
-            norm_config=cfg["normalization"],
+            map_norm_config=map_norm_config,
+            param_norm_cfg=param_norm_config,
+            param_norm_mode=args.param_norm_mode,
             train_ratio=args.train_ratio,
             val_ratio=args.val_ratio,
             seed=args.seed,

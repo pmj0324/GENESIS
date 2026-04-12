@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -25,6 +26,7 @@ from eval_utils import (
     normalize_maps, normalize_params,
     setup_evaluator,
 )
+from dataloader.normalization import ParamNormalizer
 from analysis.report import plot_cv_variance_ratio, save_json_report, save_text_summary
 
 
@@ -76,9 +78,13 @@ def main():
         cv_maps_norm = normalize_maps(cv_maps_raw, normalizer)
         print(f"  CV maps raw→norm: {cv_maps_norm.shape}")
 
+    with open(DATA_DIR / "metadata.yaml") as f:
+        meta = yaml.safe_load(f)
+    param_normalizer = ParamNormalizer.from_metadata(meta)
+
     # 피듀셜 condition: CV params의 첫 번째 행 (모두 동일)
     fid_phys = cv_params_phys[0]   # [0.3, 0.8, 1.0, 1.0, 1.0, 1.0]
-    fid_norm = normalize_params(fid_phys[np.newaxis])[0]   # (6,)
+    fid_norm = normalize_params(fid_phys[np.newaxis], param_normalizer)[0]   # (6,)
     print(f"  fiducial params (physical): {fid_phys}")
     print(f"  fiducial params (z-score):  {fid_norm}")
 

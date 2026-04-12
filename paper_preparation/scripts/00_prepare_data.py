@@ -61,6 +61,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from dataloader.normalization import (  # noqa: E402
     Normalizer,
+    ParamNormalizer,
     normalize_params_numpy as _normalize_params,
 )
 
@@ -128,6 +129,7 @@ def prepare_set(
     camels_dir: Path,
     out_dir: Path,
     normalizer: Normalizer,
+    param_normalizer: ParamNormalizer,
     max_sims: int | None,
     force: bool,
 ) -> None:
@@ -159,7 +161,7 @@ def prepare_set(
     maps_norm = normalize_maps(raw, normalizer)   # same affine as LH
 
     print(f"[{set_name}] normalizing {n_sims} param vectors ...")
-    params_norm = _normalize_params(params_phys)
+    params_norm = param_normalizer.normalize_numpy(params_phys)
 
     print(f"[{set_name}] saving ...")
     np.save(maps_out,   maps_norm.astype(np.float32))
@@ -225,6 +227,7 @@ def main() -> None:
 
     print(f"Loading normalizer from {metadata_yaml}")
     normalizer = Normalizer.from_yaml(str(metadata_yaml))
+    param_normalizer = ParamNormalizer.from_metadata(yaml.safe_load(metadata_yaml.read_text()))
 
     if not args.skip_verify:
         _verify_normalizer_roundtrip(out_dir, normalizer)
@@ -236,6 +239,7 @@ def main() -> None:
             camels_dir=camels_dir,
             out_dir=out_dir,
             normalizer=normalizer,
+            param_normalizer=param_normalizer,
             max_sims=args.max_sims,
             force=args.force,
         )

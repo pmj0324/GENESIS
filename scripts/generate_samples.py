@@ -59,7 +59,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dataloader.normalization import CHANNELS, PARAM_NAMES, Normalizer
+from dataloader.normalization import CHANNELS, PARAM_NAMES, Normalizer, ParamNormalizer
 from flow_matching.samplers import build_sampler
 from diffusion.ddpm import GaussianDiffusion
 from diffusion.schedules import build_schedule
@@ -412,6 +412,7 @@ def main():
     with open(meta_path) as f:
         meta = yaml.safe_load(f)
     normalizer = Normalizer(meta.get("normalization", {}))
+    param_normalizer = ParamNormalizer.from_metadata(meta)
 
     # Model
     model = _build_model(cfg)
@@ -435,6 +436,7 @@ def main():
         "checkpoint":    str(Path(args.checkpoint).resolve()),
         "config":        str(Path(args.config).resolve()),
         "data_dir":      str(data_dir.resolve()),
+        "param_normalization": param_normalizer.to_config(),
         "n_gen":         args.n_gen,
         "split":         args.split,
         "protocols":     args.protocols,

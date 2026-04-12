@@ -47,7 +47,7 @@ sys.path.insert(0, str(ROOT))
 
 from dataloader.normalization import (
     Normalizer,
-    normalize_params_numpy,
+    ParamNormalizer,
     PARAM_NAMES,
 )
 
@@ -105,31 +105,49 @@ def _convert_raw_standard_params(raw_first6: np.ndarray) -> np.ndarray:
     return out
 
 
-def _prepare_cv(camels_dir: Path, out_dir: Path, normalizer: Normalizer, chunk: int) -> None:
+def _prepare_cv(
+    camels_dir: Path,
+    out_dir: Path,
+    normalizer: Normalizer,
+    param_normalizer: ParamNormalizer,
+    chunk: int,
+) -> None:
     cv_maps_raw = _load_raw_maps(camels_dir, "CV")
     cv_maps = _normalize_maps(cv_maps_raw, normalizer, chunk=chunk)
 
     cv_params_raw = np.loadtxt(camels_dir / "params_CV_IllustrisTNG.txt", dtype=np.float32)
-    cv_params = normalize_params_numpy(cv_params_raw)
+    cv_params = param_normalizer.normalize_numpy(cv_params_raw)
 
     _save_array(out_dir / "cv_maps.npy", cv_maps)
     _save_array(out_dir / "cv_params.npy", cv_params)
     print(f"[prepare] CV   maps={cv_maps.shape} params={cv_params.shape}")
 
 
-def _prepare_ex(camels_dir: Path, out_dir: Path, normalizer: Normalizer, chunk: int) -> None:
+def _prepare_ex(
+    camels_dir: Path,
+    out_dir: Path,
+    normalizer: Normalizer,
+    param_normalizer: ParamNormalizer,
+    chunk: int,
+) -> None:
     ex_maps_raw = _load_raw_maps(camels_dir, "EX")
     ex_maps = _normalize_maps(ex_maps_raw, normalizer, chunk=chunk)
 
     ex_params_raw = np.loadtxt(camels_dir / "params_EX_IllustrisTNG.txt", dtype=np.float32)
-    ex_params = normalize_params_numpy(ex_params_raw)
+    ex_params = param_normalizer.normalize_numpy(ex_params_raw)
 
     _save_array(out_dir / "ex_maps.npy", ex_maps)
     _save_array(out_dir / "ex_params.npy", ex_params)
     print(f"[prepare] EX   maps={ex_maps.shape} params={ex_params.shape}")
 
 
-def _prepare_1p(camels_dir: Path, out_dir: Path, normalizer: Normalizer, chunk: int) -> None:
+def _prepare_1p(
+    camels_dir: Path,
+    out_dir: Path,
+    normalizer: Normalizer,
+    param_normalizer: ParamNormalizer,
+    chunk: int,
+) -> None:
     onep_maps_raw = _load_raw_maps(camels_dir, "1P")
     onep_raw_full = np.loadtxt(camels_dir / "params_1P_IllustrisTNG.txt", dtype=np.float32)
     onep_raw_std = _convert_raw_standard_params(onep_raw_full[:, :6])
@@ -143,7 +161,7 @@ def _prepare_1p(camels_dir: Path, out_dir: Path, normalizer: Normalizer, chunk: 
         maps_norm = _normalize_maps(onep_maps_raw[map_sl], normalizer, chunk=chunk)
         # Repeat each simulation condition across its 15 projected maps so
         # evaluate_1p() receives one conditioning vector per map.
-        params_norm = normalize_params_numpy(np.repeat(onep_raw_std[sl], 15, axis=0))
+        params_norm = param_normalizer.normalize_numpy(np.repeat(onep_raw_std[sl], 15, axis=0))
 
         _save_array(onep_dir / f"{pname}_maps.npy", maps_norm)
         _save_array(onep_dir / f"{pname}_params.npy", params_norm)
@@ -184,14 +202,16 @@ def main() -> None:
     with open(metadata_path) as f:
         meta = yaml.safe_load(f)
     normalizer = Normalizer(meta["normalization"])
+    param_normalizer = ParamNormalizer.from_metadata(meta)
 
     print(f"[prepare] camels_dir={args.camels_dir}")
     print(f"[prepare] out_dir={args.out_dir}")
     print(f"[prepare] metadata={metadata_path}")
+    print(f"[prepare] param_normalization={param_normalizer.to_config().get('method', 'legacy_zscore')}")
 
-    _prepare_cv(args.camels_dir, args.out_dir, normalizer, chunk=args.chunk)
-    _prepare_1p(args.camels_dir, args.out_dir, normalizer, chunk=args.chunk)
-    _prepare_ex(args.camels_dir, args.out_dir, normalizer, chunk=args.chunk)
+    _prepare_cv(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
+    _prepare_1p(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
+    _prepare_ex(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
     print("[prepare] done")
 
 

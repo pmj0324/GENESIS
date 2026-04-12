@@ -23,12 +23,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from eval_utils import (
-    CAMELS_DIR, add_common_args,
+    CAMELS_DIR, DATA_DIR, add_common_args,
     load_camels_3ch, load_camels_params,
     normalize_maps, normalize_params,
     setup_evaluator, parse_1p_groups, expand_1p_to_maps,
@@ -36,6 +37,7 @@ from eval_utils import (
 )
 from analysis.report import save_json_report, _to_serializable
 from dataloader.normalization import PARAM_NAMES
+from dataloader.normalization import ParamNormalizer
 
 CHANNELS   = ["Mcdm", "Mgas", "T"]
 PARAM_DISPLAY = ["Ωm", "σ8", "A_SN1", "A_SN2", "A_AGN1", "A_AGN2"]
@@ -147,6 +149,10 @@ def main():
     print(f"  1P maps:   {maps_1p_raw.shape}")
     print(f"  1P params: {params_1p.shape}  (converted to GENESIS/LH space)")
 
+    with open(DATA_DIR / "metadata.yaml") as f:
+        meta = yaml.safe_load(f)
+    param_normalizer = ParamNormalizer.from_metadata(meta)
+
     # 파라미터 그룹 파싱 (첫 6 GENESIS param 그룹, 각 5 sims)
     groups = parse_1p_groups(params_1p, maps_per_sim=15)
     print(f"\n[1P] parameter groups:")
@@ -162,7 +168,7 @@ def main():
     print("\n[load] normalizing 1P maps ...")
     onep_maps_norm, onep_params_norm, fid_maps_norm, fid_params_norm = expand_1p_to_maps(
         maps_1p_raw, params_1p, groups,
-        maps_per_sim=15, normalizer=normalizer, normalize=True,
+        maps_per_sim=15, normalizer=normalizer, param_normalizer=param_normalizer, normalize=True,
     )
     fid_cond_tensor = torch.from_numpy(fid_params_norm)
     print(f"  1P fiducial params (physical): {params_1p[groups['Om']['fiducial_idx']]}")

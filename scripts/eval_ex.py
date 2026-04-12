@@ -25,16 +25,18 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from eval_utils import (
-    CAMELS_DIR, add_common_args,
+    CAMELS_DIR, DATA_DIR, add_common_args,
     load_camels_3ch, load_camels_params,
     normalize_maps, normalize_params,
     setup_evaluator,
 )
+from dataloader.normalization import ParamNormalizer
 from analysis.report import save_json_report, _to_serializable
 from analysis.cross_spectrum import AUTO_POWER_THRESHOLDS
 
@@ -136,7 +138,10 @@ def main():
         print(f"    #{i}: {label:25s}  params={row}")
 
     maps_ex_norm   = normalize_maps(maps_ex_raw, normalizer)    # (60, 3, H, W)
-    params_ex_norm = normalize_params(params_ex)                # (4, 6)
+    with open(DATA_DIR / "metadata.yaml") as f:
+        meta = yaml.safe_load(f)
+    param_normalizer = ParamNormalizer.from_metadata(meta)
+    params_ex_norm = normalize_params(params_ex, param_normalizer)                # (4, 6)
     mps = 15
 
     # ── EX 평가 ────────────────────────────────────────────────────────────────

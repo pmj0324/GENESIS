@@ -40,8 +40,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from dataloader.normalization import (
-    CHANNELS, PARAM_NAMES, PARAM_MEAN, PARAM_STD,
-    Normalizer, normalize_params, denormalize_params,
+    CHANNELS, PARAM_NAMES,
+    Normalizer, ParamNormalizer,
+    normalize_params, denormalize_params,
 )
 from evaluation.cli.evaluate import (
     build_model, build_sampler_fn,
@@ -131,6 +132,7 @@ def load_model_and_normalizer(
         raise FileNotFoundError(f"metadata.yaml 없음: {meta_path}")
     with open(meta_path) as f:
         meta = yaml.safe_load(f)
+    param_normalizer = ParamNormalizer.from_metadata(meta)
     normalizer = Normalizer(meta.get("normalization", {}))
 
     # Model
@@ -483,9 +485,7 @@ def main():
         # --params 모드: 물리 → z-score 정규화
         params_phys = np.array(args.params, dtype=np.float32)
         _validate_params(params_phys)
-        params_norm = (
-            (torch.from_numpy(params_phys) - PARAM_MEAN) / PARAM_STD
-        ).numpy()
+        params_norm = param_normalizer.normalize_numpy(params_phys)
         print(f"[sample] 조건 (physical): {_params_footer(params_phys)}")
 
     else:
@@ -506,9 +506,7 @@ def main():
             )
 
         params_norm = all_params[args.ref_idx].astype(np.float32)
-        params_phys = (
-            torch.from_numpy(params_norm) * PARAM_STD + PARAM_MEAN
-        ).numpy()
+        params_phys = param_normalizer.denormalize_numpy(params_norm)
 
         # 실제 맵: normalized → physical
         real_norm   = all_maps[args.ref_idx].astype(np.float32)   # (3, H, W) normalized

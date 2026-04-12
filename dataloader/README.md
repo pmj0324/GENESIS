@@ -149,6 +149,22 @@ softclip 적용 예시:
     clip_c: 4.5
 ```
 
+### 레시피 YAML 생성
+
+맵 정규화와 조건 정규화 모드를 같이 묶은 레시피를 `GENESIS-data/recipes/`에 저장하려면:
+
+```bash
+python GENESIS-data/make_normalization_recipe.py \
+  --maps-path /home/work/cosmology/CAMELS/IllustrisTNG/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
+  --lower-percentile 1 \
+  --upper-percentile 99 \
+  --center-stat mean \
+  --param-mode astro_mixed \
+  --out GENESIS-data/recipes/log_p1_p99_m1p1_channelwise_astro_mixed.yaml
+```
+
+이 레시피를 `python -m dataloader.build_dataset splits --norm-config ...` 에 그대로 넣으면 됩니다.
+
 ---
 
 ## 통계 비교 스크립트
