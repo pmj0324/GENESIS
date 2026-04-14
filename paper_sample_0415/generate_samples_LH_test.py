@@ -16,6 +16,11 @@ Generated outputs are written under:
         manifest.json
         normalization_summary.txt
         normalization_summary.json
+        normalization_check/
+            norm_map.npy
+            denorm_map.npy
+            raw_map.npy
+            summary.json
         samples/<split>/cond_NNN/
             gen_norm.npy
             true_norm.npy
@@ -40,7 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from dataloader.normalization import PARAM_NAMES, ParamNormalizer  # noqa: E402
+from dataloader.normalization import PARAM_NAMES, Normalizer, ParamNormalizer  # noqa: E402
 from paper_preparation.code.generator import GenesisGenerator  # noqa: E402
 
 
@@ -237,6 +242,137 @@ def write_normalization_report(run_dir: Path, meta: dict, data_dir: Path) -> Non
     print(text.rstrip())
 
 
+def run_denormalization_check(
+    *,
+    run_dir: Path,
+    data_dir: Path,
+    meta: dict,
+    split: str,
+    condition_index: int,
+    map_index: int,
+) -> None:
+    source_maps_value = meta.get("source_maps")
+    if not source_maps_value:
+        print("[generate_samples_LH_test] normalization check skipped: metadata.source_maps missing")
+        return
+
+    maps_path = data_dir / f"{split}_maps.npy"
+    if not maps_path.exists():
+        print(f"[generate_samples_LH_test] normalization check skipped: {maps_path} missing")
+        return
+
+    source_maps_path = Path(source_maps_value)
+    if not source_maps_path.is_absolute():
+        source_maps_path = data_dir / source_maps_path
+    if not source_maps_path.exists():
+        print(
+            "[generate_samples_LH_test] normalization check skipped: "
+            f"source_maps not found at {source_maps_path}"
+        )
+        return
+
+    split_cfg = meta.get("split", {})
+    maps_per_sim = int(split_cfg.get("maps_per_sim", 15))
+    split_maps = np.load(maps_path, mmap_mode="r")
+    n_conditions = len(split_maps) // maps_per_sim
+    if n_conditions <= 0:
+        print("[generate_samples_LH_test] normalization check skipped: no conditions found")
+        return
+
+    if not (0 <= condition_index < n_conditions):
+        raise ValueError(
+            f"--norm-check-condition={condition_index} out of range for split={split} "
+            f"(n_conditions={n_conditions})"
+        )
+    if not (0 <= map_index < maps_per_sim):
+        raise ValueError(
+            f"--norm-check-map={map_index} out of range for maps_per_sim={maps_per_sim}"
+        )
+
+    sim_ids = load_split_sim_ids(data_dir, split, meta)
+    sim_id = int(sim_ids[condition_index]) if sim_ids is not None else condition_index
+    split_row = condition_index * maps_per_sim + map_index
+    raw_row = sim_id * maps_per_sim + map_index
+
+    normalizer = Normalizer(meta.get("normalization", {}))
+    norm_map = np.asarray(split_maps[split_row], dtype=np.float32)
+    denorm_map = normalizer.denormalize_numpy(norm_map)
+
+    source_maps = np.load(source_maps_path, mmap_mode="r")
+    raw_map = np.asarray(source_maps[raw_row], dtype=np.float32)
+    if raw_map.ndim != 3 or raw_map.shape != denorm_map.shape:
+        raise ValueError(
+            f"raw map shape {raw_map.shape} does not match denormalized map shape {denorm_map.shape}"
+        )
+
+    abs_err = np.abs(denorm_map - raw_map)
+    rel_err = abs_err / np.clip(np.abs(raw_map), 1e-30, None)
+    log_denorm = np.log10(np.clip(denorm_map, 1e-30, None))
+    log_raw = np.log10(np.clip(raw_map, 1e-30, None))
+    log_abs_err = np.abs(log_denorm - log_raw)
+
+    per_channel = {}
+    for ci, ch in enumerate(["Mcdm", "Mgas", "T"]):
+        per_channel[ch] = {
+            "max_abs_error": float(abs_err[ci].max()),
+            "mean_abs_error": float(abs_err[ci].mean()),
+            "max_rel_error": float(rel_err[ci].max()),
+            "mean_rel_error": float(rel_err[ci].mean()),
+            "max_log10_error": float(log_abs_err[ci].max()),
+            "mean_log10_error": float(log_abs_err[ci].mean()),
+        }
+
+    summary = {
+        "split": split,
+        "condition_index": int(condition_index),
+        "map_index_within_condition": int(map_index),
+        "maps_per_sim": int(maps_per_sim),
+        "sim_id": int(sim_id),
+        "split_row": int(split_row),
+        "raw_row": int(raw_row),
+        "source_maps": str(source_maps_path.resolve()),
+        "split_maps": str(maps_path.resolve()),
+        "overall": {
+            "max_abs_error": float(abs_err.max()),
+            "mean_abs_error": float(abs_err.mean()),
+            "max_rel_error": float(rel_err.max()),
+            "mean_rel_error": float(rel_err.mean()),
+            "max_log10_error": float(log_abs_err.max()),
+            "mean_log10_error": float(log_abs_err.mean()),
+            "allclose_atol_1e-5_rtol_1e-5": bool(
+                np.allclose(denorm_map, raw_map, atol=1e-5, rtol=1e-5)
+            ),
+            "allclose_atol_1e-4_rtol_1e-4": bool(
+                np.allclose(denorm_map, raw_map, atol=1e-4, rtol=1e-4)
+            ),
+        },
+        "per_channel": per_channel,
+    }
+
+    check_dir = run_dir / "normalization_check"
+    check_dir.mkdir(parents=True, exist_ok=True)
+    np.save(check_dir / "norm_map.npy", norm_map.astype(np.float32, copy=False))
+    np.save(check_dir / "denorm_map.npy", denorm_map.astype(np.float32, copy=False))
+    np.save(check_dir / "raw_map.npy", raw_map.astype(np.float32, copy=False))
+    (check_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+
+    print("")
+    print("[generate_samples_LH_test] denormalization check")
+    print(f"  split        : {split}")
+    print(f"  condition    : {condition_index}")
+    print(f"  sim_id       : {sim_id}")
+    print(f"  map_in_cond  : {map_index}")
+    print(f"  split_row    : {split_row}")
+    print(f"  raw_row      : {raw_row}")
+    print(f"  max_abs_err  : {summary['overall']['max_abs_error']:.6e}")
+    print(f"  mean_abs_err : {summary['overall']['mean_abs_error']:.6e}")
+    print(f"  max_rel_err  : {summary['overall']['max_rel_error']:.6e}")
+    print(f"  max_log10_err: {summary['overall']['max_log10_error']:.6e}")
+    print(f"  allclose 1e-5: {summary['overall']['allclose_atol_1e-5_rtol_1e-5']}")
+    print(f"  allclose 1e-4: {summary['overall']['allclose_atol_1e-4_rtol_1e-4']}")
+    print(f"  saved        : {check_dir}")
+
+
 def load_split_sim_ids(data_dir: Path, split: str, meta: dict) -> np.ndarray | None:
     split_cfg = meta.get("split", {})
     id_files = split_cfg.get("id_files", {})
@@ -411,6 +547,14 @@ def run(args: argparse.Namespace) -> None:
     meta = load_metadata(data_dir)
     write_normalization_report(run_dir, meta, data_dir)
     if args.normalization_only:
+        run_denormalization_check(
+            run_dir=run_dir,
+            data_dir=data_dir,
+            meta=meta,
+            split=args.split,
+            condition_index=args.norm_check_condition,
+            map_index=args.norm_check_map,
+        )
         print(f"\n[generate_samples_LH_test] normalization only -> {run_dir}")
         return
 
@@ -519,6 +663,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model-source", choices=["auto", "ema", "raw"], default="auto")
     p.add_argument("--max-batch", type=int, default=15)
     p.add_argument("--normalization-only", action="store_true")
+    p.add_argument(
+        "--norm-check-condition",
+        type=int,
+        default=0,
+        help="when --normalization-only is set, compare this condition after denormalization",
+    )
+    p.add_argument(
+        "--norm-check-map",
+        type=int,
+        default=0,
+        help="when --normalization-only is set, compare this map index within the condition",
+    )
     p.add_argument("--force", action="store_true")
     args = p.parse_args()
 

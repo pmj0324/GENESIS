@@ -91,14 +91,17 @@ python paper_sample_0415/generate_samples_LH_test.py \
 python paper_sample_0415/generate_samples_LH_test.py \
   --yaml /home/work/cosmology/GENESIS/runs/flow/unet/0414_unet_flow_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20/config_resume.yaml \
   --split train \
+  --norm-check-condition 0 \
+  --norm-check-map 0 \
   --normalization-only
 ```
 
-정규화만 확인:
+LH split 전용 스크립트에서 정규화와 denorm 비교만 확인:
 
 ```bash
-python paper_sample_0415/generate_samples.py \
+python paper_sample_0415/generate_samples_LH_test.py \
   --yaml /home/work/cosmology/GENESIS/runs/flow/unet/0414_unet_flow_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20/config_resume.yaml \
+  --split test \
   --normalization-only
 ```
 
@@ -106,6 +109,10 @@ python paper_sample_0415/generate_samples.py \
 
 - `normalization_summary.json`
 - `normalization_summary.txt`
+- `normalization_check/norm_map.npy`
+- `normalization_check/denorm_map.npy`
+- `normalization_check/raw_map.npy`
+- `normalization_check/summary.json`
 
 메모:
 
@@ -122,3 +129,5 @@ python paper_sample_0415/generate_samples.py \
 - `split_<split>.npy` 또는 `<split>_sim_ids.npy`가 있으면 그 순서대로 컨디션을 따릅니다.
 - `maps_per_sim`은 `metadata.yaml`의 `split.maps_per_sim`를 우선 사용하고, 없으면 파라미터 반복으로 추정합니다.
 - `--n-gen` 기본값은 `15`입니다.
+- `--normalization-only`에서는 `split`의 normalized map 하나를 denorm해서 `metadata.yaml`의 `source_maps` 원본과 직접 비교합니다.
+- 비교할 샘플은 `--norm-check-condition`, `--norm-check-map`으로 고를 수 있고 기본값은 둘 다 `0`입니다.
