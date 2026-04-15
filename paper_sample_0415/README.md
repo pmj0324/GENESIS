@@ -14,6 +14,12 @@ LH split 기준 전용 스크립트:
 python paper_sample_0415/generate_samples_LH_test.py
 ```
 
+정규화 디버그 스크립트:
+
+```bash
+python paper_sample_0415/check_normalization_debug.py
+```
+
 run 디렉터리의 YAML을 직접 쓰고 싶으면:
 
 ```bash
@@ -81,6 +87,15 @@ python paper_sample_0415/generate_samples_LH_test.py \
 
 ```bash
 python paper_sample_0415/generate_samples_LH_test.py \
+  --data-dir /home/work/cosmology/GENESIS/GENESIS-data/log_minmax_sym_channelwise_astro_mixed \
+  --ckpt /home/work/cosmology/GENESIS/runs/flow/unet/0414_unet_flow_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20/last.pt \
+  --config configs/experiments/flow/unet/unet_flow_0414_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20.yaml \
+  --split test \
+  --n-gen 15
+```
+
+```bash
+python paper_sample_0415/generate_samples_LH_test.py \
   --yaml /home/work/cosmology/GENESIS/runs/flow/unet/0414_unet_flow_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20/config_resume.yaml \
   --data-dir /home/work/cosmology/GENESIS/GENESIS-data/log_minmax_sym_channelwise_astro_mixed \
   --split val \
@@ -94,6 +109,18 @@ python paper_sample_0415/generate_samples_LH_test.py \
   --norm-check-condition 0 \
   --norm-check-map 0 \
   --normalization-only
+```
+
+빠르게 샘플링:
+
+```bash
+python paper_sample_0415/generate_samples_LH_test.py \
+  --data-dir /home/work/cosmology/GENESIS/GENESIS-data/log_minmax_sym_channelwise_astro_mixed \
+  --ckpt /home/work/cosmology/GENESIS/runs/flow/unet/0414_unet_flow_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20/last.pt \
+  --config configs/experiments/flow/unet/unet_flow_0414_minmaxsym_perscale_only_ft_plateau_lr2e5_f065_p4_es20.yaml \
+  --split test \
+  --n-gen 15 \
+  --fast
 ```
 
 LH split 전용 스크립트에서 정규화와 denorm 비교만 확인:
@@ -132,6 +159,22 @@ python paper_sample_0415/generate_samples_LH_test.py \
 - `split_<split>.npy` 또는 `<split>_sim_ids.npy`가 있으면 그 순서대로 컨디션을 따릅니다.
 - `maps_per_sim`은 `metadata.yaml`의 `split.maps_per_sim`를 우선 사용하고, 없으면 파라미터 반복으로 추정합니다.
 - `--n-gen` 기본값은 `15`입니다.
+- 기본 solver는 이제 `rk4`입니다.
 - `--normalization-only`에서는 `split`의 normalized map 하나를 denorm해서 `metadata.yaml`의 `source_maps` 원본과 직접 비교합니다.
 - 가능하면 같은 condition의 normalized theta도 denorm해서 `metadata.yaml`의 `source_params` 원본과 직접 비교합니다.
 - 비교할 샘플은 `--norm-check-condition`, `--norm-check-map`으로 고를 수 있고 기본값은 둘 다 `0`입니다.
+- `--fast`를 주면 `steps`를 기본 25에서 12로 낮추고 시작 시 GPU 테스트를 생략합니다.
+
+속도 팁:
+
+- 가장 무난한 빠른 설정은 `--solver rk4 --fast`입니다.
+- 더 빠르게 돌리려면 `--steps 8` 또는 `--steps 10`처럼 더 줄일 수 있지만, 품질 저하는 직접 확인하는 게 좋습니다.
+- GPU 메모리가 충분하면 `--max-batch`를 `--n-gen`과 같게 두는 게 가장 빠릅니다.
+- `rk4`에서는 `--rtol`, `--atol`은 사실상 중요하지 않습니다. 그 옵션은 `dopri5` 같은 adaptive solver 쪽에 더 가깝습니다.
+
+`check_normalization_debug.py` 메모:
+
+- `--data-dir`를 주면 YAML보다 우선해서 그 경로를 사용합니다.
+- `--condition-index`와 `--map-index`를 같이 주면 그 샘플을 직접 검사합니다.
+- 그 둘을 안 주면 `--k`로 split row를 직접 검사합니다.
+- `--output-json`으로 결과를 저장할 수 있고, `--print-json`으로 전체 summary를 바로 출력할 수 있습니다.

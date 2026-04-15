@@ -59,6 +59,7 @@ class GenesisGenerator:
         device: str = "cuda",
         model_source: str = "auto",
         max_batch: int = 32,
+        run_gpu_test: bool = True,
     ):
         self.device = device
         self.max_batch = int(max_batch)
@@ -69,6 +70,7 @@ class GenesisGenerator:
         self.cfg_scale = cfg_scale
         self.rtol = rtol
         self.atol = atol
+        self.run_gpu_test = bool(run_gpu_test)
 
         self.model, self.normalizer, self.sampler_fn, self.cfg = (
             load_model_and_normalizer(
@@ -97,7 +99,8 @@ class GenesisGenerator:
         )
 
         # ── GPU 테스트 ──────────────────────────────────────────────────────
-        self._test_gpu_usage()
+        if self.run_gpu_test:
+            self._test_gpu_usage()
 
     @torch.no_grad()
     def generate(
@@ -210,4 +213,5 @@ class GenesisGenerator:
             "sampler_atol": self.sampler_atol,
             "max_batch": self.max_batch,
             "use_amp": self.use_amp,
+            "run_gpu_test": self.run_gpu_test,
         }

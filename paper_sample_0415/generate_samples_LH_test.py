@@ -651,6 +651,7 @@ def run(args: argparse.Namespace) -> None:
         device=args.device,
         model_source=args.model_source,
         max_batch=args.max_batch,
+        run_gpu_test=not args.fast,
     )
 
     n_done = 0
@@ -722,7 +723,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--split", choices=["train", "val", "test"], default="test")
     p.add_argument("--n-gen", type=int, default=15, help="generated samples per condition")
     p.add_argument("--max-conds", type=int, default=None)
-    p.add_argument("--solver", default="dopri5")
+    p.add_argument("--solver", default="rk4")
     p.add_argument("--steps", type=int, default=25)
     p.add_argument("--cfg-scale", type=float, default=1.0)
     p.add_argument("--rtol", type=float, default=None)
@@ -731,6 +732,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", default="cuda")
     p.add_argument("--model-source", choices=["auto", "ema", "raw"], default="auto")
     p.add_argument("--max-batch", type=int, default=15)
+    p.add_argument(
+        "--fast",
+        action="store_true",
+        help="faster preset: keep rk4, lower steps to 12 if unchanged, and skip startup GPU test",
+    )
     p.add_argument("--normalization-only", action="store_true")
     p.add_argument(
         "--norm-check-condition",
@@ -754,6 +760,8 @@ def parse_args() -> argparse.Namespace:
     args.ckpt = str(ckpt_path)
     args.data_dir = str(resolve_data_dir(config_path, args.data_dir))
     args.output_root = str(Path(args.output_root))
+    if args.fast and args.steps == 25:
+        args.steps = 12
     return args
 
 
