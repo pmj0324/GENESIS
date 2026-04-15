@@ -196,6 +196,13 @@ def main() -> None:
         default=128,
         help="Chunk size for map normalization",
     )
+    parser.add_argument(
+        "--only",
+        type=str,
+        choices=["all", "cv", "1p", "ex"],
+        default="all",
+        help="Which protocol split to prepare. Default: all.",
+    )
     args = parser.parse_args()
 
     metadata_path = args.metadata or (args.out_dir / "metadata.yaml")
@@ -208,10 +215,14 @@ def main() -> None:
     print(f"[prepare] out_dir={args.out_dir}")
     print(f"[prepare] metadata={metadata_path}")
     print(f"[prepare] param_normalization={param_normalizer.to_config().get('method', 'legacy_zscore')}")
+    print(f"[prepare] target={args.only}")
 
-    _prepare_cv(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
-    _prepare_1p(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
-    _prepare_ex(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
+    if args.only in ("all", "cv"):
+        _prepare_cv(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
+    if args.only in ("all", "1p"):
+        _prepare_1p(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
+    if args.only in ("all", "ex"):
+        _prepare_ex(args.camels_dir, args.out_dir, normalizer, param_normalizer, chunk=args.chunk)
     print("[prepare] done")
 
 
