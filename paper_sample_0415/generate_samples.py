@@ -461,19 +461,19 @@ def run(args: argparse.Namespace) -> None:
         print(f"\n[paper_sample_0415] normalization only -> {run_dir}")
         return
 
-        generator = GenesisGenerator(
-            config=args.config,
-            checkpoint=args.ckpt,
-            solver=args.solver,
-            steps=args.steps,
+    generator = GenesisGenerator(
+        config=args.config,
+        checkpoint=args.ckpt,
+        solver=args.solver,
+        steps=args.steps,
         cfg_scale=args.cfg_scale,
         rtol=args.rtol,
         atol=args.atol,
-            device=args.device,
-            model_source=args.model_source,
-            max_batch=args.max_batch,
-            run_gpu_test=not args.fast,
-        )
+        device=args.device,
+        model_source=args.model_source,
+        max_batch=args.max_batch,
+        run_gpu_test=not args.fast,
+    )
 
     param_normalizer = ParamNormalizer.from_metadata(meta)
 
