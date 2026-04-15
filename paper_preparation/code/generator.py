@@ -21,6 +21,7 @@ from typing import Optional
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 # Make repo root importable.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -131,9 +132,13 @@ class GenesisGenerator:
             .contiguous()
         )
 
+        n_chunks = (n_gen + self.max_batch - 1) // self.max_batch
         out_chunks = []
-        for start in range(0, n_gen, self.max_batch):
-            end = min(start + self.max_batch, n_gen)
+        chunk_ranges = [
+            (start, min(start + self.max_batch, n_gen))
+            for start in range(0, n_gen, self.max_batch)
+        ]
+        for start, end in tqdm(chunk_ranges, desc="  chunks", unit="chunk", leave=False, dynamic_ncols=True):
             cond_chunk = cond_full[start:end]
             if self.use_amp:
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):

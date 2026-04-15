@@ -43,6 +43,7 @@ from pathlib import Path
 
 import numpy as np
 import yaml
+from tqdm import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -657,15 +658,15 @@ def run(args: argparse.Namespace) -> None:
     n_done = 0
     n_skipped = 0
     t0 = time.time()
-    for cond in conditions:
+    pbar = tqdm(conditions, desc="conditions", unit="cond", dynamic_ncols=True)
+    for cond in pbar:
         cond_dir = cond_dir_path(run_dir, args.split, cond.cond_id)
         cond_dir.mkdir(parents=True, exist_ok=True)
 
         if not args.force and cond_already_done(cond_dir, args.n_gen):
             n_done += 1
             n_skipped += 1
-            if n_skipped % 25 == 1:
-                print(f"  [skip] cond_{cond.cond_id:03d} already done")
+            pbar.set_postfix({"skip": n_skipped, "done": n_done})
             continue
 
         t_cond = time.time()
@@ -699,7 +700,8 @@ def run(args: argparse.Namespace) -> None:
 
         n_done += 1
         sim_str = "?" if cond.sim_id is None else str(cond.sim_id)
-        print(
+        pbar.set_postfix({"sim": sim_str, "elapsed": f"{elapsed:.1f}s", "done": n_done})
+        tqdm.write(
             f"  cond_{cond.cond_id:03d} sim={sim_str} "
             f"gen={gen_norm.shape} true={cond.true_norm.shape} {elapsed:.1f}s"
         )
