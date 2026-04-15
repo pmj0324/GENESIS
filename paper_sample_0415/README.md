@@ -112,6 +112,9 @@ python paper_sample_0415/generate_samples_LH_test.py \
 - `normalization_check/norm_map.npy`
 - `normalization_check/denorm_map.npy`
 - `normalization_check/raw_map.npy`
+- `normalization_check/theta_norm.npy`
+- `normalization_check/theta_denorm.npy`
+- `normalization_check/theta_raw.npy`
 - `normalization_check/summary.json`
 
 메모:
@@ -130,4 +133,5 @@ python paper_sample_0415/generate_samples_LH_test.py \
 - `maps_per_sim`은 `metadata.yaml`의 `split.maps_per_sim`를 우선 사용하고, 없으면 파라미터 반복으로 추정합니다.
 - `--n-gen` 기본값은 `15`입니다.
 - `--normalization-only`에서는 `split`의 normalized map 하나를 denorm해서 `metadata.yaml`의 `source_maps` 원본과 직접 비교합니다.
+- 가능하면 같은 condition의 normalized theta도 denorm해서 `metadata.yaml`의 `source_params` 원본과 직접 비교합니다.
 - 비교할 샘플은 `--norm-check-condition`, `--norm-check-map`으로 고를 수 있고 기본값은 둘 다 `0`입니다.

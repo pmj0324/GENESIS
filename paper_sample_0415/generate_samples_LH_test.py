@@ -20,6 +20,9 @@ Generated outputs are written under:
             norm_map.npy
             denorm_map.npy
             raw_map.npy
+            theta_norm.npy
+            theta_denorm.npy
+            theta_raw.npy
             summary.json
         samples/<split>/cond_NNN/
             gen_norm.npy
@@ -274,6 +277,8 @@ def run_denormalization_check(
     split_cfg = meta.get("split", {})
     maps_per_sim = int(split_cfg.get("maps_per_sim", 15))
     split_maps = np.load(maps_path, mmap_mode="r")
+    params_path = data_dir / f"{split}_params.npy"
+    split_params = np.load(params_path, mmap_mode="r") if params_path.exists() else None
     n_conditions = len(split_maps) // maps_per_sim
     if n_conditions <= 0:
         print("[generate_samples_LH_test] normalization check skipped: no conditions found")
@@ -291,10 +296,12 @@ def run_denormalization_check(
 
     sim_ids = load_split_sim_ids(data_dir, split, meta)
     sim_id = int(sim_ids[condition_index]) if sim_ids is not None else condition_index
+    cond_row = condition_index * maps_per_sim
     split_row = condition_index * maps_per_sim + map_index
     raw_row = sim_id * maps_per_sim + map_index
 
     normalizer = Normalizer(meta.get("normalization", {}))
+    param_normalizer = ParamNormalizer.from_metadata(meta)
     norm_map = np.asarray(split_maps[split_row], dtype=np.float32)
     denorm_map = normalizer.denormalize_numpy(norm_map)
 
@@ -322,6 +329,56 @@ def run_denormalization_check(
             "mean_log10_error": float(log_abs_err[ci].mean()),
         }
 
+    theta_summary = None
+    theta_norm = None
+    theta_denorm = None
+    theta_raw = None
+    source_params_value = meta.get("source_params")
+    if split_params is not None and source_params_value:
+        source_params_path = Path(source_params_value)
+        if not source_params_path.is_absolute():
+            source_params_path = data_dir / source_params_path
+        if source_params_path.exists():
+            theta_block_norm = np.asarray(split_params[cond_row : cond_row + maps_per_sim], dtype=np.float32)
+            theta_norm = theta_block_norm[0].astype(np.float32, copy=False)
+            theta_denorm = param_normalizer.denormalize_numpy(theta_norm)
+            source_params = np.loadtxt(source_params_path, dtype=np.float32)
+            theta_raw = np.asarray(source_params[sim_id], dtype=np.float32)
+            theta_abs_err = np.abs(theta_denorm - theta_raw)
+            theta_rel_err = theta_abs_err / np.clip(np.abs(theta_raw), 1e-30, None)
+            theta_block_spread = np.abs(theta_block_norm - theta_norm[None, :]).max(axis=0)
+            theta_summary = {
+                "source_params": str(source_params_path.resolve()),
+                "theta_norm": [float(x) for x in theta_norm],
+                "theta_denorm": [float(x) for x in theta_denorm],
+                "theta_raw": [float(x) for x in theta_raw],
+                "max_abs_error": float(theta_abs_err.max()),
+                "mean_abs_error": float(theta_abs_err.mean()),
+                "max_rel_error": float(theta_rel_err.max()),
+                "mean_rel_error": float(theta_rel_err.mean()),
+                "allclose_atol_1e-6_rtol_1e-6": bool(
+                    np.allclose(theta_denorm, theta_raw, atol=1e-6, rtol=1e-6)
+                ),
+                "allclose_atol_1e-5_rtol_1e-5": bool(
+                    np.allclose(theta_denorm, theta_raw, atol=1e-5, rtol=1e-5)
+                ),
+                "split_block_max_norm_spread": {
+                    name: float(theta_block_spread[i]) for i, name in enumerate(PARAM_NAMES)
+                },
+                "split_block_consistent_atol_1e-6": bool(
+                    np.allclose(theta_block_norm, theta_norm[None, :], atol=1e-6, rtol=0.0)
+                ),
+            }
+        else:
+            print(
+                "[generate_samples_LH_test] theta check skipped: "
+                f"source_params not found at {source_params_path}"
+            )
+    elif split_params is None:
+        print(f"[generate_samples_LH_test] theta check skipped: {params_path} missing")
+    else:
+        print("[generate_samples_LH_test] theta check skipped: metadata.source_params missing")
+
     summary = {
         "split": split,
         "condition_index": int(condition_index),
@@ -348,12 +405,18 @@ def run_denormalization_check(
         },
         "per_channel": per_channel,
     }
+    if theta_summary is not None:
+        summary["theta"] = theta_summary
 
     check_dir = run_dir / "normalization_check"
     check_dir.mkdir(parents=True, exist_ok=True)
     np.save(check_dir / "norm_map.npy", norm_map.astype(np.float32, copy=False))
     np.save(check_dir / "denorm_map.npy", denorm_map.astype(np.float32, copy=False))
     np.save(check_dir / "raw_map.npy", raw_map.astype(np.float32, copy=False))
+    if theta_norm is not None and theta_denorm is not None and theta_raw is not None:
+        np.save(check_dir / "theta_norm.npy", theta_norm.astype(np.float32, copy=False))
+        np.save(check_dir / "theta_denorm.npy", theta_denorm.astype(np.float32, copy=False))
+        np.save(check_dir / "theta_raw.npy", theta_raw.astype(np.float32, copy=False))
     (check_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
     print("")
@@ -370,6 +433,12 @@ def run_denormalization_check(
     print(f"  max_log10_err: {summary['overall']['max_log10_error']:.6e}")
     print(f"  allclose 1e-5: {summary['overall']['allclose_atol_1e-5_rtol_1e-5']}")
     print(f"  allclose 1e-4: {summary['overall']['allclose_atol_1e-4_rtol_1e-4']}")
+    if theta_summary is not None:
+        print("  theta_check  : enabled")
+        print(f"  theta_max_abs: {theta_summary['max_abs_error']:.6e}")
+        print(f"  theta_max_rel: {theta_summary['max_rel_error']:.6e}")
+        print(f"  theta_close  : {theta_summary['allclose_atol_1e-6_rtol_1e-6']}")
+        print(f"  theta_block  : {theta_summary['split_block_consistent_atol_1e-6']}")
     print(f"  saved        : {check_dir}")
 
 
