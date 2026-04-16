@@ -1,0 +1,32 @@
+========================================================================
+paper_sample_0415 normalization summary
+========================================================================
+data_dir: /home/work/cosmology/GENESIS/GENESIS-data/log_p1_p99_m1p1_channelwise
+
+[map normalization]
+- Mcdm: method=affine
+  formula: z = (log10(x) - 11.36719469) / (1.24523405 * 1.0)
+  config : {"center": 11.36719469, "method": "affine", "p01": 10.12196064, "p99": 12.61242873, "scale": 1.24523405}
+- Mgas: method=affine
+  formula: z = (log10(x) - 10.68773427) / (1.15809664 * 1.0)
+  config : {"center": 10.68773427, "method": "affine", "p01": 9.52963763, "p99": 11.84583092, "scale": 1.15809664}
+- T: method=affine
+  formula: z = (log10(x) - 4.75359981) / (1.43281142 * 1.0)
+  config : {"center": 4.75359981, "method": "affine", "p01": 3.32078838, "p99": 6.18641123, "scale": 1.43281142}
+
+[param normalization]
+- method=legacy_zscore
+- Omega_m: method=zscore, mean=0.3, std=0.1155
+  formula: z = (theta - 0.30000001192092896) / 0.11550000309944153
+- sigma_8: method=zscore, mean=0.8, std=0.1155
+  formula: z = (theta - 0.800000011920929) / 0.11550000309944153
+- A_SN1: method=zscore, mean=1.3525, std=1.0221
+  formula: z = (theta - 1.3524999618530273) / 1.0220999717712402
+- A_SN2: method=zscore, mean=1.3525, std=1.0221
+  formula: z = (theta - 1.3524999618530273) / 1.0220999717712402
+- A_AGN1: method=zscore, mean=1.082, std=0.4263
+  formula: z = (theta - 1.0820000171661377) / 0.4262999892234802
+- A_AGN2: method=zscore, mean=1.082, std=0.4263
+  formula: z = (theta - 1.0820000171661377) / 0.4262999892234802
+
+note: metadata.yaml has no explicit param_normalization; legacy_zscore defaults from dataloader/normalization.py are being used.

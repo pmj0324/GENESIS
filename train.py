@@ -1,4 +1,4 @@
-"""
+자"""
 GENESIS - Training Entry Point
 
 사용법:

@@ -20,11 +20,14 @@ Data Augmentation (augment=True):
     - 효과: 훈련 데이터 × 8 (12,000 → 96,000)
 """
 
+import logging
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset
 import numpy as np
 from pathlib import Path
 from typing import Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class CAMELSDataset(Dataset):
@@ -62,7 +65,7 @@ class CAMELSDataset(Dataset):
         self.augment = augment
 
         aug_str = "augment=D4" if augment else "no augment"
-        print(f"[CAMELSDataset] split={split}  N={len(self.maps)}  ({aug_str})")
+        logger.info("CAMELSDataset split=%s  N=%d  (%s)", split, len(self.maps), aug_str)
 
     def __len__(self) -> int:
         return len(self.maps)
@@ -135,12 +138,12 @@ def build_dataloaders(
     if data_fraction < 1.0:
         n_full = len(train_ds)
         train_ds = _apply_fraction(train_ds, data_fraction, seed)
-        print(f"[CAMELSDataset] train fraction={data_fraction:.2f}  {n_full}→{len(train_ds)}")
+        logger.info("CAMELSDataset train fraction=%.2f  %d→%d", data_fraction, n_full, len(train_ds))
 
     dl_kwargs = dict(
         batch_size=batch_size,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
         persistent_workers=(num_workers > 0),
     )
     return (

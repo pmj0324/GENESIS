@@ -10,7 +10,7 @@ GENESIS - Dataset Builder
 사용법:
   # Step 1: 채널 합치기 (이미 완료된 경우 스킵)
   python -m dataloader.build_dataset stack \\
-      --maps-dir /path/to/CAMELS/IllustrisTNG
+      --maps-dir /path/to/CAMELS/IllustrisTNG [--suite LH|CV|EX|1P]
 
   # Step 2: 정규화 + split 저장
   python -m dataloader.build_dataset splits \\
@@ -51,38 +51,37 @@ from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dataloader.normalization import (
     Normalizer,
     fit_param_normalization,
     normalize_params_numpy,
     split_normalization_config,
 )
+from dataloader.recipe import build_normalization_recipe, save_normalization_recipe
 
 SUITE        = "IllustrisTNG"
 REDSHIFT     = "z=0.00"
 FIELDS       = ["Mcdm", "Mgas", "T"]
 PARAM_NAMES  = ["Omega_m", "sigma_8", "A_SN1", "A_SN2", "A_AGN1", "A_AGN2"]
 MAPS_PER_SIM = 15
-OUT_NAME     = f"Maps_3ch_{SUITE}_LH_{REDSHIFT}.npy"
 
 
 # ── Step 1: 채널 합치기 ────────────────────────────────────────────────────────
 
-def build(maps_dir: Path, out_dir: Path | None = None):
+def build(maps_dir: Path, out_dir: Path | None = None, suite: str = "LH"):
     maps_dir = Path(maps_dir)
-    out_path = Path(out_dir) / OUT_NAME if out_dir else maps_dir / OUT_NAME
+    out_name = f"Maps_3ch_{SUITE}_{suite}_{REDSHIFT}.npy"
+    out_path = Path(out_dir) / out_name if out_dir else maps_dir / out_name
 
     if out_path.exists():
         print(f"[build] 이미 존재함: {out_path}")
         print("  덮어쓰려면 기존 파일을 삭제 후 재실행.")
         return
 
-    print(f"[build] 소스: {maps_dir}")
+    print(f"[build] 소스: {maps_dir}  suite={suite}")
     channels = []
     for field in tqdm(FIELDS, desc="loading channels"):
-        path = maps_dir / f"Maps_{field}_{SUITE}_LH_{REDSHIFT}.npy"
+        path = maps_dir / f"Maps_{field}_{SUITE}_{suite}_{REDSHIFT}.npy"
         tqdm.write(f"  {path.name}")
         m = np.load(path).astype(np.float32)
         tqdm.write(f"    shape={m.shape}  dtype={m.dtype}")
@@ -427,15 +426,6 @@ def build_splits(
 
 # ── Step 3: train split D4 물리적 증설 ────────────────────────────────────────
 
-def _copy_array_file(src: Path, dst: Path) -> None:
-    arr = np.load(src, mmap_mode="r")
-    fp = np.lib.format.open_memmap(dst, mode="w+", dtype=arr.dtype, shape=arr.shape)
-    chunk = 500
-    for i in tqdm(range(0, len(arr), chunk), desc=f"copy {src.stem}", leave=False):
-        fp[i:i+chunk] = arr[i:i+chunk]
-    del fp
-
-
 def materialize_augmentation(
     data_dir: Path,
     out_dir: Path,
@@ -505,9 +495,9 @@ def materialize_augmentation(
     del maps_fp
     np.save(train_params_out, params_aug)
 
-    _copy_array_file(data_dir / "val_maps.npy", out_dir / "val_maps.npy")
+    shutil.copy2(data_dir / "val_maps.npy",   out_dir / "val_maps.npy")
     shutil.copy2(data_dir / "val_params.npy", out_dir / "val_params.npy")
-    _copy_array_file(data_dir / "test_maps.npy", out_dir / "test_maps.npy")
+    shutil.copy2(data_dir / "test_maps.npy",  out_dir / "test_maps.npy")
     shutil.copy2(data_dir / "test_params.npy", out_dir / "test_params.npy")
 
     with open(metadata_in) as f:
@@ -544,6 +534,9 @@ if __name__ == "__main__":
     p_stack.add_argument("--maps-dir", type=Path, required=True,
                          help="CAMELS IllustrisTNG 디렉토리")
     p_stack.add_argument("--out-dir",  type=Path, default=None)
+    p_stack.add_argument("--suite",    type=str,  default="LH",
+                         choices=["LH", "CV", "EX", "1P"],
+                         help="CAMELS suite (기본: LH)")
 
     # splits
     p_splits = sub.add_parser("splits", help="정규화 + train/val/test 분리 저장")
@@ -597,10 +590,29 @@ if __name__ == "__main__":
     p_aug.add_argument("--copies",   type=int, default=8,
                        help="train split 반복/대칭 증설 배수 (기본: 8)")
 
+    # recipe
+    p_recipe = sub.add_parser("recipe", help="원본 맵에서 정규화 레시피 YAML 생성")
+    p_recipe.add_argument("--maps-path",   type=Path, required=True,
+                          help="원본 맵 .npy 파일 (raw, positive-valued)")
+    p_recipe.add_argument("--params-path", type=Path, default=None,
+                          help="params txt/npy (파라미터 정규화 stats를 YAML에 포함할 때)")
+    p_recipe.add_argument("--lower-percentile", type=float, default=0.0,
+                          help="log-space min 경계 퍼센타일 (0=true min, 1=p1)")
+    p_recipe.add_argument("--upper-percentile", type=float, default=100.0,
+                          help="log-space max 경계 퍼센타일 (100=true max, 99=p99)")
+    p_recipe.add_argument("--center-stat", choices=["mean", "median"], default="mean",
+                          help="min-max 스케일 후 빼줄 통계값")
+    p_recipe.add_argument("--range-mode",  choices=["centered", "symmetric"], default="centered",
+                          help="centered: mean/median 빼기, symmetric: [-1, 1] 매핑")
+    p_recipe.add_argument("--param-mode",  choices=["legacy_zscore", "astro_mixed"], default=None,
+                          help="파라미터 정규화 방식 (미지정 시 YAML에 포함 안 함)")
+    p_recipe.add_argument("--out", type=Path, default=None,
+                          help="출력 YAML 경로 (기본: configs/normalization/<자동생성>.yaml)")
+
     args = parser.parse_args()
 
     if args.cmd == "stack":
-        build(maps_dir=args.maps_dir, out_dir=args.out_dir)
+        build(maps_dir=args.maps_dir, out_dir=args.out_dir, suite=args.suite)
 
     elif args.cmd == "splits":
         with open(args.norm_config) as f:
@@ -627,3 +639,33 @@ if __name__ == "__main__":
             out_dir=args.out_dir,
             copies=args.copies,
         )
+
+    elif args.cmd == "recipe":
+        maps = np.load(args.maps_path, mmap_mode="r")
+        payload = build_normalization_recipe(
+            maps,
+            lower_percentile=args.lower_percentile,
+            upper_percentile=args.upper_percentile,
+            center_stat=args.center_stat,
+            range_mode=args.range_mode,
+            param_mode=args.param_mode,
+        )
+        if args.param_mode is not None and args.params_path is not None:
+            if args.params_path.suffix.lower() == ".npy":
+                params = np.load(args.params_path).astype(np.float32, copy=False)
+            else:
+                params = np.loadtxt(args.params_path, dtype=np.float32)
+            payload.setdefault("normalization", {})["params"] = fit_param_normalization(
+                params, mode=args.param_mode
+            )
+        if args.out is None:
+            suffix = f"{args.lower_percentile:g}_{args.upper_percentile:g}_{args.range_mode}"
+            if args.range_mode == "centered":
+                suffix = f"{suffix}_{args.center_stat}"
+            if args.param_mode:
+                suffix = f"{suffix}_{args.param_mode}"
+            out = Path("configs/normalization") / f"{args.maps_path.stem}_{suffix}.yaml"
+        else:
+            out = args.out
+        save_normalization_recipe(payload, out)
+        print(f"saved: {out}")

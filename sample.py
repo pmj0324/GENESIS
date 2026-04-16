@@ -42,7 +42,6 @@ if str(REPO_ROOT) not in sys.path:
 from dataloader.normalization import (
     CHANNELS, PARAM_NAMES,
     Normalizer, ParamNormalizer,
-    normalize_params, denormalize_params,
 )
 from evaluation.cli.evaluate import (
     build_model, build_sampler_fn,

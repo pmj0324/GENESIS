@@ -392,26 +392,25 @@ class Normalizer:
 
     def denormalize(self, z: torch.Tensor) -> torch.Tensor:
         out = torch.empty_like(z)
+        scales  = self._scales.to(z.device)
+        centers = self._centers.to(z.device)
         for i, method in enumerate(self._methods):
-            if z.dim() == 4:
-                zi = z[:, i]
-            else:
-                zi = z[i]
+            zi = z[:, i] if z.dim() == 4 else z[i]
 
             if method == "affine":
-                log_x = zi * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+                log_x = zi * scales[i] + centers[i]
             elif method == "minmax_center":
                 log_x = self._invert_log_minmax_center(zi, i)
             elif method == "minmax_sym":
                 log_x = self._invert_log_minmax_sym(zi, i)
             elif method == "softclip":
                 affine_z = self._invert_softclip(zi.clone(), i)
-                log_x = affine_z * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+                log_x = affine_z * scales[i] + centers[i]
             elif method == "minmax":
                 affine_z = self._invert_minmax(zi.clone(), i)
-                log_x = affine_z * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+                log_x = affine_z * scales[i] + centers[i]
             else:
-                log_x = zi * self._scales[i].to(z.device) + self._centers[i].to(z.device)
+                log_x = zi * scales[i] + centers[i]
 
             if z.dim() == 4:
                 out[:, i] = 10 ** log_x
@@ -489,8 +488,6 @@ class Normalizer:
                 max_z = np.float32(self._max_zs[i])
                 affine_z = z[sl] * (max_z - min_z) + min_z
                 log_x = affine_z * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
-            elif method == "affine":
-                log_x = z[sl] * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
             else:
                 log_x = z[sl] * np.float32(self._scales[i].cpu().item()) + np.float32(self._centers[i].cpu().item())
 
@@ -499,10 +496,3 @@ class Normalizer:
         return out.astype(np.float32, copy=False)
 
 
-# ── module-level default (기존 코드 호환) ────────────────────────────────────
-
-_default    = Normalizer(DEFAULT_CONFIG)
-normalize        = _default.normalize
-denormalize      = _default.denormalize
-normalize_numpy  = _default.normalize_numpy
-denormalize_numpy = _default.denormalize_numpy

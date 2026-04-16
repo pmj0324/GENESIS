@@ -1,0 +1,16 @@
+normalization:
+  Mcdm:
+    method: minmax_center
+    min_log: 10.118462699661855
+    max_log: 12.634253897047252
+    post_median: 0.3119119637301671
+  Mgas:
+    method: minmax_center
+    min_log: 9.527159277981589
+    max_log: 11.85340387075458
+    post_median: 0.3534458839118686
+  T:
+    method: minmax_center
+    min_log: 3.319292548809078
+    max_log: 6.224168699690066
+    post_median: 0.21199824957784974
