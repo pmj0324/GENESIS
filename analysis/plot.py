@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 
 from .ensemble import summarize
 from .thresholds import (
-    AUTO_THRESH, CROSS_THRESH, COHERENCE_THRESH,
+    COHERENCE_THRESH,
     VARIANCE_RATIO_LO, VARIANCE_RATIO_HI,
 )
 
@@ -46,6 +46,7 @@ from .thresholds import (
 CHANNEL_NAMES  = ["Mcdm", "Mgas", "T"]
 CHANNEL_LABELS = [r"$M_{\rm cdm}$", r"$M_{\rm gas}$", r"$T$"]
 CHANNEL_COLORS = ["tab:blue", "tab:orange", "tab:red"]
+CHANNEL_MAP_CMAPS = ["viridis", "plasma", "inferno"]
 
 PAIR_NAMES  = ["Mcdm-Mgas", "Mcdm-T",    "Mgas-T"]
 PAIR_LABELS = [
@@ -61,6 +62,61 @@ EPS = 0.0  # 노트북 규칙: EPS=0, clip(x, EPS, None) 사용
 
 def _safe_clip(arr):
     return np.clip(arr, EPS, None) if EPS > 0 else arr
+
+
+def _finalize_figure(
+    fig,
+    title: str = "",
+    *,
+    fontsize: int = 13,
+    top: float | None = None,
+    pad: float = 1.0,
+    h_pad: float = 1.0,
+    w_pad: float = 1.0,
+    use_tight_layout: bool = True,
+    left: float = 0.06,
+    right: float = 0.985,
+    bottom: float = 0.07,
+):
+    """Apply a consistent suptitle + layout policy.
+
+    A lot of plotters in this module use suptitle and then get saved with
+    ``bbox_inches="tight"`` later. Reserving explicit top margin keeps the
+    suptitle from crowding panel titles / legends.
+    """
+    has_title = bool(title)
+    if has_title:
+        fig.suptitle(title, fontsize=fontsize, y=0.995)
+    if top is None:
+        top = 0.93 if has_title else 0.98
+    if use_tight_layout:
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, top), pad=pad, h_pad=h_pad, w_pad=w_pad)
+    else:
+        fig.subplots_adjust(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            wspace=w_pad * 0.18,
+            hspace=h_pad * 0.10,
+        )
+
+
+def _robust_image_limits(
+    arrays,
+    low_pct: float = 0.5,
+    high_pct: float = 99.5,
+    pad: float = 1e-3,
+):
+    vals = np.concatenate([np.asarray(a, dtype=np.float64).reshape(-1) for a in arrays])
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return -1.0, 1.0
+    vmin, vmax = np.percentile(vals, [low_pct, high_pct])
+    if abs(vmax - vmin) < pad:
+        center = 0.5 * (vmin + vmax)
+        return center - pad, center + pad
+    return float(vmin), float(vmax)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -87,8 +143,9 @@ def plot_auto_pk(
     Returns:
         fig, axes
     """
-    if axes is None:
-        fig, axes = plt.subplots(1, 3, figsize=(17, 5))
+    owns_figure = axes is None
+    if owns_figure:
+        fig, axes = plt.subplots(1, 3, figsize=(19.5, 5))
     else:
         fig = axes[0].get_figure()
 
@@ -115,8 +172,8 @@ def plot_auto_pk(
         ax.legend(fontsize=7)
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    if owns_figure:
+        _finalize_figure(fig, title, top=0.91)
     return fig, axes
 
 
@@ -131,7 +188,7 @@ def plot_auto_pk_resid(
 
     상단: P(k) 비교, 하단: ΔP/P 잔차.
     """
-    fig, axes = plt.subplots(2, 3, figsize=(17, 9),
+    fig, axes = plt.subplots(2, 3, figsize=(19.5, 9),
                              gridspec_kw={"height_ratios": [2, 1], "hspace": 0.08},
                              sharex=True)
 
@@ -173,8 +230,17 @@ def plot_auto_pk_resid(
         ax1.legend(fontsize=7)
         ax1.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(
+        fig,
+        title,
+        top=0.91,
+        h_pad=1.2,
+        w_pad=1.2,
+        use_tight_layout=False,
+        left=0.06,
+        right=0.987,
+        bottom=0.08,
+    )
     return fig, axes
 
 
@@ -196,7 +262,8 @@ def plot_cross_pk(
         cpks_true: {pair_idx or "Mcdm-Mgas": (N, n_k)}
         cpks_gen:  same
     """
-    if axes is None:
+    owns_figure = axes is None
+    if owns_figure:
         fig, axes = plt.subplots(1, 3, figsize=(17, 5))
     else:
         fig = axes[0].get_figure()
@@ -229,8 +296,8 @@ def plot_cross_pk(
         ax.legend(fontsize=7)
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    if owns_figure:
+        _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -249,7 +316,8 @@ def plot_coherence(
     Coherence r(k) per pair, 1행 3열.
     threshold 점선 포함.
     """
-    if axes is None:
+    owns_figure = axes is None
+    if owns_figure:
         fig, axes = plt.subplots(1, 3, figsize=(17, 4))
     else:
         fig = axes[0].get_figure()
@@ -280,8 +348,8 @@ def plot_coherence(
         ax.legend(fontsize=7)
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    if owns_figure:
+        _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -299,7 +367,8 @@ def plot_xi(
     """
     ξ(r) with r²·ξ(r) scaling (노트북 Block 3-B), 1행 3열.
     """
-    if axes is None:
+    owns_figure = axes is None
+    if owns_figure:
         fig, axes = plt.subplots(1, 3, figsize=(17, 5))
     else:
         fig = axes[0].get_figure()
@@ -330,8 +399,8 @@ def plot_xi(
         ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    if owns_figure:
+        _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -355,7 +424,8 @@ def plot_pdf(
         maps_gen_log10:  (N_gen,  3, H, W)
         pdf_metrics:     {channel_name: compare_pdfs result} — annotation용.
     """
-    if axes is None:
+    owns_figure = axes is None
+    if owns_figure:
         fig, axes = plt.subplots(1, 3, figsize=(17, 5))
     else:
         fig = axes[0].get_figure()
@@ -391,8 +461,8 @@ def plot_pdf(
                     ha="right", va="top", fontsize=7,
                     bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    if owns_figure:
+        _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -445,8 +515,7 @@ def plot_pdf_hist_summary(
                     ha="right", va="top", fontsize=7,
                     bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -482,8 +551,7 @@ def plot_qq(
         ax.set_ylabel("Gen quantiles")
         ax.grid(True, alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -523,8 +591,7 @@ def plot_cdf(
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -532,50 +599,84 @@ def plot_example_tiles(
     maps_true_log10: np.ndarray,
     maps_gen_log10:  np.ndarray,
     title: str = "",
-    n_examples: int = 3,
+    n_examples: int | None = None,
+    n_true_examples: int = 3,
+    n_gen_examples: int = 10,
 ):
     """
     Example map tiles.
 
-    행 = 채널, 열 = true n장 + gen n장.
-    """
-    n_true = min(n_examples, maps_true_log10.shape[0])
-    n_gen  = min(n_examples, maps_gen_log10.shape[0])
-    n_cols = n_true + n_gen
-    fig, axes = plt.subplots(3, n_cols, figsize=(2.6 * n_cols, 8.5))
-    if n_cols == 1:
-        axes = np.array(axes).reshape(3, 1)
+    행 = 채널, 열 = true n장 + gen n장 + colorbar.
 
-    for row, (name, label) in enumerate(zip(CHANNEL_NAMES, CHANNEL_LABELS)):
+    기본값:
+      - true 예시는 최대 3장
+      - gen 예시는 최대 10장
+
+    Backward compatibility:
+      - n_examples를 주면 true / gen 모두 같은 개수로 제한한다.
+    """
+    if n_examples is not None:
+        n_true_examples = int(n_examples)
+        n_gen_examples = int(n_examples)
+
+    n_true = min(max(1, int(n_true_examples)), maps_true_log10.shape[0])
+    n_gen  = min(max(1, int(n_gen_examples)), maps_gen_log10.shape[0])
+    n_img_cols = n_true + n_gen
+    n_cols = 1 + n_img_cols
+    width_ratios = [1.0] * n_img_cols + [0.12]
+
+    fig, axes = plt.subplots(
+        3,
+        n_cols,
+        figsize=(2.25 * n_img_cols + 1.0, 8.8),
+        gridspec_kw={"width_ratios": width_ratios},
+        squeeze=False,
+    )
+
+    for row, (name, label, cmap) in enumerate(zip(CHANNEL_NAMES, CHANNEL_LABELS, CHANNEL_MAP_CMAPS)):
         vals = np.concatenate([
             maps_true_log10[:n_true, row].reshape(-1),
             maps_gen_log10[:n_gen, row].reshape(-1),
         ])
-        vmin, vmax = np.percentile(vals, [1, 99])
+        vmin, vmax = _robust_image_limits([vals])
+
+        # Right-most dedicated colorbar
+        cax = axes[row, -1]
+        ref_im = None
 
         for col in range(n_true):
             ax = axes[row, col]
-            ax.imshow(maps_true_log10[col, row], cmap="magma", origin="lower",
-                      vmin=vmin, vmax=vmax)
+            ref_im = ax.imshow(
+                maps_true_log10[col, row],
+                cmap=cmap,
+                origin="lower",
+                vmin=vmin,
+                vmax=vmax,
+            )
             if row == 0:
                 ax.set_title(f"True {col+1}", fontsize=9)
-            if col == 0:
-                ax.set_ylabel(label, fontsize=10)
             ax.set_xticks([])
             ax.set_yticks([])
 
         for col in range(n_gen):
             ax = axes[row, n_true + col]
-            ax.imshow(maps_gen_log10[col, row], cmap="magma", origin="lower",
-                      vmin=vmin, vmax=vmax)
+            ref_im = ax.imshow(
+                maps_gen_log10[col, row],
+                cmap=cmap,
+                origin="lower",
+                vmin=vmin,
+                vmax=vmax,
+            )
             if row == 0:
                 ax.set_title(f"Gen {col+1}", fontsize=9)
             ax.set_xticks([])
             ax.set_yticks([])
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+        cbar = fig.colorbar(ref_im, cax=cax)
+        cbar.set_label(label, fontsize=10)
+        cbar.ax.tick_params(labelsize=8)
+
+    _finalize_figure(fig, title, top=0.94, w_pad=0.7)
     return fig, axes
 
 
@@ -597,30 +698,31 @@ def plot_spatial_stats_map(
 
     reducer = np.mean if stat == "mean" else np.var
     fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+    stat_label = "log10 mean" if stat == "mean" else "log10 variance"
 
-    for col, (name, label) in enumerate(zip(CHANNEL_NAMES, CHANNEL_LABELS)):
+    for col, (name, label, cmap) in enumerate(zip(CHANNEL_NAMES, CHANNEL_LABELS, CHANNEL_MAP_CMAPS)):
         t_map = reducer(maps_true[:, col], axis=0)
         g_map = reducer(maps_gen[:, col], axis=0)
-        vals = np.concatenate([t_map.reshape(-1), g_map.reshape(-1)])
-        vmin, vmax = np.percentile(vals, [2, 98])
+        t_disp = np.log10(np.clip(t_map, 1e-30, None))
+        g_disp = np.log10(np.clip(g_map, 1e-30, None))
+        vmin, vmax = _robust_image_limits([t_disp, g_disp], low_pct=1.0, high_pct=99.0)
 
         ax0 = axes[0, col]
-        im0 = ax0.imshow(t_map, cmap="viridis", origin="lower", vmin=vmin, vmax=vmax)
+        im0 = ax0.imshow(t_disp, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
         ax0.set_title(f"True {label}", fontsize=11)
         ax0.set_xticks([])
         ax0.set_yticks([])
         fig.colorbar(im0, ax=ax0, fraction=0.046, pad=0.04)
 
         ax1 = axes[1, col]
-        im1 = ax1.imshow(g_map, cmap="viridis", origin="lower", vmin=vmin, vmax=vmax)
+        im1 = ax1.imshow(g_disp, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
         ax1.set_title(f"Gen {label}", fontsize=11)
         ax1.set_xticks([])
         ax1.set_yticks([])
-        fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+        cbar = fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+        cbar.set_label(stat_label, fontsize=9)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title, top=0.94)
     return fig, axes
 
 
@@ -687,8 +789,7 @@ def plot_d_cv(
         ax1.legend(fontsize=7)
         ax1.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title, top=0.93)
     return fig, axes
 
 
@@ -746,8 +847,7 @@ def plot_response_scatter(
             ax.legend(fontsize=7)
             ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title, top=0.93)
     return fig, axes
 
 
@@ -800,8 +900,7 @@ def plot_parameter_response(
                 ax.set_ylabel(f"{label}\n" + r"$\Delta P/P$ at $k\approx 1$", fontsize=8)
             ax.grid(True, alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title, top=0.94)
     return fig, axes
 
 
@@ -986,8 +1085,7 @@ def _plot_lh_pdf_summary(pdf_raw_per_sim: dict):
         ax.set_ylabel(label, fontsize=9)
         ax.grid(True, alpha=0.3)
 
-    fig.suptitle("LH summary: Pixel PDF metrics (per-sim distribution)", fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, "LH summary: Pixel PDF metrics (per-sim distribution)")
     return fig
 
 
@@ -1021,8 +1119,7 @@ def plot_extended_pdf_summary(ext_raw_per_sim: dict):
         ax.grid(True, alpha=0.3)
 
     axes[-1].axis("off")
-    fig.suptitle("LH summary: Extended pixel statistics (per-sim distribution)", fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, "LH summary: Extended pixel statistics (per-sim distribution)")
     return fig
 
 
@@ -1070,6 +1167,5 @@ def plot_global_pdf(
                         ha="right", va="top", fontsize=7,
                         bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
 
-    if title:
-        fig.suptitle(title, fontsize=13)
+    _finalize_figure(fig, title)
     return fig, axes

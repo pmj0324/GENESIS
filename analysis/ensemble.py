@@ -15,8 +15,6 @@ GENESIS — Ensemble-level metrics.
 import numpy as np
 from scipy.stats import pearsonr
 
-from .spectra import pk_batch, cross_pk_batch, coherence_batch
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 기본 통계 유틸

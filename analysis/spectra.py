@@ -14,6 +14,7 @@ GENESIS — Spectral Analysis
   compute_cross_pk  — cross P(k), 부호 보존
   compute_coherence — r(k) = P_ab / sqrt(P_aa × P_bb)
   compute_xi        — 2-point correlation ξ(r)
+  radial_mode_counts — integer radial shell별 mode 수
   pk_batch          — auto P(k) for (N, H, W) batch
   cross_pk_batch    — cross P(k) for two (N, H, W) batches
   coherence_batch   — r(k) for two (N, H, W) batches
@@ -87,6 +88,34 @@ def _bin_spectrum(k2d, power_2d, k_bin, kmax):
     sl    = slice(1, 1 + kmax)
     denom = np.clip(n_acc[sl], 1, None)
     return k_acc[sl] / denom, p_acc[sl] / denom
+
+
+def radial_mode_counts(H: int, W: int, box_size: float = BOX_SIZE):
+    """
+    Integer radial shell별 mode count.
+
+    Returns
+    -------
+    k:       (kmax,) shell-mean physical k [h/Mpc]
+    n_modes: (kmax,) integer mode counts per shell
+    """
+    k2d, k_bin, kmax, _ = _kgrid_integer(H, W, box_size)
+
+    k_flat = k2d.flatten()
+    b_flat = k_bin.flatten()
+    valid = b_flat <= kmax
+    k_flat = k_flat[valid]
+    b_flat = b_flat[valid]
+
+    minlen = kmax + 2
+    k_acc = np.bincount(b_flat, weights=k_flat, minlength=minlen)
+    n_acc = np.bincount(b_flat, minlength=minlen)
+
+    sl = slice(1, 1 + kmax)
+    denom = np.clip(n_acc[sl], 1, None)
+    k = k_acc[sl] / denom
+    n_modes = n_acc[sl].astype(np.int64)
+    return k, n_modes
 
 
 # ─────────────────────────────────────────────────────────────────────────────

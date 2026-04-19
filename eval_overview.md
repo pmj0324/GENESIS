@@ -2,6 +2,7 @@
 
 최종 업데이트: `2026-04-19`  
 이 문서는 현재 `eval.py`, `analysis/*`, `run_eval_all.sh` 기준의 평가 체계를 요약한다.
+계산식, JSON 키 의미, split별 처리 순서를 처음부터 끝까지 보려면 [`eval_reference.md`](/home/work/cosmology/refactor/GENESIS/eval_reference.md:1)를 함께 보면 된다.
 
 ## 1. 평가 목적
 
@@ -119,25 +120,23 @@ python eval.py \
 
 반환 키:
 
-- `auto_pk`
-- `cross_pk`
-- `coherence`
-- `pdf`
+- `overall_pass` — `loo_ok AND stat_ok`
+- `overall_pass_detail` — `{loo_ok, stat_ok, loo_failures, stat_failures}`
 - `field_mean`
-- `d_cv`
-- `variance_ratio`
-- `conditional_z`
-- `r_sigma_ci`
-- `coherence_delta_z`
-- `scattering`
-- `overall_pass`
+- `d_cv`, `variance_ratio` — diagnostic
+- `cv_loo` — LOO null 레이어 결과
+- `conditional_z`, `conditional_z_band`, `conditional_z_family` — auto P(k) 검정
+- `r_sigma_ci`, `r_sigma_band` — variance ratio F-CI
+- `coherence_delta_z`, `coherence_family` — coherence Fisher-z 검정
+- `cross_pk_z`, `cross_pk_z_band`, `cross_pk_z_family` — cross P(k) 검정
+- `pdf_map_z_family`, `pdf_map_vr_ci` — PDF map-level 검정
+- `scattering` — optional MMD diagnostic
+- `diagnostic_legacy` — 기존 LOO×1.5 check_* 결과 (참고용)
 
-현재 CV overall pass는 아래 네 가지의 AND다.
+CV overall pass 기준:
 
-1. `auto_pk`
-2. `cross_pk`
-3. `coherence`
-4. `pdf`
+- **LOO 레이어**: 모든 지표/band에서 assessment != "fail"
+- **통계 레이어**: conditional_z_family + cross_pk_z_family + coherence_family + pdf_map_z_family 모두 passed, r_sigma_band F-CI 1 포함
 
 ### LH
 
@@ -185,7 +184,11 @@ LH overall pass 기준:
 
 - `field_mean`
 - `per_sim`
+- `aggregate_pdf`
+- `aggregate_extended_pdf`
 - `one_p_analysis`
+
+`per_sim`에는 `auto_pk`, `pdf`, `params`가 들어간다.
 
 `one_p_analysis`는 slope/sign agreement 기반 요약을 포함한다.
 
@@ -195,6 +198,8 @@ LH overall pass 기준:
 
 - `field_mean`
 - `per_sim`
+- `aggregate_pdf`
+- `aggregate_extended_pdf`
 - `ex_analysis`
 
 `ex_analysis`는:
@@ -205,35 +210,21 @@ LH overall pass 기준:
 
 세 층으로 구성된다.
 
-## 7. threshold
+## 7. threshold (legacy, diagnostic 전용)
 
-canonical threshold는 [analysis/thresholds.py](/home/work/cosmology/refactor/GENESIS/analysis/thresholds.py:1)를 따른다.
+⚠️ `thresholds.py`의 `check_*` 함수 및 상수는 더 이상 pass/fail 판정에 사용되지 않는다.
+아래 값들은 `diagnostic_legacy` 키 아래에서만 참고용으로 남아 있다.
 
-### Auto P(k)
+`KS_THRESH=0.05`는 T채널 LOO floor(0.066)보다 낮아 원천 통과 불가한 설계 결함이 있었다.
 
-| 채널 | low_k | mid_k | high_k |
-|------|-------|-------|--------|
-| Mcdm | `0.40 / 0.50` | `0.30 / 0.35` | `0.20 / 0.25` |
-| Mgas | `0.40 / 0.55` | `0.50 / 0.60` | `0.30 / 0.35` |
-| T | `0.45 / 0.60` | `0.30 / 0.40` | `0.25 / 0.30` |
-
-### Cross P(k)
-
-- `Mcdm-Mgas`: `0.30`
-- `Mcdm-T`: `0.60`
-- `Mgas-T`: `0.60`
-
-### Coherence
-
-- `Mcdm-Mgas`: `0.10`
-- `Mcdm-T`: `0.30`
-- `Mgas-T`: `0.30`
-
-### PDF
-
-- `KS-D < 0.05`
-- `eps_mu < 0.05`
-- `eps_sig < 0.10`
+| 지표 | 과거 임계값 |
+|------|-------------|
+| Auto P(k) mean | 채널/band별 0.20~0.50 |
+| Cross P(k) mean | pair별 0.30~0.60 |
+| Coherence max Δr | pair별 0.10~0.30 |
+| KS-D | 0.05 |
+| eps_mu | 0.05 |
+| eps_sig | 0.10 |
 
 ## 8. 출력 폴더 구조
 

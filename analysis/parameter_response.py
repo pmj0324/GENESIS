@@ -55,7 +55,6 @@ Aggregation per band:
 """
 
 from __future__ import annotations
-from typing import Callable
 
 import numpy as np
 
@@ -351,8 +350,6 @@ def fiducial_consistency(
             }
         }
     """
-    from .conditional_stats import BANDS as _B  # noqa (optional)
-
     out = {}
     for ch, per_sim_true in pks_true_per_sim.items():
         per_sim_gen = pks_gen_per_sim[ch]
@@ -581,7 +578,6 @@ def _self_test():
 
     # test 4: log coord (ASN-like)
     values_log = np.array([0.25, 0.5, 1.0, 2.0, 4.0])
-    xi_log = np.log(values_log)
     alpha_log_true = rng.normal(0.3, 0.05, size=n_k)
     def _gen_log(alpha):
         out = np.empty((5, n_g, n_k))

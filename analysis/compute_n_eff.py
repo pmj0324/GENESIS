@@ -11,22 +11,44 @@ CAMELS CV는 같은 cosmology(θ_fid)에서 27개 sim × 15 projections = 405 ma
 
 이론
 -----
-하나의 sim이 주는 N개의 correlated samples에 대해 표본평균의 분산은:
+balanced one-way random-effects 모형을 쓴다:
 
-    Var(mean_{N samples}) = σ² · [1 + (N-1)·ρ̄] / N
+    X_ij(k) = μ(k) + u_i(k) + ε_ij(k)
 
-여기서 ρ̄는 intra-class correlation (평균 pairwise correlation).
-독립 샘플일 때는 σ²/N인데, correlation이 있으면 effective size가 줄어든다:
+    Var[u_i(k)]   = σ_between²(k)
+    Var[ε_ij(k)]  = σ_within²(k)
+
+여기서 i는 sim, j는 같은 sim 안의 projection index다.
+진짜 ICC(intra-class correlation)는
+
+    ρ̄(k) = σ_between²(k) / (σ_between²(k) + σ_within²(k))
+
+이다.
+
+cluster size가 N일 때 표본평균의 분산은
+
+    Var(mean_{N samples}) = σ_total² · [1 + (N-1)·ρ̄] / N
+
+이므로 effective sample size는
 
     N_eff = N / [1 + (N-1)·ρ̄]
 
-Law of total variance로 ρ̄를 얻는다:
+이다.
 
-    σ²_total(k) = var across all 405 maps
-    σ²_sim(k)   = var across 27 sim-level means
-    σ²_proj(k)  = E_sim[var within sim] = σ²_total - σ²_sim    (orthogonal decomposition)
-    
-    ρ̄(k) = σ²_sim(k) / σ²_total(k)     ← ICC (intra-class correlation)
+중요:
+    var(sim means) / var(all maps)는 ICC가 아니다.
+    그 비율에는 1/N 항이 이미 섞여 있어서, ICC 대신 mean-variance ratio
+    (대략 1 / N_eff)로 해석해야 한다.
+
+따라서 여기서는 ANOVA mean-square로 ICC를 추정한다:
+
+    MS_between = m * Σ_i (Xbar_i - Xbar)^2 / (n_sim - 1)
+    MS_within  = Σ_i Σ_j (X_ij - Xbar_i)^2 / (n_sim * (m - 1))
+
+    σ_between²_hat = max((MS_between - MS_within) / m, 0)
+    σ_within²_hat  = MS_within
+
+    ICC_hat = σ_between²_hat / (σ_between²_hat + σ_within²_hat)
 
 해석
 -----
@@ -137,48 +159,73 @@ def compute_all_pk(maps: np.ndarray,
 # N_eff — ICC 기반
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def compute_n_eff(pks_ch: np.ndarray,
-                  sim_ids: np.ndarray,
-                  n_maps_per_sim: int = N_MAPS_PER_SIM
-                  ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def compute_n_eff(
+    pks_ch: np.ndarray,
+    sim_ids: np.ndarray,
+    n_maps_per_sim: int = N_MAPS_PER_SIM,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     pks_ch:  (N_total, n_k) — all maps
     sim_ids: (N_total,)
 
-    Variance decomposition:
-      σ²_total = var over all maps                  (pooled)
-      σ²_sim   = var over sim-level means
-      σ²_proj  = σ²_total - σ²_sim                  (always ≥ 0)
-      ρ̄ (ICC) = σ²_sim / σ²_total
-      N_eff    = N / [1 + (N-1)·ρ̄]
+    ANOVA decomposition:
+      MS_between  = between-sim mean square
+      MS_within   = within-sim mean square
+      σ²_between  = max((MS_between - MS_within) / m, 0)
+      σ²_within   = MS_within
+      σ²_total    = σ²_between + σ²_within
+      ρ̄ (ICC)    = σ²_between / σ²_total
+      N_eff       = N / [1 + (N-1)·ρ̄]
 
     Returns:
       n_eff:        (n_k,)
       icc:          (n_k,)
       sigma2_total: (n_k,)
-      sigma2_sim:   (n_k,)
+      sigma2_between: (n_k,)
+      sigma2_within:  (n_k,)
     """
     unique_sims = np.unique(sim_ids)
+    n_sims = len(unique_sims)
+    n_k = pks_ch.shape[1]
 
-    sim_means = np.stack([
-        pks_ch[sim_ids == s].mean(0) for s in unique_sims
-    ])  # (n_sim, n_k)
+    grouped = []
+    for s in unique_sims:
+        sub = pks_ch[sim_ids == s]
+        if sub.shape[0] != n_maps_per_sim:
+            raise ValueError(
+                f"unbalanced cluster size for sim_id={s}: "
+                f"expected {n_maps_per_sim}, got {sub.shape[0]}"
+            )
+        grouped.append(sub)
+    grouped = np.stack(grouped, axis=0)   # (n_sim, m, n_k)
 
-    # ddof=1 (unbiased). N_total=405, n_sim=27이라 보정 무시 가능하지만 엄밀하게.
-    sigma2_total = pks_ch.var(axis=0, ddof=1)        # (n_k,)
-    sigma2_sim   = sim_means.var(axis=0, ddof=1)     # (n_k,)
+    sim_means = grouped.mean(axis=1)      # (n_sim, n_k)
+    grand_mean = grouped.mean(axis=(0, 1))  # (n_k,)
+
+    ss_between = n_maps_per_sim * ((sim_means - grand_mean) ** 2).sum(axis=0)
+    ss_within = ((grouped - sim_means[:, None, :]) ** 2).sum(axis=(0, 1))
+
+    df_between = n_sims - 1
+    df_within = n_sims * (n_maps_per_sim - 1)
+
+    ms_between = ss_between / df_between
+    ms_within = ss_within / df_within
+
+    sigma2_between = np.clip((ms_between - ms_within) / n_maps_per_sim, 0.0, None)
+    sigma2_within = np.clip(ms_within, 0.0, None)
+    sigma2_total = sigma2_between + sigma2_within
 
     with np.errstate(divide="ignore", invalid="ignore"):
         icc = np.where(
             sigma2_total > 0,
-            np.clip(sigma2_sim / sigma2_total, 0.0, 1.0),
+            np.clip(sigma2_between / sigma2_total, 0.0, 1.0),
             0.0,
         )
 
     N = n_maps_per_sim
     n_eff = N / (1.0 + (N - 1) * icc)
 
-    return n_eff, icc, sigma2_total, sigma2_sim
+    return n_eff, icc, sigma2_total, sigma2_between, sigma2_within
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -246,6 +293,13 @@ def main():
 
     # ── compute N_eff per channel ──
     result = {
+        "method": {
+            "type": "one_way_random_effects_anova",
+            "description": (
+                "Balanced ANOVA ICC estimate with per-sim cluster size m; "
+                "N_eff derived from ICC via N / (1 + (N-1)*ICC)."
+            ),
+        },
         "k_arr":         k_arr.tolist(),
         "n_maps_per_sim": n_maps_per_sim,
         "n_sims":        n_sims,
@@ -259,7 +313,7 @@ def main():
     print("=" * 76)
 
     for ch in CH_NAMES:
-        n_eff, icc, s2_total, s2_sim = compute_n_eff(
+        n_eff, icc, s2_total, s2_between, s2_within = compute_n_eff(
             pks[ch], sim_ids, n_maps_per_sim=n_maps_per_sim,
         )
 
@@ -270,7 +324,8 @@ def main():
             "n_eff":        n_eff.tolist(),
             "icc":          icc.tolist(),
             "sigma2_total": s2_total.tolist(),
-            "sigma2_sim":   s2_sim.tolist(),
+            "sigma2_between": s2_between.tolist(),
+            "sigma2_within":  s2_within.tolist(),
             "band_summary": {
                 "icc":   band_icc,
                 "n_eff": band_neff,

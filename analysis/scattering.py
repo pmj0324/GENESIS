@@ -168,7 +168,6 @@ class ScatteringComputer:
         features : (N, n_coeffs)   if single-channel
                    (N, C * n_coeffs)   if multi-channel (channels concatenated)
         """
-        torch = self._torch
         if maps.ndim == 3:
             return self._compute_single_channel(maps, batch_size, verbose)
         elif maps.ndim == 4:

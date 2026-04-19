@@ -517,11 +517,12 @@ class EpochVisualizer:
         rows = [("Real (val[0])", real), *sampled_maps]
         n_rows = len(rows)
 
-        fig, axes = plt.subplots(n_rows, 3, figsize=(14, max(4.8, 3.5 * n_rows)), squeeze=False)
+        fig, axes = plt.subplots(n_rows, 3, figsize=(14.8, max(4.8, 3.6 * n_rows)), squeeze=False)
         fig.suptitle(
             f"Epoch {epoch+1:04d}  –  Field  [{self._field_space_label(field_space)}]\n"
             f"{self._cond_str()}",
             fontsize=10,
+            y=0.992,
         )
 
         ref_field = self._to_field_space(real, field_space)
@@ -546,6 +547,7 @@ class EpochVisualizer:
                 ax.axis("off")
                 fig.colorbar(im, ax=ax, shrink=0.85, pad=0.02)
 
+        fig.subplots_adjust(left=0.04, right=0.985, bottom=0.03, top=0.92, wspace=0.14, hspace=0.24)
         path = self.plot_dir / f"ep{epoch+1:04d}_samples.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
         self._update_aliases(
@@ -585,13 +587,13 @@ class EpochVisualizer:
         fig, axes = plt.subplots(
             n_plot_rows,
             3,
-            figsize=(15.5, 5.6 * n_rows),
+            figsize=(18.5, 5.6 * n_rows),
             squeeze=False,
             sharex="col",
             gridspec_kw={
                 "height_ratios": height_ratios,
                 "hspace": 0.12,
-                "wspace": 0.20,
+                "wspace": 0.24,
             },
         )
         fig.suptitle(
@@ -688,7 +690,7 @@ class EpochVisualizer:
                 else:
                     err_ax.set_ylim(0.0, 1.0)
 
-        fig.subplots_adjust(left=0.06, right=0.985, bottom=0.07, top=0.89)
+        fig.subplots_adjust(left=0.055, right=0.987, bottom=0.07, top=0.90)
         path = self.plot_dir / f"ep{epoch+1:04d}_power_spectrum.png"
         fig.savefig(path, dpi=100, bbox_inches="tight")
         self._update_aliases(

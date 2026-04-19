@@ -1,22 +1,26 @@
 """
-Canonical evaluation thresholds for GENESIS cosmological field evaluation.
+GENESIS 평가 임계값 — 진단(diagnostic) 전용.
 
-k 구간 설계 (B안, analysis/threshold_design.md 참고):
-  low_k  : [0,   1)  h/Mpc  —  3 bins, 선형-비선형 전이 이하
-  mid_k  : [1,   8)  h/Mpc  — 28 bins, 비선형 + 바리온 피드백 주요 구간
-  high_k : [8,  16)  h/Mpc  — 33 bins, 강한 비선형, baryon-dominated
-  artifact: [16, ∞)  h/Mpc  — reference only, CIC/NGP grid artifact 우세
+⚠️  DEPRECATED: check_* 함수들은 더 이상 pass/fail 판정에 사용되지 않는다.
+    eval.py의 CV overall_pass는 아래 두 레이어로 교체되었다.
 
-threshold 기준:
-  AUTO_THRESH  — CAMELS CV LOO baseline × 1.5  (analysis/threshold_calibration.ipynb)
-  CROSS_THRESH — CAMELS CV LOO baseline × 1.5
-  COHERENCE_THRESH — CAMELS CV LOO baseline × 1.5
-  PDF thresholds   — CAMELS CV LOO baseline × 1.5
+      Layer 1 — LOO 물리 레이어: analysis/cv_loo.py  compute_cv_loo_summary()
+      Layer 2 — 통계 검정 레이어: analysis/eval_integration.py  cv_advanced_metrics()
 
-k 경계 물리적 근거 (analysis/threshold_design.md):
-  k = 1 h/Mpc : 2-halo → 1-halo 전환 / 비선형성 본격 시작
-  k = 8 h/Mpc : Mgas LOO gradient 변곡점, 강한 baryon feedback 시작
-  K_ARTIFACT  = K_NYQUIST / 2 ≈ 16.1 h/Mpc
+    check_* 함수들은 eval.py의 "diagnostic_legacy" 키 아래에서만 호출되며,
+    평가 결과 비교/히스토리 확인 목적으로만 유지된다.
+
+k 구간 설계:
+  low_k  : [0,   1)  h/Mpc  —  선형-비선형 전이 이하
+  mid_k  : [1,   8)  h/Mpc  —  비선형 + 바리온 피드백 주요 구간
+  high_k : [8,  16)  h/Mpc  —  강한 비선형, baryon-dominated
+  artifact: [16, ∞)  h/Mpc  —  CIC/NGP grid artifact 우세 (reference only)
+
+임계값 출처 (참고용):
+  AUTO_THRESH  — CAMELS CV LOO baseline × 1.5  (threshold_calibration.ipynb)
+  CROSS_THRESH — 동일
+  COHERENCE_THRESH — 동일
+  KS_THRESH=0.05: T채널 LOO floor(0.066)보다 낮아 T는 원천 통과 불가 — 설계 결함
 """
 import numpy as np
 
@@ -85,19 +89,10 @@ VARIANCE_RATIO_HI = 1.3
 
 def check_auto_pk(k: np.ndarray, rel_err: np.ndarray, channel: str) -> dict:
     """
-    Evaluate auto P(k) pass/fail per scale range.
+    DEPRECATED — diagnostic only. eval.py의 "diagnostic_legacy" 키 아래에서만 호출.
+    pass/fail 판정에는 cv_advanced_metrics() / cv_overall_pass() 를 사용한다.
 
-    "artifact" 구간 (k > K_ARTIFACT ≈ 16 h/Mpc)은 reference_only=True로 표기되며
-    pass/fail 판정에서 제외됩니다 (CIC/NGP grid artifact 우세 영역).
-
-    Args:
-        k:       (n_bins,) wavenumber array [h/Mpc]
-        rel_err: (n_bins,) |P_gen - P_true| / P_true
-        channel: "Mcdm", "Mgas", or "T"
-
-    Returns:
-        {scale_label: {mean_err, rms_err, thr_mean, thr_rms, passed, reference_only}}
-        plus top-level "passed" bool (True if all non-reference scales pass).
+    Auto P(k) 상대 오차를 band별로 요약. "artifact" 구간은 reference_only=True.
     """
     result = {}
     all_pass = True
@@ -124,15 +119,9 @@ def check_auto_pk(k: np.ndarray, rel_err: np.ndarray, channel: str) -> dict:
 
 def check_cross_pk(k: np.ndarray, rel_err: np.ndarray, pair: str) -> dict:
     """
-    Evaluate cross P(k) pass/fail.
+    DEPRECATED — diagnostic only. eval.py의 "diagnostic_legacy" 키 아래에서만 호출.
 
-    Args:
-        k:       (n_bins,) wavenumber array
-        rel_err: (n_bins,) |P_gen - P_true| / |P_true|  (zero-crossing excluded by caller)
-        pair:    "Mcdm-Mgas", "Mcdm-T", or "Mgas-T"
-
-    Returns:
-        {mean_err, thr, passed}
+    Cross P(k) 상대 오차 평균과 임계값 비교.
     """
     thr      = CROSS_THRESH[pair]
     mean_err = float(np.nanmean(rel_err))
@@ -141,14 +130,9 @@ def check_cross_pk(k: np.ndarray, rel_err: np.ndarray, pair: str) -> dict:
 
 def check_coherence(delta_r: np.ndarray, pair: str) -> dict:
     """
-    Evaluate coherence pass/fail.
+    DEPRECATED — diagnostic only. eval.py의 "diagnostic_legacy" 키 아래에서만 호출.
 
-    Args:
-        delta_r: (n_bins,) |r_gen(k) - r_true(k)|
-        pair:    "Mcdm-Mgas", "Mcdm-T", or "Mgas-T"
-
-    Returns:
-        {max_delta_r, thr, passed}
+    Coherence |Δr| 최댓값과 임계값 비교.
     """
     thr        = COHERENCE_THRESH[pair]
     max_delta_r = float(np.max(delta_r))
@@ -157,10 +141,10 @@ def check_coherence(delta_r: np.ndarray, pair: str) -> dict:
 
 def check_pdf(ks_stat: float, eps_mu: float, eps_sig: float) -> dict:
     """
-    Evaluate PDF metrics pass/fail.
+    DEPRECATED — diagnostic only. eval.py의 "diagnostic_legacy" 키 아래에서만 호출.
+    KS_THRESH=0.05는 T채널 LOO floor(0.066)보다 낮아 T가 원천 통과 불가한 설계 결함 있음.
 
-    Returns:
-        {ks_stat, eps_mu, eps_sig, passed}
+    PDF KS/eps_mu/eps_sig와 임계값 비교.
     """
     passed = (ks_stat < KS_THRESH) and (eps_mu < EPS_MU_THRESH) and (eps_sig < EPS_SIG_THRESH)
     return {"ks_stat": ks_stat, "eps_mu": eps_mu, "eps_sig": eps_sig, "passed": passed}

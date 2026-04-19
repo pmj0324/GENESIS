@@ -34,6 +34,7 @@ GENESIS/
 ├── runs/                    # 실험 산출물
 ├── notebooks/               # 탐색/검증용 노트북 (source of truth 아님)
 ├── eval_overview.md         # 평가 체계 총람
+├── eval_reference.md        # eval.py 상세 레퍼런스
 ├── INTEGRATION_NOTES.md     # 고급 지표 통합 요약
 └── n_eff_per_k.json         # CV 기반 N_eff(k) 보정값
 ```
@@ -44,6 +45,7 @@ GENESIS/
 
 - `README.md`: 저장소 전체 구조와 대표 실행 예시
 - `eval_overview.md`: split별 평가 흐름, 출력 JSON/plot, 배치 실행 규약
+- `eval_reference.md`: `eval.py` 전체 프로세스, split별 수식, JSON 키 의미, 해석 기준
 - `analysis/README.md`: 평가 지표와 `analysis/*` 모듈 역할
 - `dataloader/README.md`: raw CAMELS -> dataset.zarr 파이프라인
 - `INTEGRATION_NOTES.md`: 고급 지표가 `eval.py`에 어떻게 붙었는지 보는 운영 메모
@@ -249,7 +251,7 @@ python -m dataloader.build_dataset augment \
 - `ex_analysis`
 - optional scattering MMD
 
-평가 상세는 [eval_overview.md](/home/work/cosmology/refactor/GENESIS/eval_overview.md:1), 분석 모듈은 [analysis/README.md](/home/work/cosmology/refactor/GENESIS/analysis/README.md:1)를 기준으로 보면 된다.
+빠른 그림은 [eval_overview.md](/home/work/cosmology/refactor/GENESIS/eval_overview.md:1), 계산식과 출력 키까지 포함한 상세 레퍼런스는 [eval_reference.md](/home/work/cosmology/refactor/GENESIS/eval_reference.md:1), 분석 모듈은 [analysis/README.md](/home/work/cosmology/refactor/GENESIS/analysis/README.md:1)를 기준으로 보면 된다.
 
 ## 저장소 정리 메모
 
@@ -271,6 +273,7 @@ python -m dataloader.build_dataset augment \
 ## 참고 문서
 
 - [eval_overview.md](/home/work/cosmology/refactor/GENESIS/eval_overview.md:1): 현재 평가 체계 총람
+- [eval_reference.md](/home/work/cosmology/refactor/GENESIS/eval_reference.md:1): `eval.py` 전체 프로세스와 split별 상세 계산식
 - [INTEGRATION_NOTES.md](/home/work/cosmology/refactor/GENESIS/INTEGRATION_NOTES.md:1): 고급 통계 지표 통합 메모
 - [analysis/README.md](/home/work/cosmology/refactor/GENESIS/analysis/README.md:1): 분석 모듈 요약
 - [analysis/threshold_design.md](/home/work/cosmology/refactor/GENESIS/analysis/threshold_design.md:1): threshold 설계 근거

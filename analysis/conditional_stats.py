@@ -40,8 +40,12 @@ CV split (sim-level aggregation):
     cdz  = coherence_delta_z(r_true, r_gen)
 
 LH split (per-sim loop):
+    # N_eff(k)를 그대로 사용 (n_sims 곱셈 없음).
+    # 이유: LH는 한 번에 1개 sim의 15 projection으로 z를 계산하므로,
+    # n_eff_per_k.json의 "15-projection N_eff" 값을 직접 적용하면 된다.
+    # (CV의 전체 405맵 검정과 달리 sim 간 집계가 없으므로 n_sims 곱 불필요.)
     n_eff = {ch: load_n_eff("n_eff_per_k.json", ch, k_arr) for ch in CH_NAMES}
-    
+
     z_per_sim = []   # length n_sim
     for sim in sims:
         z_sim = conditional_z(pks_t_sim, pks_g_sim,
@@ -56,10 +60,14 @@ LH split (per-sim loop):
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
+from scipy.stats import chi2 as chi2_dist
 from scipy.stats import f as f_dist
+
+from .multiple_testing import two_sided_p_from_z
 
 
 # eval.py의 k-band 정의와 일치
@@ -68,6 +76,42 @@ BANDS = {
     "mid_k":  (1.0, 8.0),
     "high_k": (8.0, 16.0),
 }
+
+
+def _broadcast_neff(
+    x: np.ndarray | float | None,
+    n_k: int,
+    default: float,
+) -> np.ndarray:
+    if x is None:
+        return np.full(n_k, float(default))
+    if np.isscalar(x):
+        return np.full(n_k, float(x))
+    x = np.asarray(x, dtype=float)
+    if x.shape != (n_k,):
+        raise ValueError(f"N_eff shape mismatch: expected ({n_k},), got {x.shape}")
+    return x
+
+
+def _maybe_scalar_or_list(x: np.ndarray | float) -> float | list:
+    arr = np.asarray(x, dtype=float)
+    if arr.ndim == 0:
+        return float(arr)
+    if arr.size > 0 and np.allclose(arr, arr.flat[0], rtol=1e-10, atol=1e-12):
+        return float(arr.flat[0])
+    return arr.tolist()
+
+
+def _band_masks(
+    k_arr: np.ndarray,
+    bands: dict | None = None,
+) -> dict[str, np.ndarray]:
+    if bands is None:
+        bands = BANDS
+    return {
+        name: ((k_arr >= lo) & (k_arr < hi))
+        for name, (lo, hi) in bands.items()
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -109,7 +153,41 @@ def load_n_eff(
 
     if k_arr is not None:
         stored_k = np.array(data["k_arr"], dtype=float)
-        if stored_k.shape != k_arr.shape or not np.allclose(stored_k, k_arr, rtol=1e-3):
+        k_arr = np.asarray(k_arr, dtype=float)
+
+        compatible = stored_k.shape == k_arr.shape and np.allclose(
+            stored_k, k_arr, rtol=1e-3, atol=1e-8
+        )
+
+        # Some callers use shell-averaged k centers while compute_n_eff.py stores
+        # integer-bin centers n * k_f. Those arrays differ at low-k even though
+        # the per-bin N_eff values are still index-aligned and physically
+        # compatible. Accept that case if the shared binning is clearly the same.
+        if not compatible and stored_k.shape == k_arr.shape:
+            stored_dk = np.diff(stored_k)
+            query_dk = np.diff(k_arr)
+            fallback_compatible = (
+                np.all(np.isfinite(k_arr))
+                and np.all(np.diff(k_arr) > 0)
+                and np.isclose(stored_k[-1], k_arr[-1], rtol=5e-3, atol=1e-8)
+                and np.isclose(
+                    np.median(stored_dk),
+                    np.median(query_dk),
+                    rtol=5e-3,
+                    atol=1e-8,
+                )
+            )
+            if fallback_compatible:
+                warnings.warn(
+                    f"load_n_eff(channel={channel}): k_arr values differ from stored "
+                    "k_arr (shell-averaged vs integer-bin centers), but binning is "
+                    "index-compatible — N_eff will be applied by bin index. "
+                    "Re-run compute_n_eff.py with shell-averaged k to suppress this.",
+                    stacklevel=3,
+                )
+            compatible = fallback_compatible
+
+        if not compatible:
             raise ValueError(
                 f"k_arr mismatch (channel={channel}): "
                 f"stored {stored_k.shape}, query {k_arr.shape}. "
@@ -162,7 +240,7 @@ def conditional_z(
     ----------
     pks_true : (N_t, n_k)
         True ensemble P(k) samples. LH의 경우 single sim의 15 projection.
-        CV의 경우 27 sim-level means을 쓰는 것이 권장 (cosmic variance 기반 SE).
+        CV의 경우 raw 405 maps + calibrated total N_eff 또는 27 sim-level means 둘 다 가능.
     pks_gen : (N_g, n_k)
         Generated samples.
     n_eff_true : (n_k,) | scalar | None
@@ -178,18 +256,8 @@ def conditional_z(
     n_t, n_k = pks_true.shape
     n_g = pks_gen.shape[0]
 
-    def _broadcast(x, default):
-        if x is None:
-            return np.full(n_k, float(default))
-        if np.isscalar(x):
-            return np.full(n_k, float(x))
-        x = np.asarray(x, dtype=float)
-        if x.shape != (n_k,):
-            raise ValueError(f"N_eff shape mismatch: expected ({n_k},), got {x.shape}")
-        return x
-
-    neff_t = _broadcast(n_eff_true, n_t)
-    neff_g = _broadcast(n_eff_gen,  n_g)
+    neff_t = _broadcast_neff(n_eff_true, n_k, n_t)
+    neff_g = _broadcast_neff(n_eff_gen,  n_k, n_g)
 
     mean_t = pks_true.mean(0)
     mean_g = pks_gen.mean(0)
@@ -212,6 +280,61 @@ def conditional_z(
         z = np.where(se > 0, (mean_g - mean_t) / se, 0.0)
 
     return z
+
+
+def conditional_z_band_summary(
+    pks_true: np.ndarray,
+    pks_gen: np.ndarray,
+    k_arr: np.ndarray,
+    n_eff_true: np.ndarray | float | None = None,
+    n_eff_gen: np.ndarray | float | None = None,
+    bands: dict | None = None,
+) -> dict:
+    """
+    Band-averaged conditional z test.
+
+    각 샘플의 band-mean P를 만든 뒤 Welch-style z와 two-sided p를 계산한다.
+    BH-FDR family correction은 호출자에서 여러 채널을 합쳐 적용하는 편이 자연스럽다.
+    """
+    if bands is None:
+        bands = BANDS
+
+    n_k = pks_true.shape[1]
+    neff_t = _broadcast_neff(n_eff_true, n_k, pks_true.shape[0])
+    neff_g = _broadcast_neff(n_eff_gen, n_k, pks_gen.shape[0])
+
+    per_band = {}
+    for band_name, mask in _band_masks(k_arr, bands).items():
+        if not mask.any():
+            per_band[band_name] = None
+            continue
+
+        true_band = pks_true[:, mask].mean(axis=1, keepdims=True)
+        gen_band = pks_gen[:, mask].mean(axis=1, keepdims=True)
+        neff_t_band = float(np.mean(neff_t[mask]))
+        neff_g_band = float(np.mean(neff_g[mask]))
+
+        z_band = float(
+            conditional_z(
+                true_band,
+                gen_band,
+                n_eff_true=neff_t_band,
+                n_eff_gen=neff_g_band,
+            )[0]
+        )
+        p_raw = float(two_sided_p_from_z(np.array([z_band]))[0])
+
+        per_band[band_name] = {
+            "z": z_band,
+            "p_raw": p_raw,
+            "n_bins": int(mask.sum()),
+            "n_eff_true": neff_t_band,
+            "n_eff_gen": neff_g_band,
+            "mean_true": float(true_band.mean()),
+            "mean_gen": float(gen_band.mean()),
+        }
+
+    return {"per_band": per_band}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -310,6 +433,8 @@ def conditional_z_score(
 def variance_ratio_ci(
     pks_true_sim: np.ndarray,
     pks_gen: np.ndarray,
+    n_eff_true: np.ndarray | float | None = None,
+    n_eff_gen: np.ndarray | float | None = None,
     alpha: float = 0.05,
 ) -> dict:
     """
@@ -330,9 +455,9 @@ def variance_ratio_ci(
     CI가 1을 포함하지 않으면 "σ_gen과 σ_true가 유의하게 다름" (variance mismatch).
     P(k)는 엄밀하게 정규 아니지만 mode 수가 많은 k에서는 approximation 잘 맞음.
 
-    중요: pks_true_sim은 반드시 **sim-level P(k) 평균** (27 sims for CV).
-    map-level (405)을 쓰면 cosmic variance가 아닌 total variance가 분모로 들어가
-    비교가 asymmetric해진다.
+    중요: raw map-level CV samples를 쓸 때는 n_eff_true에 calibrated total effective N
+    (예: 27 × N_eff_per_sim(k))를 함께 넣어야 한다. 그렇지 않으면 상관된 projection을
+    IID로 간주해 CI가 과도하게 좁아질 수 있다.
 
     Parameters
     ----------
@@ -351,8 +476,12 @@ def variance_ratio_ci(
         f_quantiles: [F_{α/2}, F_{1-α/2}]
         n_true, n_gen
     """
-    n_t = pks_true_sim.shape[0]
+    n_t, n_k = pks_true_sim.shape
     n_g = pks_gen.shape[0]
+    neff_t = _broadcast_neff(n_eff_true, n_k, n_t)
+    neff_g = _broadcast_neff(n_eff_gen, n_k, n_g)
+    df_t = np.clip(neff_t - 1.0, 1.0, None)
+    df_g = np.clip(neff_g - 1.0, 1.0, None)
 
     s2_t = pks_true_sim.var(0, ddof=1)
     s2_g = pks_gen.var(0, ddof=1)
@@ -362,8 +491,8 @@ def variance_ratio_ci(
 
     r_obs = np.sqrt(np.clip(r2_obs, 0, None))
 
-    f_low  = float(f_dist.ppf(alpha / 2,       n_g - 1, n_t - 1))
-    f_high = float(f_dist.ppf(1.0 - alpha / 2, n_g - 1, n_t - 1))
+    f_low  = f_dist.ppf(alpha / 2,       df_g, df_t)
+    f_high = f_dist.ppf(1.0 - alpha / 2, df_g, df_t)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         r2_ci_low  = r2_obs / f_high
@@ -383,11 +512,157 @@ def variance_ratio_ci(
         "ci_high":     r_ci_high.tolist(),
         "in_ci_1":     in_ci_1.tolist(),
         "frac_in_1":   frac_in_1,
-        "f_quantiles": [f_low, f_high],
+        "f_quantiles": [
+            _maybe_scalar_or_list(f_low),
+            _maybe_scalar_or_list(f_high),
+        ],
         "alpha":       float(alpha),
         "n_true":      int(n_t),
         "n_gen":       int(n_g),
+        "df_true":     _maybe_scalar_or_list(df_t),
+        "df_gen":      _maybe_scalar_or_list(df_g),
     }
+
+
+def _resample_clustered_1d(
+    values: np.ndarray,
+    rng: np.random.Generator,
+    cluster_ids: np.ndarray | None = None,
+) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    if cluster_ids is None:
+        idx = rng.integers(0, values.shape[0], size=values.shape[0])
+        return values[idx]
+
+    cluster_ids = np.asarray(cluster_ids)
+    if cluster_ids.shape[0] != values.shape[0]:
+        raise ValueError(
+            f"cluster_ids length mismatch: {cluster_ids.shape[0]} vs {values.shape[0]}"
+        )
+
+    unique = np.unique(cluster_ids)
+    groups = [np.flatnonzero(cluster_ids == cid) for cid in unique]
+    picks = rng.integers(0, len(groups), size=len(groups))
+    return np.concatenate([values[groups[i]] for i in picks], axis=0)
+
+
+def bootstrap_variance_ratio_ci(
+    values_true: np.ndarray,
+    values_gen: np.ndarray,
+    alpha: float = 0.05,
+    n_boot: int = 1000,
+    random_state: int = 0,
+    cluster_ids_true: np.ndarray | None = None,
+) -> dict:
+    """
+    Percentile bootstrap CI for R_sigma = std_gen / std_true.
+
+    True 쪽은 optional cluster bootstrap을 지원해 CV projection correlation을 보존한다.
+    """
+    rng = np.random.default_rng(random_state)
+    values_true = np.asarray(values_true, dtype=float)
+    values_gen = np.asarray(values_gen, dtype=float)
+
+    stats = np.empty(n_boot, dtype=float)
+    stats.fill(np.nan)
+
+    for bi in range(n_boot):
+        bt = _resample_clustered_1d(values_true, rng, cluster_ids_true)
+        bg = _resample_clustered_1d(values_gen, rng, None)
+
+        s_t = np.std(bt, ddof=1)
+        s_g = np.std(bg, ddof=1)
+        if np.isfinite(s_t) and s_t > 0 and np.isfinite(s_g):
+            stats[bi] = s_g / s_t
+
+    valid = stats[np.isfinite(stats)]
+    if valid.size == 0:
+        return {
+            "ci_low": float("nan"),
+            "ci_high": float("nan"),
+            "in_ci_1": False,
+            "n_boot": int(n_boot),
+            "n_valid_boot": 0,
+        }
+
+    lo = float(np.percentile(valid, 100.0 * alpha / 2))
+    hi = float(np.percentile(valid, 100.0 * (1.0 - alpha / 2)))
+    return {
+        "ci_low": lo,
+        "ci_high": hi,
+        "in_ci_1": bool(lo <= 1.0 <= hi),
+        "n_boot": int(n_boot),
+        "n_valid_boot": int(valid.size),
+    }
+
+
+def variance_ratio_band_summary(
+    pks_true: np.ndarray,
+    pks_gen: np.ndarray,
+    k_arr: np.ndarray,
+    n_eff_true: np.ndarray | float | None = None,
+    n_eff_gen: np.ndarray | float | None = None,
+    bands: dict | None = None,
+    alpha: float = 0.05,
+    bootstrap: bool = True,
+    n_boot: int = 1000,
+    random_state: int = 0,
+    cluster_ids_true: np.ndarray | None = None,
+) -> dict:
+    """
+    Band-averaged R_sigma F-CI + optional percentile bootstrap CI.
+    """
+    if bands is None:
+        bands = BANDS
+
+    n_k = pks_true.shape[1]
+    neff_t = _broadcast_neff(n_eff_true, n_k, pks_true.shape[0])
+    neff_g = _broadcast_neff(n_eff_gen, n_k, pks_gen.shape[0])
+
+    per_band = {}
+    for band_name, mask in _band_masks(k_arr, bands).items():
+        if not mask.any():
+            per_band[band_name] = None
+            continue
+
+        true_band = pks_true[:, mask].mean(axis=1)
+        gen_band = pks_gen[:, mask].mean(axis=1)
+        neff_t_band = float(np.mean(neff_t[mask]))
+        neff_g_band = float(np.mean(neff_g[mask]))
+
+        f_ci = variance_ratio_ci(
+            true_band[:, None],
+            gen_band[:, None],
+            n_eff_true=neff_t_band,
+            n_eff_gen=neff_g_band,
+            alpha=alpha,
+        )
+
+        entry = {
+            "r_sigma": float(f_ci["r_sigma"][0]),
+            "ci_low": float(f_ci["ci_low"][0]),
+            "ci_high": float(f_ci["ci_high"][0]),
+            "in_ci_1": bool(f_ci["in_ci_1"][0]),
+            "n_bins": int(mask.sum()),
+            "n_eff_true": neff_t_band,
+            "n_eff_gen": neff_g_band,
+            "alpha": float(alpha),
+        }
+
+        if bootstrap:
+            boot = bootstrap_variance_ratio_ci(
+                true_band,
+                gen_band,
+                alpha=alpha,
+                n_boot=n_boot,
+                random_state=random_state,
+                cluster_ids_true=cluster_ids_true,
+            )
+            entry["bootstrap"] = boot
+
+        per_band[band_name] = entry
+
+    return {"per_band": per_band}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -498,8 +773,11 @@ def coherence_delta_z(
     r_true: np.ndarray,
     r_gen: np.ndarray,
     n_modes_per_k: np.ndarray | None = None,
+    n_eff_true: np.ndarray | float | None = None,
+    n_eff_gen: np.ndarray | float | None = None,
     clip_r: float = 0.9999,
     bands: dict | None = None,
+    min_modes: int = 0,
 ) -> dict:
     """
     Fisher-z transformed coherence difference.
@@ -545,37 +823,89 @@ def coherence_delta_z(
     n_t = r_true.shape[0]
     n_g = r_gen.shape[0]
     n_k = delta_z.shape[0]
+    neff_t = _broadcast_neff(n_eff_true, n_k, n_t)
+    neff_g = _broadcast_neff(n_eff_gen, n_k, n_g)
+    valid_mask = np.ones(n_k, dtype=bool)
 
     if n_modes_per_k is not None:
         # N_modes가 주어지면 Fisher-z 표준 공식
-        # ensemble 평균 → variance 더 작아짐: SE² = 1/(N_modes*N_samples - 3)
+        # ensemble 평균 → variance 더 작아짐: SE² = 1/(N_modes*N_eff - 3)
         n_modes = np.asarray(n_modes_per_k, dtype=float)
         if n_modes.shape != (n_k,):
             raise ValueError(f"n_modes_per_k shape mismatch: {n_modes.shape} vs ({n_k},)")
-        eff_t = np.clip(n_modes * n_t - 3, 1, None)
-        eff_g = np.clip(n_modes * n_g - 3, 1, None)
+        eff_t = np.clip(n_modes * neff_t - 3, 1, None)
+        eff_g = np.clip(n_modes * neff_g - 3, 1, None)
+        if min_modes > 0:
+            valid_mask = n_modes >= float(min_modes)
     else:
         # conservative: ensemble N만 사용
-        eff_t = np.full(n_k, max(n_t - 3, 1), dtype=float)
-        eff_g = np.full(n_k, max(n_g - 3, 1), dtype=float)
+        eff_t = np.clip(neff_t - 3, 1, None)
+        eff_g = np.clip(neff_g - 3, 1, None)
 
     se = np.sqrt(1.0 / eff_t + 1.0 / eff_g)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         norm_delta = np.where(se > 0, delta_z / se, 0.0)
 
-    per_band = {}
-    for band_name, (lo, hi) in bands.items():
-        # band 정보는 k_arr가 있어야 하지만 여기선 없음.
-        # 호출자가 필요하면 별도 집계. 여기는 전체 통계만.
-        pass
+    norm_delta_masked = np.where(valid_mask, norm_delta, np.nan)
+    finite_norm = norm_delta_masked[np.isfinite(norm_delta_masked)]
+    if finite_norm.size:
+        max_abs_norm = float(np.max(np.abs(finite_norm)))
+        rms_norm = float(np.sqrt(np.mean(finite_norm ** 2)))
+    else:
+        max_abs_norm = float("nan")
+        rms_norm = float("nan")
 
     return {
         "delta_z":      delta_z.tolist(),
         "se":           se.tolist(),
-        "norm_delta":   norm_delta.tolist(),
-        "max_abs_norm": float(np.abs(norm_delta).max()),
-        "rms_norm":     float(np.sqrt((norm_delta ** 2).mean())),
+        "norm_delta":   norm_delta_masked.tolist(),
+        "max_abs_norm": max_abs_norm,
+        "rms_norm":     rms_norm,
+        "valid_mask":   valid_mask.tolist(),
+        "n_valid":      int(valid_mask.sum()),
+        "n_modes_per_k": (None if n_modes_per_k is None
+                          else np.asarray(n_modes_per_k, dtype=int).tolist()),
+        "n_eff_true":   _maybe_scalar_or_list(neff_t),
+        "n_eff_gen":    _maybe_scalar_or_list(neff_g),
+        "min_modes":    int(min_modes),
+    }
+
+
+def coherence_pair_test(coh_result: dict) -> dict:
+    """
+    Per-pair aggregate test from Fisher-z normalized Δ.
+
+    Valid k bins의 Σ z²를 χ²_df로 평가해 pair당 1개 p-value를 만든다.
+    """
+    norm_delta = np.asarray(coh_result["norm_delta"], dtype=float)
+    valid_mask = np.asarray(coh_result.get("valid_mask"), dtype=bool)
+    valid = valid_mask & np.isfinite(norm_delta)
+
+    if not valid.any():
+        return {
+            "chi2": float("nan"),
+            "df": 0,
+            "p_raw": float("nan"),
+            "passed_raw": False,
+            "n_valid": 0,
+            "mean_abs_norm": float("nan"),
+            "max_abs_norm": float("nan"),
+        }
+
+    z = norm_delta[valid]
+    chi2 = float(np.sum(z ** 2))
+    df = int(z.size)
+    p_raw = float(1.0 - chi2_dist.cdf(chi2, df=df))
+
+    return {
+        "chi2": chi2,
+        "df": df,
+        "p_raw": p_raw,
+        "passed_raw": bool(p_raw >= 0.05),
+        "n_valid": df,
+        "mean_abs_norm": float(np.mean(np.abs(z))),
+        "max_abs_norm": float(np.max(np.abs(z))),
     }
 
 

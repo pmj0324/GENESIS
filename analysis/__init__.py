@@ -8,6 +8,7 @@ GENESIS Analysis Module
   thresholds.py        — LOO×1.5 기반 pass/fail threshold + check_* 함수
   ensemble.py          — 앙상블 집계 (d_CV, variance_ratio, response_correlation)
   pixels.py            — 픽셀 분포 비교 (KS, JSD, eps_mu, eps_sig, extended)
+  cv_loo.py            — CV leave-one-out summary metrics
   plot.py              — 기존 시각화 함수 (make_cv_report, make_lh_report, ...)
 
   conditional_stats.py — [NEW] N_eff 보정 z-score, F-CI R_σ, log-R², Fisher-z Δr
@@ -16,6 +17,7 @@ GENESIS Analysis Module
   scattering.py        — [NEW] kymatio 2D scattering transform + MMD
   bispectrum.py        — [NEW, optional] Equilateral + squeezed bispectrum
   plot_advanced.py     — [NEW] 위 신규 모듈들의 플롯
+  multiple_testing.py  — [NEW] BH-FDR / Bonferroni / family-wise summary
 """
 
 # ── 기존 모듈 ─────────────────────────────────────────────────────────────────
@@ -24,6 +26,7 @@ from .spectra import (
     compute_cross_pk,
     compute_coherence,
     compute_xi,
+    radial_mode_counts,
     pk_batch,
     cross_pk_batch,
     coherence_batch,
@@ -61,7 +64,7 @@ from .ensemble import (
     variance_ratio,
     loo_baseline,
     response_correlation,
-    parameter_response,
+    parameter_response as _parameter_response_fn,
 )
 
 from .pixels import (
@@ -70,6 +73,13 @@ from .pixels import (
     pixel_pdf,
     field_stats,
     compare_extended_stats,
+)
+
+from .cv_loo import (
+    compute_cv_loo_summary,
+    map_to_logstats,
+    safe_band_mean,
+    safe_std,
 )
 
 from .plot import (
@@ -91,14 +101,27 @@ from .plot import (
     plot_extended_pdf_summary,
 )
 
+from .multiple_testing import (
+    two_sided_p_from_z,
+    two_sided_p_from_t,
+    bonferroni,
+    bh_fdr,
+    apply_fdr_to_z,
+    family_summary,
+)
+
 # ── 신규 모듈 ─────────────────────────────────────────────────────────────────
 from .conditional_stats import (
     load_n_eff,
     conditional_z,
+    conditional_z_band_summary,
     conditional_z_score,
     variance_ratio_ci,
+    bootstrap_variance_ratio_ci,
+    variance_ratio_band_summary,
     response_r2,
     coherence_delta_z,
+    coherence_pair_test,
 )
 
 from .parameter_response import (
@@ -130,8 +153,15 @@ try:
     )
     _SCATTERING_AVAILABLE = True
 except ImportError as _e:
+    import warnings as _warnings
     _SCATTERING_AVAILABLE = False
     _SCATTERING_ERROR = str(_e)
+    _warnings.warn(
+        f"[analysis] kymatio/torch unavailable — scattering metrics will be skipped. "
+        f"Install with: pip install kymatio torch  (error: {_e})",
+        ImportWarning,
+        stacklevel=2,
+    )
 
     def ScatteringComputer(*args, **kwargs):
         raise ImportError(
@@ -183,18 +213,43 @@ from .plot_advanced import (
 
 # ── 하위 모듈 재노출 ──────────────────────────────────────────────────────────
 from . import (
-    ensemble, pixels, plot, spectra, thresholds,
-    conditional_stats, parameter_response, ex_robustness, plot_advanced,
-    bispectrum,
+    cv_loo, ensemble, pixels, plot, spectra, thresholds,
+    conditional_stats, parameter_response as parameter_response_module,
+    ex_robustness, plot_advanced,
+    bispectrum, multiple_testing,
 )
 
 if _SCATTERING_AVAILABLE:
     from . import scattering
 
 
+# Preserve the documented package-level function export even though importing
+# the submodule binds `analysis.parameter_response` to the module object.
+parameter_response = _parameter_response_fn
+
+# Keep explicit references so package-level submodule re-exports are
+# unambiguously intentional.
+_SUBMODULE_EXPORTS = (
+    ensemble,
+    pixels,
+    plot,
+    spectra,
+    thresholds,
+    conditional_stats,
+    parameter_response_module,
+    ex_robustness,
+    plot_advanced,
+    bispectrum,
+    multiple_testing,
+)
+if _SCATTERING_AVAILABLE:
+    _SUBMODULE_EXPORTS = _SUBMODULE_EXPORTS + (scattering,)
+
+
 __all__ = [
     # 기존 spectra
     "compute_pk", "compute_cross_pk", "compute_coherence", "compute_xi",
+    "radial_mode_counts",
     "pk_batch", "cross_pk_batch", "coherence_batch", "xi_batch",
     "all_pk_batch", "all_cross_pk_batch", "all_coherence_batch",
     "compute_bispectrum_eq", "count_peaks",
@@ -218,9 +273,14 @@ __all__ = [
     "make_cv_report", "make_lh_report",
     "plot_qq", "plot_cdf", "plot_example_tiles", "plot_spatial_stats_map",
     "plot_extended_pdf_summary",
+    # [신규] multiple_testing
+    "two_sided_p_from_z", "two_sided_p_from_t",
+    "bonferroni", "bh_fdr", "apply_fdr_to_z", "family_summary",
     # [신규] conditional_stats
-    "load_n_eff", "conditional_z", "conditional_z_score",
-    "variance_ratio_ci", "response_r2", "coherence_delta_z",
+    "load_n_eff", "conditional_z", "conditional_z_band_summary",
+    "conditional_z_score", "variance_ratio_ci",
+    "bootstrap_variance_ratio_ci", "variance_ratio_band_summary",
+    "response_r2", "coherence_delta_z", "coherence_pair_test",
     # [신규] parameter_response (1P)
     "PARAM_BLOCKS", "FIDUCIAL_SIM_IDS",
     "compute_slopes", "compare_slopes", "band_aggregate_1p",

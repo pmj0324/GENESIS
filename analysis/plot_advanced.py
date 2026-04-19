@@ -54,6 +54,25 @@ from .plot import (
 )
 
 
+def _finalize_figure(
+    fig,
+    title: str = "",
+    *,
+    fontsize: int = 13,
+    color: str | None = None,
+    top: float | None = None,
+    pad: float = 1.0,
+    h_pad: float = 1.0,
+    w_pad: float = 1.0,
+):
+    has_title = bool(title)
+    if has_title:
+        fig.suptitle(title, fontsize=fontsize, y=0.995, color=color)
+    if top is None:
+        top = 0.93 if has_title else 0.98
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, top), pad=pad, h_pad=h_pad, w_pad=w_pad)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CV 새 지표 플롯
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -97,9 +116,7 @@ def plot_conditional_z(
         ax.legend(fontsize=8, loc="best")
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -149,9 +166,7 @@ def plot_r_sigma_ci(
         ax.legend(fontsize=8, loc="best")
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -195,9 +210,7 @@ def plot_coherence_delta_z(
         ax.legend(fontsize=8, loc="best")
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -259,9 +272,7 @@ def plot_scattering_summary(
     if scat_mmd is not None:
         mmd_str = f"MMD² = {scat_mmd['mmd2']:.4f}"
         suptitle = f"{title}   ({mmd_str})" if title else mmd_str
-    if suptitle:
-        fig.suptitle(suptitle, fontsize=12)
-    fig.tight_layout()
+    _finalize_figure(fig, suptitle, fontsize=12)
     return fig, axes
 
 
@@ -320,9 +331,7 @@ def plot_conditional_z_score(
         ax.legend(fontsize=7, loc="lower right")
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -379,9 +388,7 @@ def plot_response_r2(
         ax.legend(fontsize=7, loc="lower right")
         ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -453,9 +460,7 @@ def plot_slopes_per_param(
                 ax.legend(fontsize=7, loc="upper right")
             ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -509,9 +514,7 @@ def plot_response_curves(
                 ax.legend(fontsize=7)
             ax.grid(True, alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -560,9 +563,7 @@ def plot_sign_heatmap(
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
                      label="frac_sign_agree")
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title, top=0.94)
     return fig, axes
 
 
@@ -586,7 +587,6 @@ def plot_fiducial_consistency(
         true_mean = np.asarray(res["true_mean_P"])
         true_std  = np.asarray(res["true_std_P"])
         gen_mean  = np.asarray(res["gen_mean_P"])
-        rel_bias  = np.asarray(res["rel_bias"])
         bias_t    = np.asarray(res["bias_in_cv_sigma"])
 
         # 상단: P(k) comparison
@@ -614,9 +614,7 @@ def plot_fiducial_consistency(
         ax1.legend(fontsize=8)
         ax1.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title)
     return fig, axes
 
 
@@ -648,7 +646,7 @@ def plot_numerical_sanity(
 
         # physical range box
         ax.axhspan(np.log10(lo), np.log10(hi),
-                   color="green", alpha=0.10, label=f"physical range")
+                   color="green", alpha=0.10, label="physical range")
 
         # actual min/max/p001/p999/p01/p99
         if np.isfinite(res["min"]) and res["min"] > 0:
@@ -694,9 +692,11 @@ def plot_numerical_sanity(
     passed = num_sanity["flags"]["passed"]
     badge = "PASS ✓" if passed else "FAIL ✗"
     suptitle = f"{title}   [{badge}]" if title else badge
-    fig.suptitle(suptitle, fontsize=13,
-                 color=("darkgreen" if passed else "darkred"))
-    fig.tight_layout()
+    _finalize_figure(
+        fig,
+        suptitle,
+        color=("darkgreen" if passed else "darkred"),
+    )
     return fig, axes
 
 
@@ -750,9 +750,7 @@ def plot_monotonicity_heatmap(
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
                      label="frac_sign_agree")
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title, top=0.94)
     return fig, axes
 
 
@@ -813,9 +811,7 @@ def plot_delta_comparison(
                 ax.legend(fontsize=7, loc="upper right")
             ax.grid(True, which="both", alpha=0.3)
 
-    if title:
-        fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
+    _finalize_figure(fig, title, top=0.94)
     return fig, axes
 
 
@@ -881,7 +877,7 @@ def plot_graceful_degradation(
     )
     ax.legend(fontsize=8, loc="upper left", ncol=2)
     ax.grid(True, which="both", alpha=0.3)
-    fig.tight_layout()
+    _finalize_figure(fig)
     return fig, ax
 
 

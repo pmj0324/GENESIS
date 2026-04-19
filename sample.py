@@ -104,7 +104,7 @@ from analysis.spectra import compute_pk
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 
-CHANNEL_CMAPS  = ["viridis", "plasma", "inferno"]
+CHANNEL_CMAPS  = ["cividis", "viridis", "magma"]
 CHANNEL_LABELS = ["log10(Mcdm)", "log10(Mgas)", "log10(T)"]
 CHANNEL_COLORS = ["#1565c0", "#c62828", "#2e7d32"]
 
@@ -263,6 +263,25 @@ def _to_log10(phys: np.ndarray) -> np.ndarray:
     return np.log10(np.clip(phys, 1e-30, None))
 
 
+def _robust_limits(
+    arrays: list[np.ndarray],
+    low_pct: float = 0.5,
+    high_pct: float = 99.5,
+    pad: float = 1e-3,
+) -> tuple[float, float]:
+    vals = np.concatenate([np.asarray(a, dtype=np.float64).reshape(-1) for a in arrays])
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return -1.0, 1.0
+    vmin, vmax = np.percentile(vals, [low_pct, high_pct])
+    if not np.isfinite(vmin) or not np.isfinite(vmax):
+        return float(np.nanmin(vals)), float(np.nanmax(vals))
+    if abs(vmax - vmin) < pad:
+        center = 0.5 * (vmin + vmax)
+        return center - pad, center + pad
+    return float(vmin), float(vmax)
+
+
 def _compute_pk(
     field: np.ndarray,
     box_size: float = 25.0,
@@ -322,8 +341,7 @@ def plot_fields(
         all_log = [_to_log10(g[ci]) for g in gen_phys]
         if show_real:
             all_log.append(_to_log10(real_phys[ci]))
-        vmin = min(a.min() for a in all_log)
-        vmax = max(a.max() for a in all_log)
+        vmin, vmax = _robust_limits(all_log)
 
         col = 0
         if show_real:
@@ -346,6 +364,7 @@ def plot_fields(
         axes[ci, 0].set_ylabel(label, fontsize=9)
         cbar = fig.colorbar(last_im, cax=axes[ci, -1])
         cbar.ax.tick_params(labelsize=7)
+        cbar.set_label(label, fontsize=8)
 
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
