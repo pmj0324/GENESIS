@@ -1,765 +1,277 @@
 # GENESIS
 
-**GEnerative Network for Emulating Simulation of IllustrisTNG Systems**
+GENESIS는 CAMELS IllustrisTNG 2D 투영 맵을 대상으로 하는 조건부 생성 모델 실험 저장소다.  
+현재 코드베이스는 학습, 샘플 생성, 정량 평가, 데이터셋 구축을 한 저장소 안에서 바로 돌릴 수 있게 정리되어 있다.
 
-CAMELS IllustrisTNG 2D 맵을 대상으로 하는 조건부 생성 모델 연구/실험 프레임워크입니다.
-GENESIS는 3채널 멀티필드 맵 (`Mcdm`, `Mgas`, `T`)을 6개 우주론 파라미터 조건에서 생성합니다.
+## 한눈에 보기
 
-- 입력/출력 맵 크기: `256 x 256`
-- 채널: `Mcdm`, `Mgas`, `T`
-- 조건 벡터: `[Omega_m, sigma_8, A_SN1, A_SN2, A_AGN1, A_AGN2]`
-- 지원 생성 프레임워크: `flow_matching`, `diffusion`, `edm`
+| 항목 | 값 |
+|------|-----|
+| 입력/출력 | `3 x 256 x 256` 멀티채널 맵 |
+| 채널 | `Mcdm`, `Mgas`, `T` |
+| 조건 벡터 | `Omega_m`, `sigma_8`, `A_SN1`, `A_SN2`, `A_AGN1`, `A_AGN2` |
+| 주요 프레임워크 | Flow Matching, Diffusion, EDM |
+| 데이터 형식 | Zarr |
+| 기본 평가 split | `cv`, `lh`, `1p`, `ex` |
 
----
-
-## 1. 빠른 시작
-
-### 1) 학습
-
-```bash
-python train.py --config configs/experiments/flow/swin/swin_flow_meanmix_rk4_smallstart.yaml
-```
-
-### 2) 평가 (LH/CV/1P/EX)
-
-```bash
-python evaluate.py \
-  --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
-  --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
-  --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
-  --output-dir runs/analysis/example_eval \
-  --n-samples 100 \
-  --protocols lh cv 1p ex \
-  --device cuda
-
-# 동일 동작 (신규 위치)
-python -m evaluation.cli.evaluate \
-  --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
-  --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
-  --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
-  --output-dir runs/analysis/example_eval \
-  --n-samples 100 \
-  --protocols lh cv 1p ex \
-  --device cuda
-```
-
-### 3) CV 샘플링 리포트
-
-```bash
-python sample_cv.py \
-  --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
-  --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
-  --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
-  --output-dir runs/analysis/example_cv \
-  --n-samples 32 \
-  --batch-size 8 \
-  --device cuda
-
-# 동일 동작 (신규 위치)
-python -m evaluation.cli.sample_cv \
-  --checkpoint runs/flow/swin/swin_flow_meanmix_rk4_smallstart/best.pt \
-  --config runs/flow/swin/swin_flow_meanmix_rk4_smallstart/config.yaml \
-  --data-dir GENESIS-data/affine_mean_mix_m130_m125_m100_om10split \
-  --output-dir runs/analysis/example_cv \
-  --n-samples 32 \
-  --batch-size 8 \
-  --device cuda
-```
-
----
-
-## 2. 저장소 구조 (상세)
-
-```
-GENESIS/
-├── train.py                         # 학습 엔트리포인트
-├── evaluate.py                      # 평가 CLI 호환 래퍼
-├── sample_cv.py                     # CV 샘플링 CLI 호환 래퍼
-│
-├── configs/                         # 실험/정규화/샘플러 설정
-│   ├── base.yaml
-│   ├── experiments/
-│   │   ├── flow/
-│   │   ├── diffusion/
-│   │   └── edm/
-│   ├── normalization/
-│   └── samplers/
-│
-├── dataloader/
-│   ├── build_dataset.py             # stack/splits/augment 데이터 생성
-│   ├── dataset.py                   # CAMELSDataset, build_dataloaders
-│   └── normalization.py             # 맵/조건 정규화
-│
-├── models/
-│   ├── dit.py                       # DiT
-│   ├── unet.py                      # ResNet UNet
-│   ├── swin.py                      # Swin UNet
-│   └── embeddings.py
-│
-├── flow_matching/
-│   ├── flows.py                     # OT/Stochastic/VP flow loss
-│   ├── samplers.py                  # Euler/Heun/RK4/Dopri5 sampler (t: 1->0)
-│   └── ode_solver.py                # Flow inference ODE solver util (default t: 0->1)
-│
-├── diffusion/
-│   ├── ddpm.py                      # GaussianDiffusion (DDPM/DDIM)
-│   ├── schedules.py                 # beta/sigma schedule
-│   ├── edm.py                       # EDM preconditioning/loss
-│   └── samplers_edm.py              # EDM Heun/Euler sampler
-│
-├── training/
-│   ├── trainer.py                   # optimizer/scheduler/warmup/early-stop
-│   └── visualize.py                 # epoch별 샘플/파워/메트릭 시각화
-│
-├── analysis/
-│   ├── camels_evaluator.py          # LH/CV/1P/EX 평가 엔진
-│   ├── cross_spectrum.py            # auto/cross power error
-│   ├── correlation.py               # correlation error
-│   ├── pixel_distribution.py        # PDF + KS
-│   ├── power_spectrum.py            # P(k) estimator
-│   └── report.py                    # 평가 결과 플롯/요약
-│
-├── utils/
-│   ├── sampler_config.py            # sampler 설정 우선순위 통합
-│   ├── sampling.py                  # sampling step 검증
-│   └── eval_helpers.py              # 평가 시각화 보조
-│
-├── evaluation/                      # 평가 코드 전용 패키지
-│   ├── README.md
-│   ├── cli/
-│   │   ├── evaluate.py              # 프로토콜 기반 평가 엔트리포인트
-│   │   └── sample_cv.py             # CV 조건 샘플링/비교 리포트
-│   ├── core/                        # 공통 평가 로직(확장 예정)
-│   ├── data/                        # 프로토콜 데이터 준비(확장 예정)
-│   └── experimental/                # 실험적 평가 코드(확장 예정)
-│
-├── scripts/
-│   ├── prepare_eval_protocol_data.py
-│   ├── evaluate_lh_pairs.py
-│   ├── extended_eval_claude.py
-│   ├── normalization_stats.py
-│   └── audit/
-│       ├── generate_architecture_map.py
-│       └── run_math_runtime_checks.py
-│
-└── GENESIS-data/                    # 전처리된 학습/평가 데이터셋
-```
-
----
-
-## 3. 환경 및 의존성
-
-## Python
-
-- 권장: `Python 3.10+`
-
-## 필수 패키지
-
-```bash
-pip install torch numpy scipy matplotlib pyyaml tqdm
-```
-
-## 선택 패키지
-
-- `torchdiffeq`:
-  - `flow_matching/ode_solver.py`의 `dopri5` 사용 시 필요
-
-```bash
-pip install torchdiffeq
-```
-
----
-
-## 4. 데이터 파이프라인
-
-## 4.1 원본 CAMELS 파일
-
-`dataloader.build_dataset stack`은 아래 파일을 기대합니다.
+## 현재 저장소 구조
 
 ```text
-Maps_Mcdm_IllustrisTNG_LH_z=0.00.npy
-Maps_Mgas_IllustrisTNG_LH_z=0.00.npy
-Maps_T_IllustrisTNG_LH_z=0.00.npy
-params_LH_IllustrisTNG.txt
+GENESIS/
+├── train.py                 # 학습 진입점
+├── sample.py                # 단일 조건 샘플 생성 + 시각화
+├── eval.py                  # 정량 평가 CLI
+├── run_eval_all.sh          # 11개 실험 x best/last CV 배치 평가
+├── configs/                 # 학습/샘플링/정규화 설정
+├── models/                  # UNet / SwinUNet / DiT
+├── flow_matching/           # flow losses, samplers, C2OT
+├── diffusion/               # diffusion / EDM 구현
+├── training/                # Trainer, epoch visualizer
+├── dataloader/              # dataset builder + dataset loader
+├── analysis/                # 평가 지표 + 플롯 + 고급 통계
+├── utils/                   # 모델/샘플러 로딩 유틸
+├── GENESIS-data/            # 준비된 LH dataset.zarr 모음
+├── runs/                    # 실험 산출물
+├── notebooks/               # 탐색/검증용 노트북 (source of truth 아님)
+├── eval_overview.md         # 평가 체계 총람
+├── INTEGRATION_NOTES.md     # 고급 지표 통합 요약
+└── n_eff_per_k.json         # CV 기반 N_eff(k) 보정값
 ```
 
-## 4.2 Step 1: 채널 stack
+## 문서 가이드
+
+문서가 여러 개라서, 읽는 순서를 아래처럼 잡는 편이 가장 빠르다.
+
+- `README.md`: 저장소 전체 구조와 대표 실행 예시
+- `eval_overview.md`: split별 평가 흐름, 출력 JSON/plot, 배치 실행 규약
+- `analysis/README.md`: 평가 지표와 `analysis/*` 모듈 역할
+- `dataloader/README.md`: raw CAMELS -> dataset.zarr 파이프라인
+- `INTEGRATION_NOTES.md`: 고급 지표가 `eval.py`에 어떻게 붙었는지 보는 운영 메모
+
+실제 동작 기준 source of truth는 결국 코드다. 특히 아래 파일이 우선이다.
+
+- `eval.py`
+- `analysis/eval_integration.py`
+- `analysis/__init__.py`
+- `dataloader/build_dataset.py`
+
+## 빠른 시작
+
+### 1. 학습
+
+```bash
+python train.py --config configs/experiments/flow/unet/<exp>.yaml
+```
+
+자주 쓰는 옵션:
+
+- `--resume`: 같은 run 디렉토리의 `last.pt` 또는 기본 체크포인트에서 재개
+- `--resume-path <ckpt>`: 특정 체크포인트에서 재개
+- `--finetune <ckpt>`: 가중치만 불러와 새 스케줄로 학습
+- `--device cuda:1`: 디바이스 지정
+
+학습 결과는 보통 `ckpt_dir/` 아래에 저장된다.
+
+- `best.pt`, `last.pt`
+- `config.yaml` 또는 `config_resume.yaml`
+- `plots/epXXXX_samples.png`
+- `plots/epXXXX_power_spectrum.png`
+- `plots/loss.png`, `plots/lr.png`
+- `plots/best_*.png`, `plots/latest_*.png`
+
+### 2. 샘플 생성
+
+`sample.py`는 두 가지 모드를 지원한다.
+
+```bash
+# 파라미터를 직접 넣어 샘플 생성
+python sample.py \
+  --config runs/flow/unet/<exp>/config.yaml \
+  --checkpoint runs/flow/unet/<exp>/best.pt \
+  --params 0.30 0.80 1.0 1.0 1.0 1.0 \
+  --n-samples 4 \
+  --output-dir samples/manual
+
+# dataset.zarr의 특정 샘플 조건을 참조해 생성
+python sample.py \
+  --config runs/flow/unet/<exp>/config.yaml \
+  --checkpoint runs/flow/unet/<exp>/best.pt \
+  --ref-idx 5 \
+  --split test \
+  --output-dir samples/ref5
+```
+
+자주 쓰는 옵션:
+
+- `--cfg-scale`
+- `--model-source {auto,ema,raw}`
+- `--solver {euler,heun,rk4,dopri5}`
+- `--steps`, `--rtol`, `--atol`
+- `--data-dir <dataset.zarr>`: config의 `data.data_dir` override
+- `--save-npy`
+
+출력:
+
+- `fields.png`
+- `power_spectrum_lin.png`
+- `power_spectrum_log.png`
+- `metadata.json`
+- `samples.npy`
+- `real.npy` (`--ref-idx`일 때만)
+
+### 3. 정량 평가
+
+```bash
+# CV 생성 + 평가
+python eval.py \
+  --config runs/flow/unet/<exp>/config.yaml \
+  --checkpoint runs/flow/unet/<exp>/best.pt \
+  --split cv \
+  --n-samples 50 \
+  --out-dir runs/flow/unet/<exp>/eval_cv
+
+# 기존 생성 샘플로 평가만
+python eval.py \
+  --split cv \
+  --out-dir runs/flow/unet/<exp>/eval_cv \
+  --eval-only
+
+# LH test split 평가
+python eval.py \
+  --config runs/flow/unet/<exp>/config.yaml \
+  --checkpoint runs/flow/unet/<exp>/best.pt \
+  --split lh \
+  --lh-split test \
+  --n-samples 15 \
+  --out-dir runs/flow/unet/<exp>/eval_lh_test
+```
+
+평가 출력:
+
+- `evaluation_summary.json`
+- `gen_CV.zarr`, `gen_LH_<split>.zarr`, `gen_1P.zarr`, `gen_EX.zarr`
+- `plots/` 아래 리포트 그림
+
+LH는 `plots/summary/`와 `plots/<metric>/sim_XXX_*.png` 구조를 함께 사용한다.
+
+### 4. 전체 CV 배치 평가
+
+```bash
+bash run_eval_all.sh
+SKIP_EXISTING=1 bash run_eval_all.sh
+SOLVER=dopri5 bash run_eval_all.sh
+```
+
+현재 `run_eval_all.sh` 기본값:
+
+- solver: `heun`
+- steps: `25`
+- `N_SAMPLES=200`
+- `GEN_BATCH=8`
+
+## 데이터셋 파이프라인
+
+`dataloader/build_dataset.py`는 네 단계로 구성된다.
+
+### Step 1. raw stack
 
 ```bash
 python -m dataloader.build_dataset stack \
-  --maps-dir /path/to/CAMELS/IllustrisTNG
+  --maps-dir /path/to/CAMELS/IllustrisTNG \
+  --suite LH
 ```
 
-결과:
-- `Maps_3ch_IllustrisTNG_LH_z=0.00.npy` (`[15000, 3, 256, 256]`)
+출력: `IllustrisTNG_<suite>.zarr`
 
-## 4.3 Step 2: 정규화 + split 생성
+- `maps`
+- `params`
+- `sim_ids`
+- attrs: `suite`, `fields`, `param_names`, `n_sims`, `maps_per_sim` 등
+
+### Step 2. normalization recipe 생성
+
+```bash
+python -m dataloader.build_dataset recipe \
+  --raw-zarr IllustrisTNG_LH.zarr \
+  --lower-percentile 1 \
+  --upper-percentile 99 \
+  --center-stat mean \
+  --range-mode centered \
+  --param-mode astro_mixed
+```
+
+출력 기본 경로는 `configs/normalization/<suite>_<suffix>.yaml`.
+
+### Step 3. LH split 생성
 
 ```bash
 python -m dataloader.build_dataset splits \
-  --maps-path /path/to/Maps_3ch_IllustrisTNG_LH_z=0.00.npy \
-  --params-path /path/to/params_LH_IllustrisTNG.txt \
-  --out-dir GENESIS-data/affine_default \
-  --norm-config configs/base.yaml \
-  --split-strategy stratified_1d \
-  --stratify-param Omega_m \
-  --stratify-bins 10
+  --raw-zarr IllustrisTNG_LH.zarr \
+  --out dataset.zarr \
+  --norm-config configs/normalization/<recipe>.yaml
 ```
 
-기본 split 정책:
-- simulation-level split (누수 방지)
-- 기본 전략: `stratified_1d`
-- 기본 stratify: `Omega_m`, `10` bins
+출력: `dataset.zarr/train`, `val`, `test`
 
-생성 파일:
-- `train_maps.npy`, `train_params.npy`
-- `val_maps.npy`, `val_params.npy`
-- `test_maps.npy`, `test_params.npy`
-- `split_train.npy`, `split_val.npy`, `split_test.npy` (canonical)
-- `train_sim_ids.npy`, `val_sim_ids.npy`, `test_sim_ids.npy` (legacy alias)
-- `metadata.yaml`
-
-## 4.4 Step 3: train split 물리적 증설(D4)
+### Step 4. train D4 증강
 
 ```bash
 python -m dataloader.build_dataset augment \
-  --data-dir GENESIS-data/affine_default \
-  --out-dir GENESIS-data/affine_default_x8 \
+  --data-path dataset.zarr \
+  --out dataset_x8.zarr \
   --copies 8
 ```
 
-동작:
-- train split만 D4 대칭(회전/flip)으로 materialize
-- val/test는 그대로 복사
-
-## 4.5 평가 프로토콜(CV/1P/EX) 데이터 준비
-
-`evaluate.py` 또는 `evaluation/cli/evaluate.py`의 `cv`, `1p`, `ex` 프로토콜을 쓰려면 아래 파일이 필요합니다.
-
-- `cv_maps.npy`, `cv_params.npy`
-- `ex_maps.npy`, `ex_params.npy`
-- `1p/<param>_maps.npy`, `1p/<param>_params.npy`
-
-생성 스크립트:
-
-```bash
-# 현재 위치
-python scripts/prepare_eval_protocol_data.py \
-  --camels-dir /path/to/CAMELS/IllustrisTNG \
-  --out-dir GENESIS-data/affine_default
-```
-
----
-
-## 5. 학습 파이프라인
-
-## 5.1 실행
-
-```bash
-python train.py --config <experiment.yaml>
-```
-
-옵션:
-
-```bash
-python train.py --help
-```
-
-- `--resume`: optimizer/scheduler 포함 재개
-- `--resume-path`: 특정 체크포인트로 재개
-- `--finetune`: 가중치만 로드하고 새 스케줄로 학습
-- `--device`: `cuda`, `cuda:1`, `cpu` 등
-
-## 5.2 train.py가 실제로 하는 일
-
-1. config 로드 + seed 설정
-2. `build_dataloaders(data_dir, batch_size, num_workers, data_fraction, augment, seed)`
-3. 모델 생성 (`dit`/`unet`/`swin`, preset + override 검증)
-4. loss 생성 (`flow_matching`/`diffusion`/`edm`)
-5. sampler 설정 해석 (`utils/sampler_config.py`)
-6. epoch visualizer 부착
-7. trainer loop 실행 + best/last 체크포인트 저장
-
-## 5.3 에폭 로그 필드 정의
-
-에폭 로그 예시:
-
-```text
-[0017/300] train=0.21638  val=0.20810  lr=6.98e-05  gnorm=0.20  mem=14.6GB
-71.2s/ep  eta=05:35:26  patience=0/30  best=0.20810@ep17
-```
-
-정의:
-- `train`: 해당 epoch의 train 평균 loss
-- `val`: 해당 epoch의 val 평균 loss
-- `lr`: epoch 시작 시점 learning rate
-- `gnorm`: grad clipping에서 측정한 gradient norm
-- `mem`: epoch peak GPU memory
-- `patience`: early stopping 무개선 카운터
-- `best`: 현재까지 최소 val loss
-
-## 5.4 시각화/메트릭 출력
-
-`training/visualize.py` 출력:
-
-- `plots/epXXXX_samples.png`
-- `plots/epXXXX_power_spectrum.png`
-- `plots/loss.png`
-- `plots/lr.png`
-- `plots/best_samples.png`
-- `plots/best_power_spectrum.png`
-- `plots/latest_samples.png`
-- `plots/latest_power_spectrum.png`
-
-현재 동작:
-- `loss.png`, `lr.png`는 매 epoch 갱신
-- 기본값에서는 샘플/파워/메트릭이 **best(val_loss 최소) 갱신 시에만** 생성/갱신
-- `viz.every_epoch=true`면 `epXXXX_*`와 `latest_*`는 매 epoch 갱신
-- `best_*`는 항상 val loss 최소가 갱신된 epoch에서만 갱신
-
-메트릭 JSON:
-- `metrics_history.json`
-- `metrics_best.json`
-- 둘 다 **best(val_loss 최소) 기준 1개 레코드**만 유지
-
-## 5.5 `N`(메트릭 샘플 수) 정책
-
-학습 중 epoch 메트릭의 `N`은 `generative.sampler.viz.eval_n`으로 설정합니다.
-
-- 기본값: `15`
-- 부족하면 자동 fallback:
-  - `N = min(requested_eval_n, maps_per_sim, len(val_dataset))`
-- fallback 시 콘솔에 실제 사용 N 출력
-
-주의:
-- 기본 데이터 정렬이 simulation별 15장 연속이므로
-- `N <= 15`이면 보통 같은 조건(시뮬레이션) 내 여러 realization 비교가 됩니다.
-
-## 5.6 샘플러 설정 해석 우선순위
-
-`utils/sampler_config.py` 기준:
-
-1. `generative.sampler.*`
-2. 프레임워크별 legacy 위치 (`generative.diffusion.*`, `generative.edm.*`)
-3. 기본값
-
-EDM 특이사항:
-- `eta`는 호환 alias 유지
-- `S_churn` 미지정 + `eta > 0`이면 `S_churn = eta * steps`로 매핑
-
-## 5.7 샘플링 코드 맵 (상세)
-
-샘플링은 "설정 해석"과 "실제 적분/역확산"으로 나뉩니다.
-
-- 설정 해석(공통)
-  - `utils/sampler_config.py::resolve_sampler_config`
-  - `utils/sampling.py::validate_sampling_steps`
-- Flow Matching 샘플러(생성용, `t: 1 -> 0`)
-  - `flow_matching/samplers.py`
-  - `EulerSampler.sample`, `HeunSampler.sample`, `RK4Sampler.sample`, `Dopri5Sampler.sample`
-  - `build_sampler(name)`으로 선택
-- Diffusion 샘플러
-  - `diffusion/ddpm.py::GaussianDiffusion.ddpm_sample`
-  - `diffusion/ddpm.py::GaussianDiffusion.ddim_sample`
-- EDM 샘플러
-  - `diffusion/samplers_edm.py::heun_sample`
-  - `diffusion/samplers_edm.py::euler_sample`
-- Flow ODE inference 유틸(일반 ODE)
-  - `flow_matching/ode_solver.py::FlowMatchingODESolver.sample`
-  - 기본 `t: 0 -> 1`, 필요 시 `t_start/t_end`로 역방향(`1 -> 0`)도 지원
-  - `euler/heun/dopri5`, NFE 카운팅 포함
-
-## 5.8 샘플링 호출 경로
-
-- 평가 실행
-  - `evaluation/cli/evaluate.py::build_sampler_fn`
-  - 프레임워크별 sampler를 하나의 `sampler_fn(model, shape, cond)` 인터페이스로 래핑
-- CV 샘플링 실행
-  - `evaluation/cli/sample_cv.py`
-  - 내부에서 `build_sampler_fn`을 재사용해 배치 샘플 생성
-- 학습 중 시각화 샘플링
-  - `training/visualize.py`
-  - `viz.sampler_a`, `viz.sampler_b`, `viz.eval_n` 설정으로 epoch별 샘플/메트릭 생성
-
-주의:
-- Flow ODE solver(`flow_matching/ode_solver.py`)는 단독 유틸로도 쓸 수 있고,
-  `flow_matching/samplers.py`의 `dopri5` 경로에서도 재사용됩니다.
-- 기본 학습/평가 생성은 여전히 `flow_matching/samplers.py`, `diffusion/ddpm.py`,
-  `diffusion/samplers_edm.py` 엔트리를 사용합니다.
-
----
-
-## 6. Config 가이드 (실전 중심)
-
-## 6.1 최소 필수 블록
-
-```yaml
-data:
-  data_dir: GENESIS-data/affine_default
-
-model:
-  architecture: swin  # dit / unet / swin
-
-generative:
-  framework: flow_matching  # flow_matching / diffusion / edm
-
-training:
-  batch_size: 32
-  max_epochs: 200
-  lr: 1.0e-4
-
-checkpoint:
-  ckpt_dir: runs/flow/swin/example/
-  ckpt_name: best.pt
-```
-
-## 6.2 model 블록
-
-- 공통: `in_channels`, `cond_dim`, `dropout`
-- `dit`: `preset`, `patch_size`, `hidden_size/depth/num_heads/...`
-- `unet`: `preset`, `attention_resolution`, `channel_se`, `circular_conv`,
-  `cross_attn_cond`, `per_scale_cond`, `cond_depth`
-- `swin`: `preset`, `window_size`, `cond_fusion`, `periodic_boundary`,
-  `embed_dim/depths/num_heads/...`
-
-## 6.3 generative 블록
-
-### flow_matching
-
-```yaml
-generative:
-  framework: flow_matching
-  flow_matching:
-    method: ot         # ot / stochastic / vp
-    cfg_prob: 0.1
-    sigma_min: 1.0e-4
-  sampler:
-    method: rk4        # euler / heun / rk4 / dopri5
-    steps: 15
-    cfg_scale: 1.1
-    viz:
-      sampler_a: euler
-      sampler_b: rk4
-      eval_n: 15
-```
-
-### diffusion
-
-```yaml
-generative:
-  framework: diffusion
-  diffusion:
-    schedule: cosine
-    timesteps: 1000
-    cfg_prob: 0.1
-    prediction: epsilon  # epsilon / x0
-    x0_clamp: 5.0
-    p2_gamma: 0.0
-    p2_k: 1.0
-    input_scale: 1.0
-  sampler:
-    method: ddim         # ddpm / ddim
-    steps: 50
-    eta: 0.0
-    cfg_scale: 1.0
-```
-
-### edm
-
-```yaml
-generative:
-  framework: edm
-  edm:
-    sigma_data: 0.5
-    sigma_min: 0.002
-    sigma_max: 80.0
-    P_mean: -1.2
-    P_std: 1.2
-    cfg_prob: 0.1
-  sampler:
-    method: heun         # heun / euler
-    steps: 40
-    eta: 0.0
-    S_churn: 0.0
-    cfg_scale: 1.0
-```
-
-## 6.4 scheduler/optimizer 블록
-
-- optimizer: `adamw` / `adam` / `sgd`
-- schedule: `cosine` / `cosine_warmup` / `cosine_restarts` / `plateau`
-- warmup: `warmup_epochs`
-- early stop: `early_stop_patience`
-
----
-
-## 7. 모델/생성 프레임워크 요약
-
-## 7.1 모델
-
-- `DiT` (`models/dit.py`)
-  - preset: `S/B/L`
-  - patch transformer 기반
-- `UNet` (`models/unet.py`)
-  - resblock + attention
-  - conditioning 확장 옵션 포함
-- `SwinUNet` (`models/swin.py`)
-  - window attention 기반 U-Net 구조
-  - `periodic_boundary=true`면 shifted window가 periodic seam을 가로질러 attention
-
-## 7.2 생성 프레임워크
-
-- `flow_matching` (`flow_matching/flows.py`)
-  - `ot`, `stochastic`, `vp`
-- `diffusion` (`diffusion/ddpm.py`, `diffusion/schedules.py`)
-  - DDPM/DDIM
-- `edm` (`diffusion/edm.py`, `diffusion/samplers_edm.py`)
-  - EDM preconditioning + Heun/Euler
-
----
-
-## 8. Flow Matching ODE Solver 유틸
-
-새 유틸: `flow_matching/ode_solver.py`
-
-공통 인터페이스:
-
-```python
-x1 = solver.sample(
-    x0,
-    cond,
-    solver="heun",     # euler / heun / dopri5
-    n_steps=50,
-    rtol=1e-5,
-    atol=1e-5,
-)
-```
-
-특징:
-- 적분 방향: `t=0 -> 1`
-- 필요 시 `t_start=1, t_end=0`으로 생성 경로와 동일한 역방향 적분 가능
-- batch 차원 유지
-- `euler/heun`: 직접 루프 (torchdiffeq 미사용)
-- `dopri5`: `torchdiffeq.odeint` 사용
-- inference마다 NFE 로깅 + `last_stats` 저장
-
-프리셋 상수:
-- `VAL_SOLVER_DEFAULT = {solver: euler, n_steps: 50}`
-- `PAPER_SOLVER_DEFAULT = {solver: heun, n_steps: 50}`
-- `GT_SOLVER_DEFAULT = {solver: dopri5, rtol: 1e-5, atol: 1e-5}`
-
-주의:
-- `flow_matching/samplers.py`는 생성 샘플링용(노이즈->데이터, `t: 1 -> 0`)
-- `ode_solver.py`는 일반 ODE inference 유틸이며, 샘플러의 `dopri5` 경로에서도 재사용됩니다.
-
----
-
-## 9. 평가 파이프라인
-
-평가 엔트리포인트는 `evaluation/cli/`로 이동했으며, 루트 `evaluate.py`, `sample_cv.py`는
-기존 커맨드 호환을 위한 래퍼입니다.
-
-## 9.1 evaluate CLI
-
-```bash
-python evaluate.py --help
-python -m evaluation.cli.evaluate --help
-```
-
-핵심 인자:
-- `--checkpoint`, `--config`, `--data-dir` (필수)
-- `--split {val,test}`
-- `--n-samples`
-- `--protocols {lh,cv,1p,ex}`
-- `--cfg-scale` (config override)
-- `--n-multirun` (불확실성 반복평가)
-- `--save-sample-images`
-
-출력:
-- `auto_power_comparison.png`
-- `cross_power_grid.png`
-- `correlation_coefficients.png`
-- `pdf_comparison.png`
-- `evaluation_dashboard.png`
-- `cv_variance_ratio.png` (CV 포함 시)
-- `evaluation_report.json`
-- `evaluation_summary.txt`
-- `<split>_sample_previews/` (옵션)
-
-## 9.2 sample_cv CLI
-
-```bash
-python sample_cv.py --help
-python -m evaluation.cli.sample_cv --help
-```
-
-핵심 인자:
-- `--checkpoint`, `--config`
-- `--data-dir` (없으면 config.data.data_dir 사용)
-- `--n-samples`, `--batch-size`, `--cfg-scale`
-- `--power-spectrum-estimator {genesis,diffusion_hmc}`
-- `--save-norm`
-
-출력:
-- `cv_samples_phys.npy`
-- `cv_real_matches_phys.npy`
-- `cv_real_indices.npy`
-- `cv_cond.npy`
-- `cv_preview.png`
-- `cv_power_spectrum.png`
-- `cv_metrics.png`
-- `cv_metrics_summary.json`
-- `sampling_info.yaml`
-
-## 9.3 보조 평가 스크립트
-
-- `scripts/prepare_eval_protocol_data.py`
-  - CV/1P/EX 프로토콜용 입력(`cv_maps.npy`, `1p/*`, `ex_maps.npy`) 생성
-- `scripts/evaluate_lh_pairs.py`
-  - LH real-vs-real baseline 측정용 보조 스크립트
-- `scripts/extended_eval_claude.py`
-  - bispectrum/절대 r(k) 등 실험적 확장 평가 스크립트
-  - 공식 기본 파이프라인과 분리 운영 권장
-
----
-
-## 10. 메트릭 정의 (학습/평가 공통)
-
-## 10.1 Auto / Cross Power
-
-- 구현: `analysis/cross_spectrum.py`
-- 상대오차:
-  - Auto: `|Pgen - Ptrue| / (Ptrue + eps)`
-  - Cross: `|Pgen - Ptrue| / (|Ptrue| + eps)`
-
-Threshold:
-- Auto: 채널별 + k-range별(`low_k`, `mid_k`, `high_k`)
-- Cross: pair별(`Mcdm-Mgas`, `Mcdm-T`, `Mgas-T`)
-
-## 10.2 Correlation
-
-- 구현: `analysis/correlation.py`
-- `r_ij(k) = P_ij / sqrt(|P_ii P_jj|)`
-- 비교 지표: `max |r_gen - r_true|`
-- pair별 threshold 적용
-
-## 10.3 PDF
-
-- 구현: `analysis/pixel_distribution.py`
-- 기준:
-  - `KS D < 0.05`
-  - `mean_rel_error < 5%`
-  - `std_rel_error < 10%`
-
-## 10.4 Power spectrum estimator 모드
-
-- 구현: `analysis/power_spectrum.py`
-- `genesis` (기본)
-- `diffusion_hmc` (호환 모드)
-
----
-
-## 11. 정규화
-
-구현: `dataloader/normalization.py`
-
-지원 method:
-- `affine`
-- `softclip`
-- `minmax`
-
-공통 파이프라인:
-- 기본적으로 `log10(x)` 후 채널별 transform
-- 역변환은 물리공간(linear)으로 복원
-
-채널별 설정은 보통 `configs/normalization/*.yaml`에 정의하고,
-데이터 생성 시 `--norm-config`를 통해 metadata에 고정합니다.
-
-중요:
-- 학습 시 `data.norm_config` 항목 자체를 직접 계산에 쓰지 않고,
-- 실제 정규화는 데이터 디렉토리의 `metadata.yaml` 기준으로 복원/평가됩니다.
-
----
-
-## 12. Audit/분석 스크립트
-
-## 12.1 구조 의존성 맵
-
-```bash
-python scripts/audit/generate_architecture_map.py \
-  --out-md runs/analysis/audit/architecture_map.md \
-  --out-json runs/analysis/audit/architecture_map.json
-```
-
-## 12.2 수학/런타임 체크
-
-```bash
-python scripts/audit/run_math_runtime_checks.py \
-  --out-json runs/analysis/audit/math_runtime_checks.json
-```
-
-체크 항목 예:
-- normalization round-trip
-- power spectrum parity
-- step validation
-- EDM eta alias mapping
-
-## 12.3 정규화 통계
-
-```bash
-python scripts/normalization_stats.py --n 15000
-```
-
----
-
-## 13. 재현성 규칙
-
-- split은 simulation-level로 한 번 생성 후 고정
-- `split_*.npy`를 single source of truth로 사용
-- seed 고정 (`data.seed`, CLI `--seed`)
-- run 폴더에 `config.yaml` 자동 복사
-- best checkpoint 기준 메트릭은 `metrics_best.json`/`metrics_history.json`에 저장
-
----
-
-## 14. 자주 막히는 지점
-
-- `cv_maps.npy` 없음:
-  - `sample_cv.py`/`evaluate.py --protocols cv` 전에
-  - `scripts/prepare_eval_protocol_data.py` 먼저 실행
-
-- `dopri5 requires torchdiffeq`:
-  - `pip install torchdiffeq`
-
-- `steps=1 is not supported`:
-  - `utils/sampling.validate_sampling_steps` 정책상 1-step 비허용
-
-- config 바꿨는데 실행에 안 보임:
-  - 이미 실행 중인 프로세스는 새 YAML을 자동 반영하지 않음
-  - 재시작 필요
-
----
-
-## 15. 개발 팁 (코드 확장 시)
-
-- 새 모델 추가:
-  - `models/<new>.py` + `train.py::build_model` 분기 + preset 검증 추가
-
-- 새 sampler 옵션 추가:
-  - `utils/sampler_config.py` 우선순위 규칙 반영
-  - `train.py` + `evaluation/cli/evaluate.py` + `evaluation/cli/sample_cv.py` 경로 일관성 확인
-
-- 새 평가 지표 추가:
-  - `analysis/*` 계산 함수
-  - `training/visualize.py` 콘솔 출력 + JSON 저장
-  - `analysis/report.py` 리포트 플롯 갱신
-
----
-
-## 16. 참고 문서
-
-- `dataloader/README.md`: 데이터 파이프라인 집중 설명
-- `analysis/README.md`: 분석 모듈 원칙
-- `evaluation/README.md`: 평가 패키지 구조/운영 규칙
-- `REPO_STRUCTURE.md`: 상위 저장소 맥락/이전 기록
-- `docs/GENESIS_Evaluation_Criteria_Report.pdf`
+자세한 내용은 [dataloader/README.md](/home/work/cosmology/refactor/GENESIS/dataloader/README.md:1)를 보면 된다.
+
+## 평가 시스템 요약
+
+지원 split:
+
+| split | true data source | 용도 |
+|------|------------------|------|
+| `cv` | 하드코딩된 raw zarr | cosmic variance 재현 |
+| `lh` | config의 `data.data_dir` | 조건부 생성 품질 |
+| `1p` | 하드코딩된 raw zarr | 파라미터 방향성 검증 |
+| `ex` | 하드코딩된 raw zarr | 외삽 강건성 |
+
+대표 지표:
+
+- Auto power spectrum
+- Cross power spectrum
+- Coherence
+- Pixel PDF
+- Field mean
+- `d_cv`, `variance_ratio`
+- `conditional_z`, `r_sigma_ci`, `response_r2`
+- `pk_coverage`
+- `one_p_analysis`
+- `ex_analysis`
+- optional scattering MMD
+
+평가 상세는 [eval_overview.md](/home/work/cosmology/refactor/GENESIS/eval_overview.md:1), 분석 모듈은 [analysis/README.md](/home/work/cosmology/refactor/GENESIS/analysis/README.md:1)를 기준으로 보면 된다.
+
+## 저장소 정리 메모
+
+아래 항목은 실행에는 필요 없거나 local artifact 성격이 강하다.
+
+- `__pycache__/`, `*.pyc`: 파이썬 캐시
+- `.claude/`: 로컬 에이전트 설정
+- `notebooks/*copy.ipynb`: 복제본 성격의 노트북
+- 탐색용 노트북 전반: 실험 기록으로는 유용할 수 있지만 production entrypoint는 아님
+
+반대로 아래는 현재 코드 경로에서 실제로 쓰이는 파일이므로 유지 대상이다.
+
+- `eval.py`, `run_eval_all.sh`
+- `analysis/*`
+- `dataloader/*`
+- `n_eff_per_k.json`
+- `GENESIS-data/*`
+
+## 참고 문서
+
+- [eval_overview.md](/home/work/cosmology/refactor/GENESIS/eval_overview.md:1): 현재 평가 체계 총람
+- [INTEGRATION_NOTES.md](/home/work/cosmology/refactor/GENESIS/INTEGRATION_NOTES.md:1): 고급 통계 지표 통합 메모
+- [analysis/README.md](/home/work/cosmology/refactor/GENESIS/analysis/README.md:1): 분석 모듈 요약
+- [analysis/threshold_design.md](/home/work/cosmology/refactor/GENESIS/analysis/threshold_design.md:1): threshold 설계 근거
+- [dataloader/README.md](/home/work/cosmology/refactor/GENESIS/dataloader/README.md:1): 데이터셋 구축 파이프라인

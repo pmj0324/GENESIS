@@ -1,9 +1,9 @@
-자"""
+"""
 GENESIS - Training Entry Point
 
 사용법:
   python train.py --config configs/base.yaml
-  python train.py --config configs/base.yaml --resume
+  python train.py --confitraig configs/base.yaml --resume
   python train.py --config configs/base.yaml --device cuda:1
 """
 
@@ -15,6 +15,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 import yaml
+import zarr
 from pathlib import Path
 
 from dataloader import build_dataloaders
@@ -615,7 +616,7 @@ def main():
     # Dataloaders
     tcfg = cfg["training"]
     train_loader, val_loader, _ = build_dataloaders(
-        data_dir=cfg["data"]["data_dir"],
+        data_path=cfg["data"]["data_dir"],
         batch_size=tcfg.get("batch_size", 32),
         num_workers=tcfg.get("num_workers", 4),
         data_fraction=cfg["data"].get("data_fraction", 1.0),
@@ -782,10 +783,9 @@ def main():
     gcfg_s = cfg["generative"].get("sampler", {})
     viz_cfg = gcfg_s.get("viz", {})
 
-    # metadata.yaml에서 normalization config 로드 (denormalize + viz eval_n 상한)
-    _meta_path = Path(cfg["data"]["data_dir"]) / "metadata.yaml"
-    with open(_meta_path) as _f:
-        _meta = yaml.safe_load(_f)
+    # zarr .zattrs에서 normalization config 로드 (denormalize + viz eval_n 상한)
+    _zarr_store = zarr.open_group(str(cfg["data"]["data_dir"]), mode="r")
+    _meta = dict(_zarr_store.attrs)
     norm_cfg = _meta.get("normalization", {})
 
     val_dataset = val_loader.dataset

@@ -1,0 +1,75 @@
+##############################################################################
+# unet_flow_0412_log_p1_p99_m1p1_ft_plateau.yaml
+#
+# 목적:
+#   - runs/flow/unet/0412_unet_flow_log_p1_p99_m1p1 의 학습 완료 모델을 이어서 미세조정
+#   - 스케줄러를 cosine -> plateau 로 변경
+#   - optimizer/scheduler state는 새로 시작하므로 --resume 이 아니라 --finetune 사용
+#
+# 사용 예:
+#   python train.py \
+#     --config configs/experiments/flow/unet/unet_flow_0412_log_p1_p99_m1p1_ft_plateau.yaml \
+#     --finetune runs/flow/unet/0412_unet_flow_log_p1_p99_m1p1/best.pt
+##############################################################################
+
+data:
+  data_dir: /home/work/cosmology/refactor/GENESIS/GENESIS-data/LH_p1p99_affine_legacy.zarr
+  data_fraction: 1.0
+  augment: true
+
+model:
+  architecture: unet
+  in_channels: 3
+  cond_dim: 6
+  dropout: 0.0
+  unet:
+    preset: B
+    attention_resolution: 32
+    circular_conv: true
+
+generative:
+  framework: flow_matching
+  flow_matching:
+    method: ot
+    cfg_prob: 0.05
+    sigma_min: 1.0e-4
+  sampler:
+    method: dopri5
+    steps: 25
+    rtol: 1.0e-4
+    atol: 1.0e-4
+    cfg_scale: 1.0
+    viz:
+      sampler_a: dopri5
+      sampler_b: dopri5
+      samplers: [euler, heun, rk4, dopri5]
+      metrics_sampler: dopri5
+      eval_n: 15
+      every_epoch: true
+
+training:
+  batch_size: 16
+  num_workers: 40
+  max_epochs: 80
+  lr: 5.0e-5
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  warmup_epochs: 0
+  grad_clip: 1.0
+  optimizer: adamw
+  schedule: plateau
+  plateau_patience: 5
+  plateau_factor: 0.75
+  plateau_min_lr: 1.0e-7
+  ema:
+    enabled: true
+    decay: 0.9995
+    update_every: 1
+    update_after_step: auto
+    min_update_after_step: 500
+    eval_with_ema: true
+  early_stop_patience: 25
+
+checkpoint:
+  ckpt_dir: runs/flow/unet/0412_p99_OT_nscale_ncros_cfg_ft1_plateau/
+  ckpt_name: best.pt

@@ -50,10 +50,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from analysis.power_spectrum import compute_power_spectrum_2d
-from analysis.cross_spectrum import compute_spectrum_errors
-from analysis.correlation import compute_correlation_errors
-from analysis.pixel_distribution import compare_pixel_distributions
+from analysis.spectra import compute_pk, pk_batch, cross_pk_batch, coherence_batch
+from analysis.thresholds import check_auto_pk, check_cross_pk, check_coherence, CROSS_THRESH
+from analysis.pixels import compare_pdfs
 from dataloader.normalization import (
     Normalizer,
     ParamNormalizer,
@@ -69,6 +68,100 @@ SAMPLER_LINESTYLES = ["-", "--", "-.", ":"]
 
 SamplerFn = Callable[[torch.nn.Module, Tuple, torch.Tensor], torch.Tensor]
 SamplerSpec = Tuple[str, SamplerFn]
+
+
+_CHANNEL_NAMES = ["Mcdm", "Mgas", "T"]
+_PAIR_NAMES    = ["Mcdm-Mgas", "Mcdm-T", "Mgas-T"]
+_PAIR_INDICES  = [(0, 1), (0, 2), (1, 2)]
+
+
+def _compute_training_metrics(
+    true_eval: np.ndarray,   # (N, 3, H, W) physical
+    gen_eval:  np.ndarray,   # (N, 3, H, W) physical
+) -> tuple[dict, dict, dict]:
+    """
+    새 analysis API를 사용해 학습 중 메트릭 계산.
+
+    Returns:
+        spec_err : {ch: {mean_error, rms_error, max_error, passed, scale_errors},
+                   pair: {mean_error, passed, threshold}}
+        corr_err : {pair: {max_delta_r, passed}}
+        pdf_res  : {ch: {ks_statistic, mean_rel_error, std_rel_error, passed}}
+    """
+    spec_err = {}
+    corr_err = {}
+    pdf_res  = {}
+
+    # ── Auto P(k) per channel ────────────────────────────────────────────────
+    for ci, ch in enumerate(_CHANNEL_NAMES):
+        k, true_pks = pk_batch(true_eval[:, ci])
+        _, gen_pks  = pk_batch(gen_eval[:, ci])
+        med_t = np.median(true_pks, axis=0)
+        med_g = np.median(gen_pks,  axis=0)
+        denom = np.where(np.abs(med_t) > 0, np.abs(med_t), 1.0)
+        rel   = np.abs(med_g - med_t) / denom
+
+        check = check_auto_pk(k, rel, ch)
+        scale_errors = {}
+        for label, v in check.items():
+            if isinstance(v, dict) and not v.get("reference_only", False):
+                scale_errors[label] = {
+                    "mean_error":     v["mean_err"],
+                    "rms_error":      v["rms_err"],
+                    "threshold_mean": v["thr_mean"],
+                    "threshold_rms":  v["thr_rms"],
+                    "passed":         v["passed"],
+                }
+        spec_err[ch] = {
+            "mean_error":  float(rel.mean()),
+            "rms_error":   float(np.sqrt((rel**2).mean())),
+            "max_error":   float(rel.max()),
+            "passed":      check["passed"],
+            "scale_errors": scale_errors,
+        }
+
+    # ── Cross P(k) + Coherence per pair ─────────────────────────────────────
+    for (ci, cj), pair in zip(_PAIR_INDICES, _PAIR_NAMES):
+        ta, tb = true_eval[:, ci], true_eval[:, cj]
+        ga, gb = gen_eval[:, ci],  gen_eval[:, cj]
+
+        k, true_cpks = cross_pk_batch(ta, tb)
+        _, gen_cpks  = cross_pk_batch(ga, gb)
+        med_tc = np.median(true_cpks, axis=0)
+        med_gc = np.median(gen_cpks,  axis=0)
+        denom  = np.where(np.abs(med_tc) > 0, np.abs(med_tc), 1.0)
+        rel_c  = np.abs(med_gc - med_tc) / denom
+        chk_c  = check_cross_pk(k, rel_c, pair)
+        spec_err[pair] = {
+            "mean_error": chk_c["mean_err"],
+            "max_error":  float(rel_c.max()),
+            "rms_error":  float(np.sqrt((rel_c**2).mean())),
+            "passed":     chk_c["passed"],
+            "threshold":  chk_c["thr"],
+        }
+
+        _, true_r = coherence_batch(ta, tb)
+        _, gen_r  = coherence_batch(ga, gb)
+        delta_r   = np.abs(np.median(gen_r, axis=0) - np.median(true_r, axis=0))
+        chk_r     = check_coherence(delta_r, pair)
+        corr_err[pair] = {
+            "max_delta_r": chk_r["max_delta_r"],
+            "passed":      chk_r["passed"],
+        }
+
+    # ── PDF per channel ──────────────────────────────────────────────────────
+    for ci, ch in enumerate(_CHANNEL_NAMES):
+        true_log = np.log10(np.clip(true_eval[:, ci], 1e-30, None))
+        gen_log  = np.log10(np.clip(gen_eval[:, ci],  1e-30, None))
+        res = compare_pdfs(true_log, gen_log, n_subsample=20_000)
+        pdf_res[ch] = {
+            "ks_statistic":   res["ks_stat"],
+            "mean_rel_error": res["eps_mu"],
+            "std_rel_error":  res["eps_sig"],
+            "passed":         res["ks_stat"] < 0.05 and res["eps_mu"] < 0.05 and res["eps_sig"] < 0.10,
+        }
+
+    return spec_err, corr_err, pdf_res
 
 
 class EpochVisualizer:
@@ -274,16 +367,7 @@ class EpochVisualizer:
           - linear field  -> normalize=True
           - log10 field   -> normalize=False
         """
-        if self.power_spectrum_estimator == "genesis":
-            return compute_power_spectrum_2d(field)
-
-        use_norm = field_space == "linear"
-        return compute_power_spectrum_2d(
-            field,
-            mode="diffusion_hmc",
-            diffusion_hmc_normalize=use_norm,
-            diffusion_hmc_smoothed=0.25,
-        )
+        return compute_pk(field)
 
     def _plot_positive_loglog(self, ax, k: np.ndarray, pk: np.ndarray, *args, **kwargs) -> None:
         mask = np.isfinite(k) & np.isfinite(pk) & (k > 0) & (pk > 0)
@@ -641,9 +725,7 @@ class EpochVisualizer:
             )
 
             # ── Auto/Cross Power Spectrum ──────────────────────────────────────
-            spec_err  = compute_spectrum_errors(true_eval, gen_eval)
-            corr_err  = compute_correlation_errors(true_eval, gen_eval)
-            pdf_res   = compare_pixel_distributions(true_eval, gen_eval, log=False, ks_subsample=20000)
+            spec_err, corr_err, pdf_res = _compute_training_metrics(true_eval, gen_eval)
 
             # ── 출력 ──────────────────────────────────────────────────────────
             sep = "─" * 78

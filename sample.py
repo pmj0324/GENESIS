@@ -3,21 +3,71 @@ GENESIS — sample.py
 
 단일 조건에서 샘플 생성 + 시각화.
 
+주요 실험 목록 (runs/flow/unet/):
+  0330_affine_meanmix                                       ← 구버전 affine mean-mix 정규화
+  0330_affine_meanmix_ft_*                                  ← 위 fine-tune 변형들
+  0410_c2ot_affine_meanmix                                  ← c2ot 샘플러 실험
+  0410_cot_affine_meanmix                                   ← cot 샘플러 실험
+  0412_affine_meanmix                                       ← affine mean-mix, 기본 설정
+  0412_log_p1p99_m1p1                                       ← log + p1/p99 + [-1,1]  ★ 현재 메인
+  0412_log_p1p99_m1p1_ft_plateau                            ← 위 fine-tune
+  0412_log_p1p99_m1p1_ft_plateau_lr6p6e6_f06_p3            ← 위 LR 조정 fine-tune
+  0414_minmaxsym_perscale                                   ← per-scale minmax_sym 실험
+  0414_minmaxsym_perscale_cross                             ← + cross-scale loss
+  0414_minmaxsym_perscale_ft_plateau_lr2e5_f065_p4_es20    ← 위 fine-tune
+
 사용법:
   # 파라미터 직접 지정
   python sample.py \\
-    --config  runs/flow/unet/unet_flow_0330/config.yaml \\
-    --checkpoint  runs/flow/unet/unet_flow_0330/best.pt \\
+    --config      runs/flow/unet/0412_log_p1p99_m1p1/config.yaml \\
+    --checkpoint  runs/flow/unet/0412_log_p1p99_m1p1/best.pt \\
     --params  0.30 0.80 1.0 1.0 1.0 1.0 \\
     --n-samples 4 --seed 42 --save-npy
 
-  # test 데이터셋 특정 인덱스 참조 (실제 맵 비교)
+  # test 데이터셋 특정 인덱스 참조 (실제 맵과 비교, 같은 sim의 다른 projection도 표시)
   python sample.py \\
-    --config  runs/flow/unet/unet_flow_0330/config.yaml \\
-    --checkpoint  runs/flow/unet/unet_flow_0330/best.pt \\
-    --ref-idx  5 \\
+    --config      runs/flow/unet/0412_log_p1p99_m1p1/config.yaml \\
+    --checkpoint  runs/flow/unet/0412_log_p1p99_m1p1/best.pt \\
+    --ref-idx  5 --split test \\
     --n-samples 4 --seed 42 --save-npy
 
+  # 다른 데이터셋 경로 사용 (config의 data_dir override)
+  python sample.py \\
+    --config      runs/flow/unet/0412_log_p1p99_m1p1/config.yaml \\
+    --checkpoint  runs/flow/unet/0412_log_p1p99_m1p1/best.pt \\
+    --data-dir    /home/work/cosmology/Refactor/GENESIS/GENESIS-data/LH_p1p99_sym_legacy.zarr \\
+    --params  0.30 0.80 1.0 1.0 1.0 1.0
+
+주요 CLI 인자:
+  필수:
+    --config        학습/샘플링 설정이 들어 있는 config.yaml 경로
+    --checkpoint    불러올 체크포인트(.pt) 경로
+
+  조건 지정 (둘 중 하나만 사용):
+    --params Om s8 SN1 SN2 AGN1 AGN2
+                    물리 파라미터 6개를 직접 지정해 샘플 생성
+    --ref-idx IDX   --split(val/test) 데이터셋의 IDX번 샘플 조건을 사용.
+                    실제 맵도 함께 불러와 생성 결과와 비교 표시
+
+  생성 옵션:
+    --n-samples     하나의 조건에서 생성할 샘플 수
+    --cfg-scale     Classifier-Free Guidance 스케일
+    --seed          생성 시드
+    --model-source  체크포인트에서 어떤 가중치를 쓸지 선택
+                    auto(EMA 우선) / ema / raw
+    --solver        ODE 솔버 override (euler / heun / rk4 / dopri5)
+    --steps         고정 스텝 수 override (주로 euler/heun/rk4용)
+
+  데이터 옵션:
+    --data-dir      config의 data_dir를 덮어쓸 데이터셋(zarr) 경로
+    --split         --ref-idx 사용 시 참조할 split (val 또는 test)
+
+  출력 옵션:
+    --output-dir    그림/메타데이터 저장 디렉토리
+    --save-npy      생성 샘플과 참조 실제 맵을 .npy로 저장
+    --device        실행 디바이스 (예: cuda, cuda:1, cpu)
+
+데이터: zarr DirectoryStore (.zattrs에 normalization/param_normalization 메타 포함)
 파라미터 순서: Omega_m  sigma_8  A_SN1  A_SN2  A_AGN1  A_AGN2
 물리 범위:     [0.1,0.5] [0.6,1.0] [0.25,4] [0.25,4] [0.5,2] [0.5,2]
 """
@@ -28,12 +78,15 @@ import sys
 import warnings
 from pathlib import Path
 
+from tqdm import tqdm
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
+import zarr
 
 REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
@@ -43,11 +96,11 @@ from dataloader.normalization import (
     CHANNELS, PARAM_NAMES,
     Normalizer, ParamNormalizer,
 )
-from evaluation.cli.evaluate import (
+from utils.model_loading import (
     build_model, build_sampler_fn,
     select_checkpoint_state_dict, _load_checkpoint,
 )
-from analysis.cross_spectrum import compute_cross_power_spectrum_2d
+from analysis.spectra import compute_pk
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 
@@ -124,13 +177,10 @@ def load_model_and_normalizer(
     if atol is not None:
         cfg.setdefault("generative", {}).setdefault("sampler", {})["atol"] = atol
 
-    # Normalizer: 데이터 디렉토리의 metadata.yaml 에서 로드
+    # Normalizer: 데이터 디렉토리의 zarr .zattrs 에서 로드
     data_dir = Path(cfg["data"]["data_dir"])
-    meta_path = data_dir / "metadata.yaml"
-    if not meta_path.exists():
-        raise FileNotFoundError(f"metadata.yaml 없음: {meta_path}")
-    with open(meta_path) as f:
-        meta = yaml.safe_load(f)
+    _zstore = zarr.open_group(str(data_dir), mode="r")
+    meta = dict(_zstore.attrs)
     param_normalizer = ParamNormalizer.from_metadata(meta)
     normalizer = Normalizer(meta.get("normalization", {}))
 
@@ -159,7 +209,7 @@ def load_model_and_normalizer(
     )
 
     sampler_fn, model = build_sampler_fn(cfg, model, device)
-    return model, normalizer, sampler_fn, cfg
+    return model, normalizer, param_normalizer, sampler_fn, cfg
 
 
 @torch.no_grad()
@@ -172,31 +222,37 @@ def generate_samples(
     seed: int = 42,
     device: str = "cuda",
     sample_shape: tuple = (3, 256, 256),
+    batch_size: int = 8,
 ) -> np.ndarray:
     """단일 조건에서 n_samples개 생성 → physical space numpy (n_samples, 3, H, W).
 
     Parameters
     ----------
     params_norm : (6,) z-score normalized parameter vector.
+    batch_size  : OOM 방지를 위한 배치 크기. n_samples가 이보다 크면 여러 배치로 분할.
     """
     torch.manual_seed(seed)
     np.random.seed(seed)
     if "cuda" in str(device) and torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    cond = (
-        torch.from_numpy(np.asarray(params_norm, dtype=np.float32))
-        .to(device)
-        .unsqueeze(0)
-        .expand(n_samples, -1)
-    )
+    cond_base = torch.from_numpy(np.asarray(params_norm, dtype=np.float32)).to(device)
 
-    out = sampler_fn(model, (n_samples, *sample_shape), cond)
-    if isinstance(out, tuple):
-        out = out[0]
+    chunks = []
+    remaining = n_samples
+    with tqdm(total=n_samples, desc="generating", unit="sample") as pbar:
+        while remaining > 0:
+            bs = min(batch_size, remaining)
+            cond = cond_base.unsqueeze(0).expand(bs, -1)
+            out = sampler_fn(model, (bs, *sample_shape), cond)
+            if isinstance(out, tuple):
+                out = out[0]
+            phys = normalizer.denormalize(out.detach().float().cpu())
+            chunks.append(phys.numpy().astype(np.float32, copy=False))
+            remaining -= bs
+            pbar.update(bs)
 
-    phys = normalizer.denormalize(out.detach().float().cpu())
-    return phys.numpy().astype(np.float32, copy=False)
+    return np.concatenate(chunks, axis=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -210,12 +266,9 @@ def _to_log10(phys: np.ndarray) -> np.ndarray:
 def _compute_pk(
     field: np.ndarray,
     box_size: float = 25.0,
-    n_bins: int = 30,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """(H, W) power-spectrum field representation → (k_centers, Pk)."""
-    return compute_cross_power_spectrum_2d(
-        field, field, box_size=box_size, n_bins=n_bins
-    )
+    """(H, W) → (k, Pk). overdensity + integer-round binning."""
+    return compute_pk(field, box_size=box_size)
 
 
 def _params_footer(params_phys: np.ndarray) -> str:
@@ -425,6 +478,10 @@ def parse_args():
                    help="ODE 솔버 (기본: yaml의 method 사용)")
     p.add_argument("--steps", type=int, default=None,
                    help="고정 스텝 수 — euler/heun/rk4 전용 (기본: yaml의 steps 사용)")
+    p.add_argument("--rtol", type=float, default=None,
+                   help="dopri5 상대 허용 오차 (기본: yaml의 rtol 사용)")
+    p.add_argument("--atol", type=float, default=None,
+                   help="dopri5 절대 허용 오차 (기본: yaml의 atol 사용)")
 
     # Data options
     p.add_argument("--data-dir", type=str, default=None,
@@ -454,7 +511,7 @@ def main():
           f"cfg_scale={args.cfg_scale}  seed={args.seed}")
 
     # ── 모델 로드 ──────────────────────────────────────────────────────────────
-    model, normalizer, sampler_fn, cfg = load_model_and_normalizer(
+    model, normalizer, param_normalizer, sampler_fn, cfg = load_model_and_normalizer(
         config=args.config,
         checkpoint_path=args.checkpoint,
         device=device,
@@ -462,18 +519,18 @@ def main():
         cfg_scale=args.cfg_scale,
         solver=args.solver,
         steps=args.steps,
+        rtol=args.rtol,
+        atol=args.atol,
     )
 
     # 데이터 디렉토리 (--data-dir 로 override 가능)
     data_dir = Path(args.data_dir) if args.data_dir else Path(cfg["data"]["data_dir"])
     box_size = float(cfg.get("data", {}).get("box_size", 25.0))
 
-    # 샘플 shape
-    meta_path = data_dir / "metadata.yaml"
-    with open(meta_path) as f:
-        meta = yaml.safe_load(f)
-    # maps_per_sim 등은 확인용, shape는 데이터에서 추론
-    sample_shape = (3, 256, 256)   # CAMELS 기본
+    # zarr 스토어 열기 + 메타 로드
+    _zstore = zarr.open_group(str(data_dir), mode="r")
+    meta = dict(_zstore.attrs)
+    sample_shape = (3, 256, 256)
 
     # ── 조건 벡터 결정 ──────────────────────────────────────────────────────────
     real_phys      = None   # ref-idx 가 있을 때만 채워짐
@@ -488,14 +545,14 @@ def main():
         print(f"[sample] 조건 (physical): {_params_footer(params_phys)}")
 
     else:
-        # --ref-idx 모드: 데이터셋에서 로드
-        maps_path   = data_dir / f"{args.split}_maps.npy"
-        params_path = data_dir / f"{args.split}_params.npy"
-        if not maps_path.exists():
-            raise FileNotFoundError(f"{args.split}_maps.npy 없음: {maps_path}")
-
-        all_maps   = np.load(maps_path,   mmap_mode="r")
-        all_params = np.load(params_path)
+        # --ref-idx 모드: zarr 데이터셋에서 로드
+        if args.split not in _zstore:
+            raise ValueError(
+                f"split={args.split!r} 없음: {data_dir}\n"
+                f"  가능한 split: {list(_zstore.keys())}"
+            )
+        all_maps   = _zstore[f"{args.split}/maps"]    # zarr array, lazy
+        all_params = np.array(_zstore[f"{args.split}/params"], dtype=np.float32)
 
         n_total = len(all_maps)
         if not (0 <= args.ref_idx < n_total):
@@ -513,37 +570,24 @@ def main():
             torch.from_numpy(real_norm[None]).to(device)
         ).cpu()
         real_phys   = real_phys_t.numpy()[0]                       # (3, H, W) physical
-        sample_shape = tuple(real_norm.shape)
 
         # 같은 simulation의 모든 projection 로드 (형제 맵들)
-        # maps_per_sim: metadata에 있으면 사용, 없으면 파라미터 연속 구간으로 자동 감지
-        maps_per_sim = meta.get("maps_per_sim")
-        if maps_per_sim is None:
-            ref_p = all_params[args.ref_idx]
-            _s = args.ref_idx
-            while _s > 0 and np.allclose(all_params[_s - 1], ref_p, atol=1e-5):
-                _s -= 1
-            _e = args.ref_idx
-            while _e < len(all_params) - 1 and np.allclose(all_params[_e + 1], ref_p, atol=1e-5):
-                _e += 1
-            maps_per_sim = _e - _s + 1
-            print(f"  [sample] maps_per_sim 자동 감지: {maps_per_sim}")
-        sim_idx   = args.ref_idx // maps_per_sim
-        sib_start = sim_idx * maps_per_sim
-        sib_end   = min(sib_start + maps_per_sim, len(all_maps))
-        sib_norm  = np.array(all_maps[sib_start:sib_end], dtype=np.float32)  # (N_sib, 3, H, W)
-        # ref 맵 자신은 제외 (이미 real_phys로 따로 그림)
-        sib_mask  = np.arange(sib_start, sib_end) != args.ref_idx
-        sib_norm  = sib_norm[sib_mask]
-        if len(sib_norm) > 0:
+        # sim_ids 배열로 안전하게 sibling 탐색 (순서 가정 불필요)
+        all_sim_ids  = np.array(_zstore[f"{args.split}/sim_ids"], dtype=np.int32)
+        ref_sim_id   = int(all_sim_ids[args.ref_idx])
+        sib_indices  = np.where(all_sim_ids == ref_sim_id)[0]       # 같은 sim의 모든 인덱스
+        sib_others   = sib_indices[sib_indices != args.ref_idx]      # ref 자신 제외
+
+        if len(sib_others) > 0:
+            sib_norm     = np.array(all_maps[sib_others], dtype=np.float32)  # (N_sib-1, 3, H, W)
             sib_phys_t   = normalizer.denormalize(
                 torch.from_numpy(sib_norm).to(device)
             ).cpu()
-            siblings_phys = sib_phys_t.numpy()                    # (N_sib-1, 3, H, W)
+            siblings_phys = sib_phys_t.numpy()                      # (N_sib-1, 3, H, W)
 
         print(
             f"[sample] ref_idx={args.ref_idx}  split={args.split}  "
-            f"sim={sim_idx}  siblings={len(siblings_phys) if siblings_phys is not None else 0}\n"
+            f"sim_id={ref_sim_id}  siblings={len(siblings_phys) if siblings_phys is not None else 0}\n"
             f"  조건 (physical): {_params_footer(params_phys)}"
         )
 
